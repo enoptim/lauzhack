@@ -28,12 +28,18 @@ export default function BuildingPage() {
     });
   }
 
+  function selectionFor(group: EquipmentGroup) {
+    return {
+      outline: selectedGroup === group ? selectedOutline : selectableOutline,
+      onSelect: () => setSelectedGroup(group),
+    };
+  }
+
   return (
     <main aria-label="Building viewer" className="grid min-h-full grid-rows-[minmax(20rem,55dvh)_auto] md:h-full md:grid-cols-[minmax(0,1fr)_20rem] md:grid-rows-[minmax(0,1fr)]">
       <div className="min-h-0">
-        <BuildingScene floor={floor} monitorSelection={floor !== null ? {
-          outline: selectedGroup === 'monitors' ? selectedOutline : selectableOutline,
-          onSelect: () => setSelectedGroup('monitors'),
+        <BuildingScene floor={floor} workstationSelection={floor !== null ? {
+          monitors: selectionFor('monitors'), computers: selectionFor('computers'),
         } : undefined}>
           {floor !== null && floorLights.map(item => (
             <mesh
@@ -91,7 +97,7 @@ export default function BuildingPage() {
         ) : (
           <p className="text-sm text-muted-foreground">
             {floor === null ? 'Choose a floor to see its equipment.'
-              : 'Click an outlined light or monitor to configure that equipment for the whole floor.'}
+              : 'Click an outlined light, monitor, or computer to configure that equipment for the whole floor.'}
           </p>
         )}
         <div className="mt-auto flex flex-col gap-2 border-t border-border pt-4">
