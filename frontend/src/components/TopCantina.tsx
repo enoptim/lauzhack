@@ -1,4 +1,4 @@
-import { Box } from './Furniture';
+import { Box, CoffeeMachine, type FloorEquipmentSelection } from './Furniture';
 
 function CafeTable({x,z}: {x:number;z:number}) {
   return <group position={[x,0,z]}>
@@ -14,7 +14,7 @@ function CafeTable({x,z}: {x:number;z:number}) {
 }
 
 // Floor-local coordinates. Keep fixtures west of the continuous atrium gallery.
-export default function TopCantina() {
+export default function TopCantina({ coffeeSelection }: { coffeeSelection?: FloorEquipmentSelection['coffee'] }) {
   return <group name="floor-4-cantina">
     <Box size={[6.8,.025,74]} position={[-14.25,.014,-7]} color="#83817c"/>
     {/* Dining corner diagonally across from the toilets (+X,+Z). */}
@@ -37,6 +37,7 @@ export default function TopCantina() {
       <mesh position={[.6,1.58,-.5]}><boxGeometry args={[.04,.88,12]}/><meshStandardMaterial color="#b9d9d9" transparent opacity={.28} depthWrite={false}/></mesh>
       {[-6.5,5.5].map(z=><Box key={z} size={[.07,.9,.07]} position={[.6,1.56,z]} color="#7c8383"/>)}
       <Box size={[.92,.8,1.15]} position={[0,1.52,-8.4]} color="#343938"/>
+      <CoffeeMachine position={[0, 1.445, 8]} selection={coffeeSelection} />
       {[-3,0,3].map(z=><Box key={z} size={[.1,.7,1.6]} position={[-1.51,2.35,z]} color="#282d30"/>)}
     </group>
     {[-17,-11,-5,3,10,17,24].map(z=><CafeTable key={z} x={-11.75} z={z}/>)}
