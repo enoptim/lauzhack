@@ -76,8 +76,9 @@ SCHEMAS = [
     }},
     {"type": "function", "function": {
         "name": "show_scenario",
-        "description": "Sends a scenario to the app so people can see it. Call it once with the package you "
-                       "recommend, before your final answer.",
+        "description": "Simulates a scenario and sends it to the app so people can see it. Use it for a specific "
+                       "change the user asks for, or to show another package than optimize or upgrade_tradeoffs "
+                       "already showed.",
         "parameters": {"type": "object", "properties": {
             "title": {"type": "string", "description": "Short name, e.g. 'LED lights on floors 1-3'."},
             "scenario": _SCENARIO, "events": _EVENTS_PARAM,
@@ -94,7 +95,7 @@ SCHEMAS = [
         "description": "Finds the best plan for one goal under the user's limits by running the building model "
                        "many times. Use it whenever the user wants the best or cheapest plan under conditions "
                        "(a budget, things that must not change, a target). Returns the problem as understood, the "
-                       "plan, and today vs the plan for every metric. Then call show_scenario with the plan.",
+                       "plan, and today vs the plan for every metric. The app shows the plan automatically.",
         "parameters": {"type": "object", "properties": {
             "objective": {"type": "object", "description": "What to make as small or as large as possible.",
                           "properties": {"metric": {"type": "string", "enum": list(optimize.METRICS)},
@@ -117,11 +118,12 @@ SCHEMAS = [
                         '{"coffee": ["coffee_current", "coffee_mid"]}. List one option to force it. Include the '
                         "group's current option to allow keeping it.",
                         "additionalProperties": {"type": "array", "items": {"type": "string", "enum": sorted(_OPTIONS)}}},
-            "per_floor": {"type": "boolean", "description": "Decide floor by floor (slower, finer). Default: one "
-                          "choice per group for the whole building."},
+            "per_floor": {"type": "boolean", "description": "Decide floor by floor (default true, finer and "
+                          "cheaper plans). false: one choice per group for the whole building."},
             "allow_warnings": {"type": "boolean", "description": "Allow plans that cause warnings such as over "
                                "budget or a reserve below the minimum. Default false."},
             "events": _EVENTS_PARAM,
+            "title": {"type": "string", "description": "Short name for the plan in the app, e.g. 'Save CHF 10k a year'."},
         }, "required": ["objective"]},
     }},
 ]
@@ -278,8 +280,8 @@ def list_metrics():
              "today": _r(today[k], 2)} for k, (u, sense, kind, desc) in optimize.METRICS.items()]
 
 
-def optimize_plan(objective, constraints=None, locked=None, allowed=None, per_floor=False, allow_warnings=False,
-                  events=None):
+def optimize_plan(objective, constraints=None, locked=None, allowed=None, per_floor=True, allow_warnings=False,
+                  events=None, title=None):
     problem = {"objective": objective, "constraints": constraints or [], "locked": locked or [],
                "allowed": allowed or {}, "per_floor": per_floor, "allow_warnings": allow_warnings,
                "events": events or []}
@@ -322,3 +324,95 @@ def run(name, args):
     if name not in HANDLERS:
         raise ValueError(f"Unknown tool {name!r}")
     return HANDLERS[name](**args)
+
+
+# ------------------------------------------------------------------ trade-off curve (model/search.py)
+import search  # noqa: E402
+
+_SAVINGS = {"running_costs": ("operating_cost_saving_chf_year", "operating_cost_saving_pct", "CHF/year",
+                              "Running-cost saving"),
+            "energy_bill": ("energy_cost_saving_chf_year", "energy_cost_saving_pct", "CHF/year", "Energy bill saving"),
+            "electricity_kwh": ("energy_saving_kwh_year", "energy_saving_pct", "kWh/year", "Electricity saved")}
+
+SCHEMAS.append({"type": "function", "function": {
+    "name": "upgrade_tradeoffs",
+    "description": "How up-front cost trades against yearly savings. Returns the best packages from cheapest to "
+                   "biggest saving; each saves the most possible for its cost. Use it for 'what are my options' or "
+                   "'how much does more saving cost'. The app plots them and shows the balanced one (knee_index).",
+    "parameters": {"type": "object", "properties": {
+        "savings": {"type": "string", "enum": list(_SAVINGS), "description":
+                    "What counts as a saving. running_costs (default): energy bill, maintenance and supplies. "
+                    "energy_bill: the electricity bill only. electricity_kwh: electricity used."},
+        "budget_chf": {"type": "number", "description": "Largest up-front cost to consider, in CHF."},
+        "locked": {"type": "array", "description": "Things that must stay as they are today.",
+                   "items": {"type": "object", "properties": {
+                       "group": {"type": "string", "enum": _GROUPS},
+                       "floor": {"type": "integer", "minimum": -1, "maximum": 4}}, "required": ["group"]}},
+        "allow_warnings": {"type": "boolean", "description": "Allow packages that cause warnings (over budget, "
+                           "reserve below the minimum, ...). Default false, as in optimize."},
+        "events": _EVENTS_PARAM,
+        "max_points": {"type": "integer", "minimum": 3, "maximum": 15, "description": "How many packages (default 8)."},
+    }},
+}})
+
+
+def upgrade_tradeoffs(savings="running_costs", budget_chf=None, locked=None, allow_warnings=False, events=None,
+                      max_points=8):
+    if savings not in _SAVINGS:
+        raise ValueError(f"Unknown savings {savings!r}. Use one of {', '.join(_SAVINGS)}.")
+    events = [events] if isinstance(events, str) else list(events or [])
+    _check([], events)
+    metric, pct, unit, _ = _SAVINGS[savings]
+    cons = [] if allow_warnings else [{"metric": "warnings", "max": 0}]
+    cons += [{"metric": "upfront_cost_chf", "max": budget_chf}] if budget_chf is not None else []
+    res = search.pareto(DATA, x_metric="upfront_cost_chf", y_metric=metric, constraints=cons,
+                        scope={"locked": locked} if locked else None, events=events,
+                        max_points=min(15, max(3, int(max_points or 8))), time_limit=8.0)
+    points = [{"upfront_cost_chf": _r(p["x"]),
+               "extra_cost_vs_like_for_like_chf": _r(p["metrics"]["net_upfront_cost_chf"]),
+               "saving_per_year": _r(p["y"]), "saving_pct": _r(p["metrics"][pct], 1),
+               "payback_years": _r(p["metrics"]["payback_years"], 1) if p["changes"] else None,
+               "npv_chf": _r(p["metrics"]["npv_cash_chf"]),
+               "changes": [{"group": c["group"], "floor": c["floor"], "option": c["to_option"], "name": c["to_name"],
+                            "upfront_cost_chf": _r(c["upfront_cost_chf"])} for c in p["changes"]],
+               "scenario": p["scenario"]} for p in res["points"]]
+    return {"savings": savings, "saving_unit": unit, "points": points, "knee_index": res["knee_index"],
+            "note": "Sorted by up-front cost; the first is doing nothing. No other package saves more for the same "
+                    "cost. knee_index is the balanced choice: past it, each extra franc buys less saving. "
+                    "payback_years counts only extra_cost_vs_like_for_like_chf (worn-out units are replaced anyway), "
+                    "so it can be 0 for a costly package; null means it never pays back. By default no package "
+                    "causes warnings."}
+
+
+def tradeoff_chart(result):
+    """The upgrade_tradeoffs result as a chart for the app: up-front cost (x) against yearly saving (y)."""
+    def label(p):
+        byname = {}
+        for c in p["changes"]:
+            byname.setdefault(c["name"], []).append(c["floor"])
+        return ", ".join(n + (f" (floors {', '.join(str(f) for f in fl)})" if fl[0] is not None else "")
+                         for n, fl in byname.items()) or "Do nothing"
+    metric, _, unit, title = _SAVINGS[result["savings"]]
+    return {"type": "pareto", "x_metric": "upfront_cost_chf", "y_metric": metric, "x_label": "Up-front cost (CHF)",
+            "y_label": f"{title} ({unit})",
+            "points": [{"x": p["upfront_cost_chf"], "y": p["saving_per_year"], "label": label(p),
+                        "scenario": p["scenario"]} for p in result["points"]],
+            "knee_index": result["knee_index"]}
+
+
+def knee_scenario(result, events=None):
+    """The balanced point of the trade-off curve, as the app scenario to show."""
+    if not result["points"] or result["knee_index"] is None:
+        return None
+    knee = result["points"][result["knee_index"]]
+    return app_scenario("Balanced choice from the trade-off curve", knee["scenario"], events) if knee["scenario"] else None
+
+
+HANDLERS["upgrade_tradeoffs"] = upgrade_tradeoffs
+
+# Today's value of every metric in the optimize tool's description, so the model rarely needs list_metrics.
+_today = optimize.metrics(DATA, optimize._simulate(DATA, [], []))
+for _s in SCHEMAS:
+    if _s["function"]["name"] == "optimize":
+        _s["function"]["description"] += " Today's values: " + ", ".join(
+            f"{k} {_r(v, 2)}" for k, v in _today.items() if v is not None) + "."

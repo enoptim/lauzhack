@@ -9,7 +9,7 @@ The language model can't run code. It can only ask for a tool.
 1. Every request to OpenRouter includes a list of tools: a name, a description and the inputs each one takes (`SCHEMAS` in `tools.py`).
 2. The model replies with either a final answer or a request to run a tool with certain inputs.
 3. `agent.py` runs that tool, which runs Oscar's engine (`model/engine.py`), and sends the result back to the model.
-4. This repeats until the model answers in plain text. A question takes 3 to 8 rounds.
+4. This repeats until the model answers in plain text. A goal takes about 2 model calls: one to call optimize, one to answer. optimize and upgrade_tradeoffs show their plan in the app themselves.
 
 The tools:
 - `get_building_overview`: today's bill, energy use, what's installed and what's worn out, air quality, money limits.
@@ -18,7 +18,8 @@ The tools:
 - `simulate_scenario`: runs the engine on a set of swaps, optionally with events such as a price spike.
 - `list_metrics`: the goals and limits the optimizer understands, with today's value of each.
 - `optimize`: turns the user's goal and limits (budget, things that must not change, only certain options) into a problem for the optimizer in `model/optimize.py`, and returns the best plan it found next to today.
-- `show_scenario`: the package the model recommends, sent to the app.
+- `upgrade_tradeoffs`: the best packages from cheapest to biggest saving (the cost-vs-savings curve from `model/search.py`), so people can see what more saving costs.
+- `show_scenario`: simulates a package and sends it to the app. `optimize` and `upgrade_tradeoffs` show their own plan, so the model uses this for a specific change or another package.
 
 The model never does the maths. Every number it gives comes from the engine.
 
@@ -51,6 +52,7 @@ The reply:
   - `events`: any what-if events it used.
   - `item_ids`: the items that change. They match the mesh names, so they can be highlighted in 3D.
   - `summary`: the figures the assistant quoted, such as `upfront_cost_chf`, `energy_bill_chf_month` and `payback_years`.
+- `chart`: `null`, or the cost-vs-savings curve when the assistant compared packages: `x_label`, `y_label`, `points` (each with `x`, `y`, a `label` of the changes and its `scenario`) and `knee_index`, the balanced point.
 - `problem`: `null`, or the goal and limits the assistant optimized for. Show it so the user can check and correct it. The format is in [model/README.md](../model/README.md#optimizer-optimizepy).
 
 ## Files

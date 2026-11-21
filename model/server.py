@@ -256,6 +256,7 @@ def _warm_up():
     1 second instead of 4. Set TWIN_WARMUP=0 to skip it."""
     try:
         search.pareto(DATA)                      # POST /api/pareto with the default settings
+        agent.tools.upgrade_tradeoffs()          # the assistant's upgrade_tradeoffs with the default settings
     except Exception as e:                       # a failed warm-up only means the first request is slower
         print(f"Optimizer warm-up failed: {e!r}", file=sys.stderr)
 

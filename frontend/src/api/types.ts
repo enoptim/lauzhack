@@ -411,6 +411,29 @@ export interface ChatResult {
   scenario: ChatScenario | null;
   /** The goal and limits the assistant optimized for, to show (and let the user correct). */
   problem: OptimizationProblem | null;
+  /** Set when the assistant compared packages (upgrade_tradeoffs): cost against saving, to plot. */
+  chart?: ChatChart | null;
+}
+
+export interface ChatChartPoint {
+  x: number;
+  y: number;
+  /** The changes in words, e.g. "LED tube retrofit (floors 1, 2), Rooftop solar panels", or "Do nothing". */
+  label: string;
+  scenario: Scenario;
+}
+
+/** Up-front cost (x) against yearly saving (y). Every point is a package no other package beats on both. */
+export interface ChatChart {
+  type: 'pareto';
+  x_metric: string;
+  y_metric: string;
+  x_label: string;
+  y_label: string;
+  /** Sorted by x. */
+  points: ChatChartPoint[];
+  /** The balanced choice: past it, each extra franc buys less saving. */
+  knee_index: number;
 }
 
 // ---------------------------------------------------------------- /api/metrics, /api/optimize, /api/evaluate
