@@ -15,11 +15,13 @@ import { chf, chfShort, kwh, pricePerKwh, years } from './format';
 import { flagText, groupLabels, isContextFlag, seriesColor, whatIfDetails, whatIfLabels } from './labels';
 import MoneyBreakdown from './MoneyBreakdown';
 import SimulationIntro from './SimulationIntro';
-import PlayStory, { storyBeats } from './PlayStory';
+import { storyBeats } from './story';
 import PlansChart, { paybackYear, type ExampleNote, type PlanLine } from './PlansChart';
 import { FUTURES_N, useEngine, WHAT_IFS, type WhatIf } from './useEngine';
 
 const PRICE_KEY = 'electricity_price_chf_kwh';
+/** 1 = big systems are replaced on a plan; 0 = old equipment runs until it breaks. Only the futures use it. */
+const POLICY_KEY = 'replace_on_plan';
 const TODAY_PRICE = 0.2;
 const PRICE_MIN = 0.1;
 const PRICE_MAX = 0.45;
@@ -74,7 +76,6 @@ function useDelayed(on: boolean, ms: number) {
 /** "9.0 years", or "over 15 years" when it does not pay back within the years shown. */
 const paybackText = (value: number | null, horizon: number) => (value === null ? `over ${horizon} years` : years(value));
 
-const floorName = (floor: number) => (floor === -1 ? 'basement' : floor === 0 ? 'ground floor' : `floor ${floor}`);
 
 /** Failures in one example future of old equipment that this plan touches, one per year and group. */
 function planFailures(sample: FutureSample | null, scenario: Scenario, horizon: number) {
@@ -82,17 +83,6 @@ function planFailures(sample: FutureSample | null, scenario: Scenario, horizon: 
   const touched = (group: string, floors: number[]) => scenario.some(swap => swap.group === group
     && (swap.floor === undefined || floors.length === 0 || floors.includes(swap.floor)));
   return sample.failures.filter(f => f.year <= horizon && touched(f.group, f.floors));
-}
-
-/** Notes on the example line. Only the 3 most expensive get a text label; the others are dots. */
-function exampleNotes(failures: FutureSample['failures']): ExampleNote[] {
-  const labelled = new Set([...failures].sort((a, b) => b.cost - a.cost).slice(0, 3));
-  return failures.map(f => {
-    const name = groupLabels[f.group] ?? f.group;
-    const where = f.group === 'ventilation' && f.floors.length ? ` (${f.floors.map(floorName).join(', ')})`
-      : f.rows > 1 ? ` (${f.rows} rooms)` : '';
-    return { year: f.year, text: `Old ${name.toLowerCase()} fails${where}: ${chfShort(f.cost)}`, label: labelled.has(f) ? `${name} fails` : '' };
-  });
 }
 
 /** One short story of an example future: the world, then the old equipment of this plan. */
@@ -119,7 +109,7 @@ function storyText(sample: FutureSample, failures: FutureSample['failures']) {
     const list = years.length === 1 ? `year ${years[0]}` : `years ${years.slice(0, -1).join(', ')} and ${years.at(-1)}`;
     parts.push(`Old ${(groupLabels[group] ?? group).toLowerCase()} fails in ${list}`);
   }
-  if (!byGroup.size) parts.push('The old equipment of this plan lasts all these years');
+  if (!byGroup.size) parts.push('No old equipment of this plan breaks early');
   return `${parts.join('. ')}.`;
 }
 
@@ -144,13 +134,15 @@ export default function ResultsPage() {
   const [settledPrice, setSettledPrice] = useState(price);
   const [whatIf, setWhatIf] = useState<WhatIf | null>(null);
   const [staffEffects, setStaffEffects] = useState(false);
+  // How the building manager replaces old big systems: on a plan at the end of their normal life, or when they break.
+  const [onPlan, setOnPlan] = useState(true);
   const [horizon, setHorizon] = useState<number>(15);
   const [playToken, setPlayToken] = useState(0);
   const [playYear, setPlayYear] = useState<number | null>(null);
   const [playState, setPlayState] = useState<'idle' | 'playing' | 'paused'>('idle');
 
   const overrides = useMemo(() => ({ ...(read?.config.overrides ?? {}), [PRICE_KEY]: price }), [price, params]); // eslint-disable-line react-hooks/exhaustive-deps
-  const settled = useMemo(() => ({ ...(read?.config.overrides ?? {}), [PRICE_KEY]: settledPrice }), [settledPrice, params]); // eslint-disable-line react-hooks/exhaustive-deps
+  const settled = useMemo(() => ({ ...(read?.config.overrides ?? {}), [PRICE_KEY]: settledPrice, [POLICY_KEY]: onPlan ? 1 : 0 }), [settledPrice, onPlan, params]); // eslint-disable-line react-hooks/exhaustive-deps
   const engine = useEngine(scenario, allScenarios, overrides, settled, whatIf);
   const runs = engine.runs.data;
   const plan = runs?.plan;
@@ -220,7 +212,6 @@ export default function ResultsPage() {
     return futures.samples.reduce((best, sample, k, all) => (distance(sample) < distance(all[best]) ? k : best), 0);
   }, [futures, planLines, selected, view, horizon]);
   typicalRef.current = typicalIndex;
-  const notes = useMemo(() => exampleNotes(failures), [failures]);
 
   function selectPlan(index: number) {
     setSelected(index);
@@ -283,6 +274,8 @@ export default function ResultsPage() {
   const contextFlags = (finance?.flags ?? []).filter(flag => isContextFlag(flag) && (flag.year === undefined || flag.year <= horizon));
   const subject = multi ? plans[selected]?.name : 'the upgrade';
   const beats = example ? storyBeats(example, failures, { boughtIn, purchase, timing, horizon, subject }) : [];
+  // What happens in the future shown: dots on its line, the words in the hover box, the newest one named while it plays.
+  const notes: ExampleNote[] = beats.map(beat => ({ year: beat.year, text: beat.text, label: beat.short, tone: beat.tone }));
   const today = plan?.snapshot_baseline.building;
   const after = plan?.snapshot.building;
 
@@ -423,11 +416,26 @@ export default function ResultsPage() {
             </div>
             <p className="min-h-5 text-sm text-muted-foreground">
               {timing === 'now' ? 'You pay the full price today.'
-                : timing === 'end_of_life' ? 'Keep the old units until they fail, then buy the upgrade instead of the same old kind.'
+                : timing === 'end_of_life' ? (onPlan ? 'Keep the old units until their normal life ends (or they break), then buy the upgrade instead of the same old kind.' : 'Keep the old units until they break, then buy the upgrade instead of the same old kind.')
                 : `Keep the old units until year ${timing}, replacing them like-for-like if they fail first.`}
             </p>
           </div>
         )}
+
+        <div className="flex flex-col gap-2 border-t pt-4">
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+            <span id="policy-label" className="text-sm font-medium">Replace old equipment?</span>
+            <ToggleGroup type="single" variant="outline" value={onPlan ? 'plan' : 'break'} aria-labelledby="policy-label"
+              onValueChange={(value: string) => value && setOnPlan(value === 'plan')}>
+              <ToggleGroupItem value="plan" className="px-3">On a plan</ToggleGroupItem>
+              <ToggleGroupItem value="break" className="px-3">When it breaks</ToggleGroupItem>
+            </ToggleGroup>
+          </div>
+          <p className="min-h-5 text-sm text-muted-foreground">
+            {onPlan ? 'Big systems like ventilation are replaced when their normal life ends. Only one that breaks early costs extra.'
+              : 'Old equipment runs until it breaks. Each breakdown costs 15% more for a rush replacement.'}
+          </p>
+        </div>
 
         <div className="flex flex-col gap-2 border-t pt-4">
           <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
@@ -490,8 +498,6 @@ export default function ResultsPage() {
             <AlertDescription>Restart the engine with <code className="font-mono">make dev</code>, then reload this page.</AlertDescription>
           </Alert>
         ) : <Skeleton className="h-[28rem] w-full" />}
-
-        <PlayStory beats={beats} playYear={playState === 'idle' ? null : playYear} planColor={PLAN_COLORS[selected % PLAN_COLORS.length]} empty={!example} />
 
         <p className="flex flex-wrap gap-x-6 gap-y-1 text-sm text-muted-foreground">
           <span className="flex items-center gap-2">

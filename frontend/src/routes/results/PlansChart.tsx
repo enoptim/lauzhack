@@ -28,8 +28,9 @@ export type PlanLine = {
   example: number[] | null;
 };
 
-/** A note on the example line, e.g. the year old equipment fails. `label` is shown on the chart (empty = dot only). */
-export type ExampleNote = { year: number; text: string; label: string };
+/** Something that happens in the example future: a dot on its line, `text` in the hover box,
+ * `label` named on the chart while it plays (only the newest one). */
+export type ExampleNote = { year: number; text: string; label: string; tone: 'plan' | 'fail' | 'world' };
 
 /** The year (with decimals) where a line reaches zero for the last time and stays above; null if it ends below zero. */
 export function paybackYear(values: number[]): number | null {
@@ -115,7 +116,7 @@ export default function PlansChart({ lines, selected, highlighted, horizon, dash
     const focus = lines.find(line => line.id === selected);
     const range = focus && year > 0 && !exploring
       ? `<div style="margin-top:6px;color:${C.muted}">${focus.name}: in 8 of 10 futures between <b style="color:${C.ink}">${chfShort(focus.low[year])}</b> and <b style="color:${C.ink}">${chfShort(focus.high[year])}</b></div>` : '';
-    const happened = exploring ? notes.filter(n => n.year === year).map(n => `<div style="margin-top:6px"><b>${n.text}</b></div>`).join('') : '';
+    const happened = exploring ? notes.filter(n => n.year === year).map(n => `<div style="margin-top:6px;display:flex;gap:6px"><span style="flex:none;margin-top:5px;width:8px;height:8px;border-radius:50%;border:2px solid ${n.tone === 'fail' ? '#d4361f' : n.tone === 'world' ? C.muted : C.ink}"></span><b>${n.text}</b></div>`).join('') : '';
     return `<div style="min-width:250px;max-width:320px;white-space:normal">`
       + `<div style="font-weight:600;margin-bottom:6px">${year === 0 ? 'Today' : `After ${year} ${year === 1 ? 'year' : 'years'}`}${exploring ? ', in this future' : ', in the middle future'}</div>`
       + rows.map(row).join('') + range + happened
@@ -192,6 +193,7 @@ export default function PlansChart({ lines, selected, highlighted, horizon, dash
         const example = cut(line.example, p);
         const end = example[example.length - 1]?.[1] ?? 0;
         const shownNotes = isFocus ? notes.filter(n => n.year <= Math.min(p ?? horizon, horizon)) : [];
+        const newest = p !== null ? shownNotes.at(-1) : undefined;
         series.push({
           id: `example-${line.id}`, type: 'line', name: `${line.name}, this future`, data: example,
           symbol: 'none', z: isFocus ? 7 : 4, cursor: 'pointer',
@@ -212,7 +214,10 @@ export default function PlansChart({ lines, selected, highlighted, horizon, dash
               formatter: (d: { name?: string }) => d.name ?? '',
             },
             data: [
-              ...shownNotes.map(n => ({ name: n.label, coord: [n.year, line.example![n.year] ?? 0] })),
+              ...shownNotes.map(n => ({
+                name: n.label, coord: [n.year, line.example![n.year] ?? 0], label: { show: n === newest },
+                itemStyle: { color: C.card, borderColor: n.tone === 'fail' ? '#d4361f' : n.tone === 'world' ? C.muted : line.color, borderWidth: 2.5 },
+              })),
               ...(isFocus && showPayback ? [paybackPoint(line.color, payback!)] : []),
             ],
           },
@@ -266,7 +271,8 @@ export default function PlansChart({ lines, selected, highlighted, horizon, dash
   }, []);
 
   // New data or settings: redraw (animated when showing the whole chart).
-  useEffect(() => { draw(progress.current === null); }, [lines, selected, highlighted, horizon, dashed, notes]); // eslint-disable-line react-hooks/exhaustive-deps
+  const notesKey = JSON.stringify(notes);
+  useEffect(() => { draw(progress.current === null); }, [lines, selected, highlighted, horizon, dashed, notesKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Play pressed: start again from today.
   const firstToken = useRef(playToken);
