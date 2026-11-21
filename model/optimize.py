@@ -349,6 +349,22 @@ def _upfront_of_choices(data, choices):
     return total
 
 
+def _year_state(data, ctx, sel, ref):
+    """engine._year_state without the engine's shared memo. A search tries thousands of plans once each, so the
+    memo would only grow; and trimming a shared dict while API requests (other threads) use it is not safe.
+    The costs are the engine's own formula; test_optimize checks this path against engine.simulate."""
+    st = engine._physical_state(data, ctx, sel, ref)
+    p, e = ctx["params"], st["energy"]
+    costs = {
+        "energy": e["grid_kwh"] * ctx["price"],
+        "pv_export": -e["pv_export_kwh"] * p["pv_feed_in_chf_kwh"],
+        "maintenance": st["maintenance"],
+        "consumables": e["consumables_chf"],
+        "rent": st["desk_shortfall"] * p["m2_per_extra_person"] * p["rent_chf_m2_year"],
+    }
+    return {**st, "costs": costs}
+
+
 class _Ctx:
     """One engine setting (data, events, overrides, horizon): the do-nothing path, the reference state,
     each year's context, and a cache of evaluated plans.
@@ -432,10 +448,7 @@ class _Ctx:
         if self.use_engine:
             raw = _raw_from_sim(self, engine.simulate(d, space.scenario(cfg), list(self.events), self.over), upfront)
         else:
-            n0 = len(engine._MEMO)
-            ys_k = [engine._year_state(d, c, sel, self.ref) for c in self.ctxs]
-            while len(engine._MEMO) > n0:       # plans tried in a search are not reused: keep the engine's memo small
-                engine._MEMO.popitem()
+            ys_k = [_year_state(d, c, sel, self.ref) for c in self.ctxs]
             raw = self._finance(capex_s, book_s, [ys_k[k] for k in self.year_kind], [self.yb[k] for k in self.year_kind])
             raw["upfront"] = upfront
         if len(self.cache) > 50000:

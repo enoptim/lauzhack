@@ -7,7 +7,9 @@ All bodies are JSON. A scenario is a list of swaps, e.g.
     [{"group": "lighting", "option": "lighting_mid", "floor": 2}, {"group": "monitors", "option": "monitors_mid", "year": 1}]
 Events are a list of event ids, e.g. ["new_lab", "heatwave_summer"].
 """
+import os
 import sys
+import threading
 from pathlib import Path
 from typing import Literal
 
@@ -210,3 +212,18 @@ def optimize_options(granularity: Literal["floor", "building"] = "floor"):
 def playground():
     """A page for trying the engine by hand: http://localhost:8000/playground"""
     return FileResponse(Path(__file__).parent / "playground" / "index.html")
+
+
+def _warm_up():
+    """Work out the default trade-off curve once, in the background, for the API and for the assistant.
+    The optimizer keeps every plan it has tried, so the first "what are my options?" then takes about
+    1 second instead of 4. Set TWIN_WARMUP=0 to skip it."""
+    try:
+        optimize.pareto(DATA)                    # POST /api/pareto with the default settings
+        agent.tools.upgrade_tradeoffs()          # the assistant's upgrade_tradeoffs with the default settings
+    except Exception as e:                       # a failed warm-up only means the first request is slower
+        print(f"Optimizer warm-up failed: {e!r}", file=sys.stderr)
+
+
+if os.environ.get("TWIN_WARMUP", "1") != "0":
+    threading.Thread(target=_warm_up, daemon=True, name="optimizer-warm-up").start()
