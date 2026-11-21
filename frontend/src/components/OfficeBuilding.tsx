@@ -1,26 +1,128 @@
-import { devices, FLOOR_COUNT, FLOOR_HEIGHT } from '../data/building';
+import { useMemo } from 'react';
+import { DoubleSide, BufferGeometry, Float32BufferAttribute } from 'three';
+import { FLOOR_COUNT, FLOOR_HEIGHT, WIDTH, LENGTH } from '../data/building';
 import { Box, Desk, Plant } from './Furniture';
-import Equipment from './Equipment';
+
+const white = '#d9ddda';
+const metal = '#9ca8a9';
+const red = '#c52d3f';
+
+function Glass({ size, position }: { size: [number, number, number]; position: [number, number, number] }) {
+  return <mesh position={position}><boxGeometry args={size}/><meshStandardMaterial color="#a4c6ce" transparent opacity={.18} roughness={.22} metalness={.15} depthWrite={false}/></mesh>;
+}
+
+// Continuous helical ribbon alongside the treads, recalling the atrium staircase.
+function StairRibbon() {
+  const geometry = useMemo(() => {
+    const vertices: number[] = [];
+    const indices: number[] = [];
+    const segments = 240;
+    for (let i = 0; i <= segments; i++) {
+      const t = i / segments;
+      const a = t * Math.PI * 8;
+      vertices.push(Math.cos(a) * 3, t * 14, Math.sin(a) * 3);
+      vertices.push(Math.cos(a) * 3, t * 14 + 1.05, Math.sin(a) * 3);
+      if (i < segments) { const n = i * 2; indices.push(n, n + 2, n + 1, n + 1, n + 2, n + 3); }
+    }
+    const g = new BufferGeometry();
+    g.setAttribute('position', new Float32BufferAttribute(vertices, 3));
+    g.setIndex(indices); g.computeVertexNormals();
+    return g;
+  }, []);
+  return <mesh geometry={geometry}><meshStandardMaterial color={white} side={DoubleSide} roughness={.6}/></mesh>;
+}
+
+function Staircase() {
+  return <group position={[0, 0, -27]}>
+    <mesh position={[0, 7, 0]}><cylinderGeometry args={[.3, .3, 14, 16]}/><meshStandardMaterial color={red}/></mesh>
+    {Array.from({ length: 96 }, (_, i) => {
+      const a = i / 24 * Math.PI * 2;
+      return <group key={i} position={[0, (i + 1) * 14 / 96, 0]} rotation={[0, -a, 0]}>
+        <Box size={[2.7, .12, .65]} color="#b9bcb8" position={[1.6, 0, 0]}/>
+        <Box size={[.06, 1, .06]} color={red} position={[.65, .5, 0]}/>
+      </group>;
+    })}
+    <StairRibbon/>
+  </group>;
+}
+
+function Floor({ level }: { level: number }) {
+  const y = level * FLOOR_HEIGHT;
+  return <group position={[0, y, 0]}>
+    {/* Ring slabs leave a genuine open atrium through all upper floors. */}
+    {level === 0 ? <Box size={[WIDTH, .25, LENGTH]} color="#d7d2c7" position={[0, -.125, 0]}/> : <>
+      {[-14, 14].map(x => <Box key={x} size={[12, .22, 100]} color="#e0ded5" position={[x, -.11, 0]}/>)}
+      {[-41, 41].map(z => <Box key={z} size={[16, .22, 18]} color="#e0ded5" position={[0, -.11, z]}/>)}
+    </>}
+    {[-1, 1].map(side => <group key={side}>
+      {/* Offices, interior glazing, and corridor balustrades. */}
+      {Array.from({ length: 12 }, (_, i) => {
+        const z = -44 + i * 8;
+        return <group key={i}>
+          <Box size={[7.5, 2.7, .12]} color={white} position={[side * 16.1, 1.35, z]}/>
+          <Glass size={[.05, 2.8, 7.8]} position={[side * 12.3, 1.4, z + 4]}/>
+          <Box size={[.1, 3.3, .1]} color={metal} position={[side * 12.3, 1.65, z]}/>
+          <Desk position={[side * 16, 0, z + 3]}/>
+          {level === 0 && <Desk position={[side * 16, 0, z + 6]}/>}
+        </group>;
+      })}
+      {level > 0 && <>
+        <Glass size={[.06, 1.05, 64]} position={[side * 8, .55, 0]}/>
+        <Box size={[.09, .08, 64]} color={metal} position={[side * 8, 1.1, 0]}/>
+      </>}
+      {[-32, -16, 0, 16, 32].map(z => <Box key={z} size={[.45, 3.5, .45]} color={white} position={[side * 8.3, 1.75, z]}/>)}
+    </group>)}
+    {level > 0 && [-32, 32].map(z => <Glass key={z} size={[16, 1.05, .06]} position={[0, .55, z]}/>)}
+    {[-40, 40].map(z => <group key={z}>
+      <Box size={[5, 3, 5]} color="#bdc4c1" position={[12, 1.5, z]}/>
+      <Box size={[1.8, 2.4, .06]} color="#7e9195" position={[12, 1.2, z + 2.55]}/>
+      <Plant position={[-7, 0, z]}/>
+    </group>)}
+    {level === 0 && [-15, -5, 5, 15, 25].map(z => <group key={z}>
+      <Desk position={[-3, 0, z]}/><Desk position={[3, 0, z]}/>
+      <Plant position={[6, 0, z]}/>
+    </group>)}
+  </group>;
+}
+
+function Facade() {
+  return <group>
+    {Array.from({ length: 5 }, (_, f) => {
+      const top = f === 4;
+      const y = f * FLOOR_HEIGHT;
+      const xEdge = top ? 18 : 20;
+      const zEdge = top ? 47 : 50;
+      return <group key={f}>
+        {[-1, 1].map(side => <group key={side}>
+          <Glass size={[.08, 3.2, zEdge * 2]} position={[side * xEdge, y + 1.7, 0]}/>
+          <Glass size={[xEdge * 2, 3.2, .08]} position={[0, y + 1.7, side * zEdge]}/>
+          <Box size={[.22, .28, zEdge * 2]} color={white} position={[side * xEdge, y + .14, 0]}/>
+          <Box size={[xEdge * 2, .28, .22]} color={white} position={[0, y + .14, side * zEdge]}/>
+          {Array.from({ length: 33 }, (_, i) => <Box key={i} size={[.16, 3.5, .18]} color={metal} position={[side * xEdge, y + 1.75, -zEdge + i * zEdge / 16]}/>)}
+          {Array.from({ length: 17 }, (_, i) => <Box key={i} size={[.16, 3.5, .18]} color={metal} position={[-xEdge + i * xEdge / 8, y + 1.75, side * zEdge]}/>)}
+        </group>)}
+      </group>;
+    })}
+    {/* Red portal and ground-level horizontal louvres from the front reference. */}
+    <Box size={[13, .55, .7]} color={red} position={[0, 2.85, 50.35]}/>
+    {[-6.25, 6.25].map(x => <Box key={x} size={[.5, 2.85, .7]} color={red} position={[x, 1.425, 50.35]}/>)}
+    {[-1, 1].flatMap(side => Array.from({ length: 9 }, (_, i) => <Box key={`${side}-${i}`} size={[13, .09, .25]} color={metal} position={[side * 13.5, .3 + i * .3, 50.2]}/>))}
+  </group>;
+}
+
 export default function OfficeBuilding() {
   return <group>
-    <Box size={[17, .4, 12]} color="#c8d0c5" position={[0, -.35, 0]}/>
-    {Array.from({ length: FLOOR_COUNT }, (_, f) => <group key={f} position={[0, f * FLOOR_HEIGHT, 0]}>
-      <Box size={[15, .2, 10]} color={f % 2 ? '#e5dfd1' : '#eee7d9'} position={[0, -.1, 0]}/>
-      {/* Rear facade only: permanent cutaway keeps the interior readable. */}
-      <Box size={[15, .65, .15]} color="#c2cdc4" position={[0, .325, -5]}/>
-      <Box size={[15, .3, .18]} color="#d3dcd2" position={[0, 3.3, -5]}/>
-      {[-7.3, -4.9, -2.5, -.1, 2.3, 4.7, 7.3].map(x => <Box key={x} size={[.16, 3.3, .18]} color="#9aaea5" position={[x, 1.65, -5]}/>)}
-      <mesh position={[0, 1.9, -5]}><boxGeometry args={[14.5, 2.3, .04]}/><meshStandardMaterial color="#9acbd1" transparent opacity={.2} depthWrite={false}/></mesh>
-      {/* Low restroom partitions avoid hiding equipment. */}
-      <Box size={[.12, 1.3, 5]} color="#c2cdc4" position={[4.5, .65, -.7]}/>
-      <Box size={[2.8, 1.3, .12]} color="#c2cdc4" position={[6, .65, -.8]}/>
-      {[-5.2, -1.8, 1.6].flatMap(x => [-2.3, 1.2].map(z => <Desk key={`${x}-${z}`} position={[x, 0, z]}/>))}
-      <Plant position={[-6.7, 0, -4]}/><Plant position={[6.6, 0, 3.7]}/>
-      <Box size={[2, 1.4, .55]} color="#b5bfb2" position={[-3, .7, -4.4]}/>
-      <Box size={[2, .12, .6]} color="#caa97a" position={[-3, 1.45, -4.4]}/>
-      {[[-7.2, -4.7], [7.2, -4.7], [-7.2, 4.7], [7.2, 4.7]].map(([x, z], i) => <Box key={i} size={[.22, 3.6, .22]} color="#91a69a" position={[x, 1.8, z]}/>)}
-    </group>)}
-    <Box size={[15.3, .25, 10.3]} color="#aebcaf" position={[0, FLOOR_COUNT * FLOOR_HEIGHT, 0]}/>
-    {devices.map(d => <Equipment key={d.id} device={d}/>)}
+    <Box size={[48, .4, 108]} color="#bfc5bc" position={[0, -.5, 0]}/>
+    {Array.from({ length: FLOOR_COUNT }, (_, level) => <Floor key={level} level={level}/>)}
+    <Staircase/>
+    <Facade/>
+    {/* Broad canopy frames the long transparent atrium skylight. */}
+    <group position={[0, 17.8, 0]}>
+      {[-16, 16].map(x => <Box key={x} size={[14, .35, 106]} color="#aeb5b2" position={[x, 0, 0]}/>)}
+      {[-44, 44].map(z => <Box key={z} size={[18, .35, 18]} color="#aeb5b2" position={[0, 0, z]}/>)}
+      <Glass size={[18, .08, 70]} position={[0, .12, 0]}/>
+      {Array.from({ length: 18 }, (_, i) => <Box key={i} size={[18, .15, .09]} color={white} position={[0, .2, -34 + i * 4]}/>)}
+      {[-6, -3, 0, 3, 6].map(x => <Box key={x} size={[.08, .15, 70]} color={white} position={[x, .2, 0]}/>)}
+    </group>
   </group>;
 }
