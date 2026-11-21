@@ -1,9 +1,22 @@
 import { Box } from './Furniture';
+import { LENGTH, LAYOUT_LENGTH, LAYOUT_WIDTH, STAIR_CENTER_Z, STAIR_OPENING_HALF, WIDTH } from '../data/building';
 
 // Schematic site plan inspired by the aerial reference. Ground is just below
 // the existing BC plinth; none of these coordinates belong to the building.
 function Paving({x,z,w,d,color,y=.02}: {x:number;z:number;w:number;d:number;color:string;y?:number}) {
   return <mesh rotation={[-Math.PI/2,0,0]} position={[x,y,z]} receiveShadow><planeGeometry args={[w,d]}/><meshStandardMaterial color={color}/></mesh>;
+}
+// The building is scaled from layout units; cut both ground layers in world units.
+function GroundAroundStairs({ w, d, color, y }: { w: number; d: number; color: string; y?: number }) {
+  const halfWidth = STAIR_OPENING_HALF * WIDTH / LAYOUT_WIDTH;
+  const front = (STAIR_CENTER_Z - STAIR_OPENING_HALF) * LENGTH / LAYOUT_LENGTH;
+  const back = (STAIR_CENTER_Z + STAIR_OPENING_HALF) * LENGTH / LAYOUT_LENGTH;
+  return <>
+    <Paving x={0} z={(front - d / 2) / 2} w={w} d={front + d / 2} color={color} y={y} />
+    <Paving x={0} z={(back + d / 2) / 2} w={w} d={d / 2 - back} color={color} y={y} />
+    {[-1, 1].map(side => <Paving key={side} x={side * (w / 2 + halfWidth) / 2} z={(front + back) / 2}
+      w={w / 2 - halfWidth} d={back - front} color={color} y={y} />)}
+  </>;
 }
 function Tree({x,z,i}: {x:number;z:number;i:number}) {
   const h=3.1+(i%3)*.45;
@@ -23,8 +36,8 @@ function Wing({x,z}: {x:number;z:number}) {
 export default function Campus() {
   const road='#999e9c', path='#d9d7c8';
   return <group position={[0,-.73,0]}>
-    <Paving x={0} z={0} w={560} d={560} color="#b9c5a6" y={0}/>
-    <Paving x={0} z={0} w={60} d={78} color={path}/>
+    <GroundAroundStairs w={560} d={560} color="#b9c5a6" y={0}/>
+    <GroundAroundStairs w={60} d={78} color={path}/>
     <Paving x={-33} z={0} w={8} d={87} color={road} y={.027}/>
     <Paving x={40} z={44} w={210} d={8} color={road} y={.03}/>
     <group position={[-69,0,44]} rotation={[0,-.19,0]}><Paving x={0} z={0} w={9} d={310} color={road}/></group>

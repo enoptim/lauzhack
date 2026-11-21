@@ -3,7 +3,7 @@ import TopCantina from './TopCantina';
 import TopLanding from './TopLanding';
 import GroundFloor from './GroundFloor';
 import Staircase from './Staircase';
-import { FLOOR_COUNT, FLOOR_HEIGHT, WIDTH, LENGTH, LAYOUT_WIDTH, LAYOUT_LENGTH } from '../data/building';
+import { FLOOR_COUNT, FLOOR_HEIGHT, WIDTH, LENGTH, LAYOUT_WIDTH, LAYOUT_LENGTH, STAIR_CENTER_Z, STAIR_OPENING_HALF } from '../data/building';
 import { Box, Desk, Plant, type FloorEquipmentSelection } from './Furniture';
 
 const white = '#d9ddda';
@@ -14,11 +14,26 @@ function Glass({ size, position }: { size: [number, number, number]; position: [
   return <mesh position={position}><boxGeometry args={size}/><meshStandardMaterial color="#a4c6ce" transparent opacity={.18} roughness={.22} metalness={.15} depthWrite={false}/></mesh>;
 }
 
+// Leave the same opening in both the ground slab and the foundation below it.
+function GroundSlab({ width, length, y, thickness, color }: {
+  width: number; length: number; y: number; thickness: number; color: string;
+}) {
+  const half = STAIR_OPENING_HALF;
+  const front = STAIR_CENTER_Z - half;
+  const back = STAIR_CENTER_Z + half;
+  return <>
+    <Box size={[width, thickness, front + length / 2]} color={color} position={[0, y, (front - length / 2) / 2]}/>
+    <Box size={[width, thickness, length / 2 - back]} color={color} position={[0, y, (back + length / 2) / 2]}/>
+    {[-1, 1].map(side => <Box key={side} size={[width / 2 - half, thickness, half * 2]} color={color}
+      position={[side * (width / 2 + half) / 2, y, STAIR_CENTER_Z]}/>)}
+  </>;
+}
+
 function Floor({ level, equipmentSelection }: { level: number; equipmentSelection?: FloorEquipmentSelection }) {
   const y = level * FLOOR_HEIGHT;
   return <group position={[0, y, 0]}>
     {/* Ring slabs leave a genuine open atrium through all upper floors. */}
-    {level === 0 ? <Box size={[LAYOUT_WIDTH, .25, LAYOUT_LENGTH]} color="#d7d2c7" position={[0, -.125, 0]}/> : <>
+    {level === 0 ? <GroundSlab width={LAYOUT_WIDTH} length={LAYOUT_LENGTH} thickness={.25} y={-.125} color="#d7d2c7" /> : <>
       {[-14, 14].map(x => <Box key={x} size={[12, .22, 100]} color="#e0ded5" position={[x, -.11, 0]}/>)}
       {[-41, 41].map(z => <Box key={z} size={[16, .22, 18]} color="#e0ded5" position={[0, -.11, z]}/>)}
     </>}
@@ -88,10 +103,17 @@ function Facade({ floors }: { floors: number }) {
 }
 
 export default function OfficeBuilding({ floor, equipmentSelection }: { floor: number | null; equipmentSelection?: FloorEquipmentSelection }) {
-  if (floor === -1) return <Basement waterHeaterSelection={equipmentSelection?.water_heater} />;
+  if (floor === -1) return <>
+    <Basement waterHeaterSelection={equipmentSelection?.water_heater} />
+    <group scale={[WIDTH / LAYOUT_WIDTH, 1, LENGTH / LAYOUT_LENGTH]}>
+      <Staircase floors={1} />
+    </group>
+  </>;
   const visibleFloors = floor === null ? FLOOR_COUNT : floor + 1;
-  return <group scale={[WIDTH / LAYOUT_WIDTH, 1, LENGTH / LAYOUT_LENGTH]}>
-    <Box size={[48, .4, 108]} color="#bfc5bc" position={[0, -.5, 0]}/>
+  return <>
+    <Basement />
+    <group scale={[WIDTH / LAYOUT_WIDTH, 1, LENGTH / LAYOUT_LENGTH]}>
+    <GroundSlab width={48} length={108} thickness={.4} y={-.5} color="#bfc5bc" />
     {Array.from({ length: visibleFloors }, (_, level) => <Floor key={level} level={level} equipmentSelection={level === floor ? equipmentSelection : undefined}/>)}
     <Staircase floors={visibleFloors}/>
     {floor !== 0 && <Facade floors={floor ?? FLOOR_COUNT}/>}
@@ -103,5 +125,6 @@ export default function OfficeBuilding({ floor, equipmentSelection }: { floor: n
       {Array.from({ length: 18 }, (_, i) => <Box key={i} size={[18, .15, .09]} color={white} position={[0, .2, -34 + i * 4]}/>)}
       {[-6, -3, 0, 3, 6].map(x => <Box key={x} size={[.08, .15, 70]} color={white} position={[x, .2, 0]}/>)}
     </group>}
-  </group>;
+    </group>
+  </>;
 }
