@@ -316,8 +316,48 @@ def test_assumptions_list_is_complete():
     assert all(r["label"] in ("fact", "research", "guess", "result") for r in rows)
 
 
+# --- wear-out failures, worker processes and example futures
+def test_weibull_remaining_life():
+    rng = random.Random(3)
+    mean = lambda life, age: sum(montecarlo.weibull_remaining(rng, life, age, 3) for _ in range(20000)) / 20000
+    assert abs(mean(25, 0) - 25) < 0.75                     # a new unit lives its nominal life on average
+    old = mean(25, 21)
+    assert 4 < old < 25 - 21 + 8                            # a survivor has more than "exactly 4 years" left, but not a new life
+    overdue = mean(20, 25)
+    assert 0 < overdue < 10                                 # past its nominal life: fails soon, but not at once
+    assert all(montecarlo.weibull_remaining(rng, 20, 30, 3) > 0 for _ in range(1000))
+
+
+def test_futures_same_in_worker_processes():
+    sc = {"p": LIGHT_MID, "v": PLAN}
+    pool = montecarlo.make_pool(2)
+    try:
+        a = montecarlo.run(D, sc, n=12, seed=4)
+        b = montecarlo.run(D, sc, n=12, seed=4, pool=pool)
+    finally:
+        pool.shutdown()
+    assert a["summary"] == b["summary"] and a["compare"] == b["compare"]
+
+
+def test_futures_breakdown_and_samples_add_up():
+    res = montecarlo.run(D, {"p": PLAN}, n=30, seed=2, samples=10)
+    s = res["summary"]["p"]
+    assert abs(sum(s["npv_breakdown_mean"].values()) - s["npv_economic_mean"]) < 1e-3
+    assert len(res["samples"]) == 10 and len({x["id"] for x in res["samples"]}) == 10
+    H = int(D["params"]["horizon_years"])
+    for x in res["samples"][:3]:                            # each example is a real future: replaying it gives the same path
+        replay = engine.simulate(D, PLAN, future=res["futures"][x["id"]], detail_years=())
+        assert all(abs(a - y["cumulative_cash_cf"]) < 1e-6 for a, y in zip(x["paths"]["p"]["cash"], replay["years"]))
+        assert len(x["paths"]["p"]["cash"]) == H
+        assert all(1 <= f["year"] <= H and f["cost"] > 0 for f in x["failures"])
+    run = s["fan"]["cash_running"][-1]["p50"]
+    assert run is not None
+    shares = [y["share"] for y in s["prob_paid_back_by_year"]]
+    assert shares == sorted(shares) and 0 <= shares[-1] <= 1
+
+
 if __name__ == "__main__":
-    tests = [v for k, v in dict(globals()).items() if k.startswith("test_")]
+    tests =[v for k, v in dict(globals()).items() if k.startswith("test_")]
     failed = 0
     for t in tests:
         try:

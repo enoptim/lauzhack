@@ -44,7 +44,5 @@ heatwave_prob_per_year,0.2,0.1,0.3,prob/yr,future,Chance that a given summer is 
 price_spike_prob_per_year,0.07,0.03,0.12,prob/yr,future,Chance that a given year has an energy price spike,model estimate
 new_lab_prob_never,0.3,0.1,0.5,prob,future,Chance the new lab never comes within the horizon,model estimate
 new_lab_latest_year,5,5,5,year,future,If it comes it arrives in year 1 to this year,model estimate
-lifetime_spread_low,0.7,0.7,0.7,x nominal,future,Shortest actual lifetime as a share of nominal,model estimate
-lifetime_spread_high,1.4,1.4,1.4,x nominal,future,Longest actual lifetime as a share of nominal,model estimate
-overdue_failure_prob_per_year,0.25,0.15,0.4,prob/yr,future,Chance per year that an overdue unit fails,model estimate
+lifetime_weibull_shape,3,2,4,shape,future,"How strongly the chance of failure rises with age (Weibull shape; 1 = no wear-out, 3 = clear wear-out). The mean life stays the nominal lifetime","Weibull wear-out model; shape 2-4 is typical for mechanical equipment (Acta IMEKO 2021, HVAC useful life)"
 failure_premium,0.15,0.05,0.3,share,future,"Extra cost of an emergency replacement after a failure (rush order, downtime)",model estimate

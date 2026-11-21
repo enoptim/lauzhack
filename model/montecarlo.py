@@ -10,17 +10,31 @@ Accounting stays exact in every future: each run is an ordinary simulate() call.
 Common random numbers: every scenario, and the 'do nothing' path inside each run, faces the
 same futures, so differences between plans come from the decision, not from luck.
 
+Old units fail on a wear-out (Weibull) curve, counted from their age today: a unit that is
+still running has a spread of remaining life, and the older it is, the sooner it tends to fail.
+Each inventory row (one room, or one floor's ventilation) is replaced as one batch.
+
 Percentiles describe the spread of outcomes under these assumed distributions. They are not
 known real-world probabilities.
 """
 import math
+import os
 import random
+from concurrent.futures import ProcessPoolExecutor
 
 import engine
 
 
 def _tri(rng, lo, mode, hi):
     return mode if lo == hi else rng.triangular(lo, hi, mode)
+
+
+def weibull_remaining(rng, life, age, shape):
+    """Remaining life of a unit that still runs at `age`, on a Weibull curve whose mean is `life`.
+    Closed form of the conditional distribution: P(T > age + x | T > age)."""
+    scale = life / math.gamma(1 + 1 / shape)
+    u = 1.0 - rng.random()                       # in (0, 1], so log(u) is finite
+    return scale * ((age / scale) ** shape - math.log(u)) ** (1 / shape) - age
 
 
 def draw_future(data, rng):
@@ -44,22 +58,12 @@ def draw_future(data, rng):
     if rng.random() >= p["new_lab_prob_never"]:
         events.append({"id": "new_lab", "start_year": rng.randint(1, int(p["new_lab_latest_year"])), "end_year": None})
 
-    # when each old unit actually fails (drawn per item, independent of any scenario)
+    # when each old unit actually fails: Weibull wear-out, given that it still runs at its age today
     remaining = {}
     for i in data["items"]:
-        o = data["options"][i["option"]]
-        life = o["lifetime_years"]
-        if not life:
-            continue
-        actual = life * rng.triangular(p["lifetime_spread_low"], p["lifetime_spread_high"], 1.0)
-        age = i["age"] or 0
-        if actual > age:
-            remaining[i["id"]] = actual - age
-        else:                       # already past its life and still running: fails with a yearly hazard
-            n = 0
-            while rng.random() >= p["overdue_failure_prob_per_year"] and n < H:
-                n += 1
-            remaining[i["id"]] = n
+        life = data["options"][i["option"]]["lifetime_years"]
+        if life:
+            remaining[i["id"]] = weibull_remaining(rng, life, i["age"] or 0, p["lifetime_weibull_shape"])
 
     # strength of people effects: one draw per future
     params = {}
@@ -92,7 +96,56 @@ def _pct(xs, q):
     return xs[f] + (xs[c] - xs[f]) * (k - f)
 
 
-def run(data, scenarios, n=300, seed=2026, events=(), overrides=None):
+def _slim(res):
+    """What the summary needs from one run. Keeps pickling cheap when runs come from worker processes."""
+    return {"npv_cash": res["npv_cash"], "npv_economic": res["npv_economic"],
+            "payback_cash": res["payback_cash"], "payback_economic": res["payback_economic"],
+            "flag_types": sorted({f["type"] for f in res["flags"]}), "npv_breakdown": res["npv_breakdown"],
+            "cash": [y["cumulative_cash_cf"] for y in res["years"]],
+            "economic": [y["cumulative_economic_cf"] for y in res["years"]],
+            # the same without the value of equipment still standing at the end (counted in the last year)
+            "cash_running": [y["cumulative_cash_cf"] - y["residual_value"] for y in res["years"]],
+            "economic_running": [y["cumulative_economic_cf"] - y["residual_value"] for y in res["years"]]}
+
+
+_WORKER_DATA = None
+
+
+def _worker_init():
+    global _WORKER_DATA
+    _WORKER_DATA = engine.load()
+
+
+def _worker_run(job):
+    scenario, chunk = job
+    return [_slim(engine.simulate(_WORKER_DATA, scenario, future=f, detail_years=())) for f in chunk]
+
+
+def make_pool(workers=None):
+    """Worker processes that each load the data once. Use one pool for many run() calls."""
+    return ProcessPoolExecutor(max_workers=workers or max(1, (os.cpu_count() or 2) - 1), initializer=_worker_init)
+
+
+def _failures(data, future, horizon):
+    """Old units that fail within the horizon in this future, grouped by year and equipment group."""
+    p = {**data["params"], **future["params"]}
+    out = {}
+    for i in data["items"]:
+        rem = future["remaining_life"].get(i["id"])
+        if rem is None or rem >= horizon:
+            continue
+        year = int(math.ceil(rem))
+        o = data["options"][i["option"]]
+        cost = i["units"] * ((o["purchase_chf_per_unit"] or 0) + (o["install_chf_per_unit"] or 0)) * (1 + p.get("failure_premium", 0))
+        e = out.setdefault((year, i["group"]), {"year": year, "group": i["group"], "rows": 0, "units": 0, "cost": 0.0, "floors": set()})
+        e["rows"] += 1
+        e["units"] += i["units"]
+        e["cost"] += cost
+        e["floors"].add(engine.served_floor(i))
+    return [{**e, "floors": sorted(f for f in e["floors"] if f is not None)} for _, e in sorted(out.items())]
+
+
+def run(data, scenarios, n=300, seed=2026, events=(), overrides=None, pool=None, samples=20):
     """scenarios: {name: scenario list}. Returns per-scenario summaries, pairwise comparisons,
     and the futures themselves (so any run can be replayed with engine.simulate(..., future=...)).
     events: event ids switched on in every future, on top of the random ones (with their fixed timing).
@@ -106,9 +159,16 @@ def run(data, scenarios, n=300, seed=2026, events=(), overrides=None):
                    for f in futures]
     H = int(data["params"]["horizon_years"])
     results = {}
-    for name, sc in scenarios.items():
-        runs = [engine.simulate(data, sc, future=f, detail_years=()) for f in futures]
-        results[name] = runs
+    if pool is None:
+        for name, sc in scenarios.items():
+            results[name] = [_slim(engine.simulate(data, sc, future=f, detail_years=())) for f in futures]
+    else:
+        size = max(1, math.ceil(n / ((os.cpu_count() or 2) * 2)))
+        chunks = [futures[k:k + size] for k in range(0, n, size)]
+        jobs = [(sc, c) for sc in scenarios.values() for c in chunks]
+        out = list(pool.map(_worker_run, jobs))
+        for k, name in enumerate(scenarios):
+            results[name] = [r for part in out[k * len(chunks):(k + 1) * len(chunks)] for r in part]
 
     summary = {}
     for name, runs in results.items():
@@ -117,15 +177,23 @@ def run(data, scenarios, n=300, seed=2026, events=(), overrides=None):
         pb = [r["payback_cash"] for r in runs]
         flags = {}
         for r in runs:
-            for t in {f["type"] for f in r["flags"]}:
+            for t in r["flag_types"]:
                 flags[t] = flags.get(t, 0) + 1
         fan = {}
-        for view in ("cash", "economic"):
-            key = f"cumulative_{view}_cf"
+        for view in ("cash", "economic", "cash_running", "economic_running"):
             fan[view] = [{"year": t + 1,
-                          "p10": _pct([r["years"][t][key] for r in runs], 0.1),
-                          "p50": _pct([r["years"][t][key] for r in runs], 0.5),
-                          "p90": _pct([r["years"][t][key] for r in runs], 0.9)} for t in range(H)]
+                          "p10": _pct([r[view][t] for r in runs], 0.1),
+                          "p50": _pct([r[view][t] for r in runs], 0.5),
+                          "p90": _pct([r[view][t] for r in runs], 0.9)} for t in range(H)]
+        # payback per future; "never within the horizon" sorts last
+        pb_sorted = sorted(pb, key=lambda x: math.inf if x is None else x)
+        def pb_pct(q):
+            v = pb_sorted[min(n - 1, int(round(q * (n - 1))))]
+            return v
+        breakdown = {}
+        for r in runs:
+            for k, v in r["npv_breakdown"].items():
+                breakdown[k] = breakdown.get(k, 0.0) + v / n
         paid = [x for x in pb if x is not None]
         summary[name] = {
             "npv_cash": {q: _pct(cash, v) for q, v in (("p10", .1), ("p50", .5), ("p90", .9))},
@@ -136,6 +204,12 @@ def run(data, scenarios, n=300, seed=2026, events=(), overrides=None):
             "prob_no_cash_payback": sum(x is None for x in pb) / n,
             "flag_probability": {k: v / n for k, v in sorted(flags.items())},
             "fan": fan,
+            "payback_range": {"p10": pb_pct(0.1), "p50": pb_pct(0.5), "p90": pb_pct(0.9)},
+            "prob_paid_back_by_year": [{"year": y, "share": sum(x is not None and x <= y for x in pb) / n}
+                                       for y in range(1, H + 1)],
+            "npv_breakdown_mean": breakdown,
+            "npv_cash_mean": sum(cash) / n,
+            "npv_economic_mean": sum(econ) / n,
         }
 
     names = list(scenarios)
@@ -154,7 +228,16 @@ def run(data, scenarios, n=300, seed=2026, events=(), overrides=None):
     order = sorted(range(n), key=lambda k: first[k]["npv_economic"])
     stories = {lab: {"run": k, "what_happened": describe(futures[k]), "npv_economic": first[k]["npv_economic"]}
                for lab, k in (("bad", order[int(0.1 * (n - 1))]), ("typical", order[n // 2]), ("good", order[int(0.9 * (n - 1))]))}
+    # example futures to explore one at a time: spread evenly from bad to good for the first scenario,
+    # then shuffled in a fixed order so each click shows a different kind of future
+    by_end = sorted(range(n), key=lambda k: first[k]["cash"][-1])
+    picks = sorted({by_end[min(n - 1, int((j + 0.5) / samples * n))] for j in range(min(samples, n))})
+    random.Random(seed + 1).shuffle(picks)
+    sample_list = [{"id": k, "what_happened": describe(futures[k]), "failures": _failures(data, futures[k], H),
+                    "events": sorted(futures[k]["events"], key=lambda e: e["start_year"]),
+                    "paths": {name: {v: results[name][k][v] for v in ("cash", "economic", "cash_running", "economic_running")}
+                              for name in names}} for k in picks]
     return {"n": n, "seed": seed, "summary": summary, "compare": compare, "stories": stories,
-            "futures": futures,
+            "samples": sample_list, "futures": futures,
             "method": "Triangular draws for people-effect strengths; log random walk for price; Bernoulli events per year; "
-                      "triangular lifetime spread, geometric failure for overdue units. Same futures for every scenario."}
+                      "Weibull wear-out failures given each unit's age today. Same futures for every scenario."}
