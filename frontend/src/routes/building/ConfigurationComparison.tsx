@@ -4,7 +4,6 @@ import { api } from '@/api/client';
 import type { Scenario, SimulateResult } from '@/api/types';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { configurationName, type SavedConfiguration } from './configurations';
-import type { EquipmentSwap } from './equipment';
 
 interface Plan {
   name: string;
@@ -29,7 +28,8 @@ const metrics: { label: string; value: (result: SimulateResult, isCurrent: boole
     : finance.payback_cash === null ? 'Not within the simulation period' : `${number.format(finance.payback_cash)} years` },
 ];
 
-export default function ConfigurationComparison({ saved, draft }: { saved: SavedConfiguration[]; draft: ReadonlyMap<string, EquipmentSwap> }) {
+export default function ConfigurationComparison({ configurations }: { configurations: SavedConfiguration[] }) {
+  const alternatives = configurations.filter(({ scenario }) => scenario.length > 0);
   const [plans, setPlans] = useState<Plan[]>([]);
   const [results, setResults] = useState<(SimulateResult | null)[] | null>(null);
 
@@ -37,8 +37,7 @@ export default function ConfigurationComparison({ saved, draft }: { saved: Saved
     setResults(null);
     setPlans([
       { name: 'Current setup', scenario: [] },
-      ...saved.map(({ id, scenario }) => ({ name: configurationName(id), scenario })),
-      ...(draft.size ? [{ name: 'Unsaved draft', scenario: Array.from(draft.values()) }] : []),
+      ...alternatives.map(({ id, scenario }) => ({ name: configurationName(id), scenario })),
     ]);
   }
 
@@ -56,7 +55,7 @@ export default function ConfigurationComparison({ saved, draft }: { saved: Saved
       <DialogTrigger asChild>
         <button type="button" onClick={simulate}
           className="flex min-h-10 items-center justify-between gap-2 rounded-lg bg-primary px-4 py-2 text-left text-sm font-semibold text-primary-foreground hover:bg-primary/90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring">
-          {saved.length || draft.size ? 'Simulate and compare' : 'Simulate current setup'}
+          {alternatives.length ? 'Simulate and compare' : 'Simulate current setup'}
           <ArrowRight aria-hidden="true" className="size-4 shrink-0" />
         </button>
       </DialogTrigger>
