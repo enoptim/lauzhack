@@ -14,11 +14,13 @@ simulate(data, scenario, events_on, overrides) is pure: same inputs, same output
 Scenario = list of swaps, later ones win:
     {"group": "lighting", "option": "lighting_mid", "floor": 2, "timing": "now"}
     optional keys: floor, room_id, item_id; timing "now" (default), "end_of_life", or a year
-    (e.g. "year": 2). A planned year is pulled forward if the old unit fails first.
+    (e.g. "year": 2). A planned year is pulled forward if the old unit fails first, unless the swap
+    is "firm": true (play mode): then it goes in exactly that year, whatever happened before.
 Conventions: CHF, real prices, pre-tax (EPFL as owner-occupier), annual finance.
 """
 import csv
 import math
+import random
 from collections import defaultdict
 from pathlib import Path
 
@@ -172,6 +174,11 @@ def served_floor(item):
     return int(item["serves"].split()[-1]) if item["serves"].startswith("floor") else item["floor"]
 
 
+class FirmYear(int):
+    """A swap year that is not pulled forward when the old unit fails first (play mode: the past is fixed).
+    It is still an int, so code that reads choices as (option, timing) works unchanged."""
+
+
 def resolve(data, scenario):
     """Scenario swaps -> {item_id: (option_id, timing)} for items that change."""
     out = {}
@@ -190,7 +197,9 @@ def resolve(data, scenario):
                 out.pop(i["id"], None)
             else:
                 timing = sw.get("year", sw.get("timing", "now"))
-                out[i["id"]] = (sw["option"], int(timing) if isinstance(timing, (int, float)) else timing)
+                if isinstance(timing, (int, float)):
+                    timing = FirmYear(timing) if sw.get("firm") else int(timing)
+                out[i["id"]] = (sw["option"], timing)
     return out
 
 
@@ -198,20 +207,56 @@ def _life(o):
     return o["lifetime_years"] if o["lifetime_years"] else INF
 
 
-def item_plan(data, item, choice, horizon, remaining=None):
+def unit_life(data, future, item_id, n, t0, option_id):
+    """Actual life of the n-th unit installed in an item's slot (n = 1, 2, ...), installed at time t0.
+    Returns (years, drawn): drawn is True when the life is random, so its end is a surprise failure.
+
+    Without random install lives in the future (deterministic runs, scripted futures) it is the
+    nominal life. A future with "install_lives": {"seed": s} draws each unit's life from
+    (s, item, n): the same on every rerun, so replaying with more decisions never changes the past.
+    An outlook future (montecarlo.draw_future_after) also has "known_until": t and "fresh_seed":
+    a unit whose failure by time t is history keeps its life; every other unit gets a fresh draw,
+    and one still running at t lasts past t."""
+    nominal = _life(data["options"][option_id])
+    spec = (future or {}).get("install_lives")
+    if not spec or nominal == INF:
+        return nominal, False
+    p = data["params"]
+
+    def draw(seed, k=0):
+        rng = random.Random(f"{seed}|{item_id}|{n}|{k}")
+        return nominal * rng.triangular(p["lifetime_spread_low"], p["lifetime_spread_high"], 1.0)
+
+    seed, t = spec.get("seed"), spec.get("known_until")
+    life = draw(seed) if seed is not None else nominal
+    if t is None:
+        return life, True
+    if t0 <= t and math.ceil(t0 + life) <= t:          # it already failed by t: that is history
+        return life, seed is not None
+    for k in range(200):
+        life = draw(spec["fresh_seed"], k)
+        if t0 > t or math.ceil(t0 + life) > t:          # installed later, or still running at t
+            return life, True
+    return t - t0 + 1, True
+
+
+def item_plan(data, item, choice, horizon, remaining=None, future=None):
     """Install timeline [(time, option, kind)].
 
     Current units are replaced like-for-like when they die; an upgrade goes in now or when the
     current unit dies. Deterministic runs use nominal lifetimes (overdue units go at time 0, as a
     planned replacement). A Monte Carlo future passes `remaining` (the unit's sampled remaining
     life); then the original unit's death is a surprise failure (kind "failure", which costs the
-    emergency premium), while later replacements of new units are planned."""
+    emergency premium). Units installed later live their nominal life, unless the future draws
+    install lives (see unit_life): then their deaths are surprise failures too."""
     cur = data["options"][item["option"]]
     random_failure = remaining is not None
     if remaining is None:
         remaining = max(0.0, _life(cur) - (item["age"] or 0)) if _life(cur) != INF else INF
-    up_t, pulled = None, False
-    if choice and isinstance(choice[1], int):          # phased: upgrade at time up_t (end of year up_t)
+    up_t, pulled, firm = None, False, False
+    if choice and isinstance(choice[1], FirmYear):     # firm: exactly at time up_t; earlier failures are
+        up_t, firm = int(choice[1]), True              # replaced like-for-like as usual
+    elif choice and isinstance(choice[1], int):        # phased: upgrade at time up_t (end of year up_t)
         up_t = choice[1]
         if random_failure and remaining != INF and math.ceil(remaining) <= up_t:
             # The original unit breaks first, or at that very moment: the upgrade goes in when it breaks,
@@ -223,21 +268,23 @@ def item_plan(data, item, choice, horizon, remaining=None):
         up_t = 0 if choice[1] == "now" else (remaining if remaining != INF else 0)
         up_t = int(math.ceil(up_t)) if up_t != INF else None
         pulled = random_failure and choice[1] == "end_of_life"
-    installs, active, end, original = [], item["option"], remaining, True
+    # end: when the active unit dies; random_end: whether that is a surprise (a drawn life)
+    installs, active, end, original, random_end = [], item["option"], remaining, True, random_failure
     while True:
         cand_up = up_t if (up_t is not None and up_t < horizon) else None
         cand_eol = int(math.ceil(end)) if end < horizon else None
         if cand_up is None and cand_eol is None:
             return installs
         if cand_up is not None and (cand_eol is None or cand_up <= cand_eol):
-            kind = "failure" if (pulled and original) else "planned"
-            active, up_t, original = choice[0], None, False
-            installs.append((cand_up, active, kind))
-            end = cand_up + _life(data["options"][active])
+            # an emergency if it replaces a unit that broke: pulled forward, or a firm year when the unit in place dies
+            kind = "failure" if (pulled and original) or (firm and random_end and cand_eol == cand_up) else "planned"
+            active, up_t, original, t_new = choice[0], None, False, cand_up
         else:
-            installs.append((cand_eol, active, "failure" if (random_failure and original) else "planned"))
-            original = False
-            end = cand_eol + _life(data["options"][active])
+            kind = "failure" if random_end else "planned"
+            original, t_new = False, cand_eol
+        installs.append((t_new, active, kind))
+        life, random_end = unit_life(data, future, item["id"], len(installs), t_new, active)
+        end = t_new + life
 
 
 def active_at(item, installs, year):
@@ -644,8 +691,8 @@ def install_plans(data, scenario=None, future=None, horizon=None):
     H = int(horizon or data["params"]["horizon_years"])
     choices = resolve(data, scenario)
     rem = (future or {}).get("remaining_life") or {}
-    plans_b = {i["id"]: item_plan(data, i, None, H, rem.get(i["id"])) for i in data["items"]}
-    plans_s = {i["id"]: item_plan(data, i, choices.get(i["id"]), H, rem.get(i["id"])) for i in data["items"]}
+    plans_b = {i["id"]: item_plan(data, i, None, H, rem.get(i["id"]), future) for i in data["items"]}
+    plans_s = {i["id"]: item_plan(data, i, choices.get(i["id"]), H, rem.get(i["id"]), future) for i in data["items"]}
     return choices, plans_s, plans_b
 
 

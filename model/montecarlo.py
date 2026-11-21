@@ -2,7 +2,8 @@
 
 A future is one sampled version of the world over the horizon:
   - world varies (aleatoric): a yearly electricity price path, which events happen and when
-    (heatwave summers, price spikes, the new lab), and when each old unit actually fails;
+    (heatwave summers, price spikes, the new lab), when each old unit actually fails, and a seed
+    for the lives of units installed later (engine.unit_life);
   - we don't know (epistemic): the strength of the people effects, drawn once per future
     from each coupling parameter's low / central / high range (triangular).
 Accounting stays exact in every future: each run is an ordinary simulate() call.
@@ -82,7 +83,10 @@ def draw_future(data, rng):
     # when each old unit actually fails (drawn per item, independent of any scenario)
     remaining = {i["id"]: _draw_remaining(rng, p, i, data["options"][i["option"]]["lifetime_years"], H)
                  for i in data["items"] if data["options"][i["option"]]["lifetime_years"]}
-    return {"price_path": path, "events": events, "remaining_life": remaining, "params": _draw_params(rng, data)}
+    params = _draw_params(rng, data)
+    # units installed later get their own random lives too (engine.unit_life), keyed by this seed
+    return {"price_path": path, "events": events, "remaining_life": remaining, "params": params,
+            "install_lives": {"seed": rng.getrandbits(64)}}
 
 
 # ---------------------------------------------------------------- what is known at time t
@@ -134,7 +138,10 @@ def draw_future_after(data, rng, known, t):
             while rng.random() >= p["overdue_failure_prob_per_year"] and r < H:
                 r += 1
         remaining[i["id"]] = r
-    return {"price_path": path, "events": events, "remaining_life": remaining, "params": _draw_params(rng, data)}
+    # Units installed by now keep their life if their failure is already history; all others are drawn afresh.
+    lives = {"seed": (known.get("install_lives") or {}).get("seed"), "known_until": t, "fresh_seed": rng.getrandbits(64)}
+    return {"price_path": path, "events": events, "remaining_life": remaining, "params": _draw_params(rng, data),
+            "install_lives": lives}
 
 
 # ---------------------------------------------------------------- scripted futures (for demos)
@@ -152,7 +159,9 @@ def load_scripted(data, name):
     - remaining_life: {item_id: years} for units whose failure the script sets.
     - Every other unit with a lifetime fails at its nominal time (lifetime - age) if that is still ahead;
       if it is already overdue, it keeps running for the whole horizon.
-    - params: people-effect strengths at their central values, plus any the script sets."""
+    - params: people-effect strengths at their central values, plus any the script sets.
+    - No install_lives: units installed during the run live exactly their nominal life, so the story stays
+      predictable."""
     scripts = json.load(open(SCRIPTED))
     if name not in scripts:
         raise ValueError(f"Unknown scripted future {name!r}; known: {sorted(scripts)}")
@@ -180,7 +189,8 @@ def load_scripted(data, name):
         remaining[iid] = float(r)
     params = {k: data["params"][k] for k, m in data["param_meta"].items() if m["category"] == "coupling"}
     params.update(spec.get("params", {}))
-    return {"price_path": path, "events": events, "remaining_life": remaining, "params": params}
+    return {"price_path": path, "events": events, "remaining_life": remaining, "params": params,
+            "install_lives": None}
 
 
 def describe(future):

@@ -61,6 +61,15 @@ def test_upgrade_at_the_failure_time_is_an_emergency():
     assert engine.item_plan(D, item, ("ventilation_mid", 2), 15, 2.3)[0] == (2, "ventilation_mid", "planned")
 
 
+def test_a_firm_year_is_never_pulled_into_the_past():
+    item = D["item_by_id"][VENT0]
+    firm = ("ventilation_mid", engine.FirmYear(3))
+    assert engine.item_plan(D, item, ("ventilation_mid", 3), 15, 1.5)[0] == (2, "ventilation_mid", "failure")  # planning: pulled
+    assert engine.item_plan(D, item, firm, 15, 1.5)[:2] == [(2, "ventilation_current", "failure"),
+                                                          (3, "ventilation_mid", "planned")]               # play: exactly then
+    assert engine.item_plan(D, item, ("ventilation_mid", engine.FirmYear(2)), 15, 1.5)[0] == (2, "ventilation_mid", "failure")
+
+
 def test_upgrade_at_the_failure_time_pays_the_premium():
     f = _future()
     swap = {"group": "ventilation", "option": "ventilation_mid", "item_id": VENT0, "year": 2}
@@ -177,6 +186,68 @@ def test_same_decisions_give_the_same_game():
     _, a = _play_to(99, plan)
     _, b = _play_to(99, plan)
     assert a == b and a["ended"]
+
+
+# --- random lives for units installed later
+def _sampled(seed=42):
+    return montecarlo.draw_future(D, random.Random(seed))
+
+
+def _later_installs(plans):
+    """(item, time, kind) for every install after an item's first one: units that were themselves new."""
+    return [(iid, t, kind) for iid, ins in plans.items() for t, _, kind in ins[1:]]
+
+
+def test_new_units_get_random_lives_in_a_sampled_future():
+    f = _sampled()
+    _, plans, _ = engine.install_plans(D, [], f)
+    later = _later_installs(plans)
+    assert later and all(kind == "failure" for _, _, kind in later)     # a new unit's death is a surprise too
+    nominal = {k: v for k, v in f.items() if k != "install_lives"}
+    _, plans_nominal, _ = engine.install_plans(D, [], nominal)
+    assert plans != plans_nominal                                        # the drawn lives differ from nominal
+
+
+def test_the_scripted_future_keeps_nominal_lives_for_new_units():
+    _, plans, _ = engine.install_plans(D, [], _future())
+    assert all(kind == "planned" for _, _, kind in _later_installs(plans))
+
+
+def test_drawn_lives_are_the_same_on_every_rerun():
+    f = _sampled()
+    a = engine.simulate(D, [{"group": "computers", "option": "computers_upgrade", "year": 2}], future=f, detail_years=())
+    b = engine.simulate(D, [{"group": "computers", "option": "computers_upgrade", "year": 2}], future=f, detail_years=())
+    assert a["npv_cash"] == b["npv_cash"] and a["plans"] == b["plans"]
+
+
+def _play_sampled_until(t_min, seed=42):
+    s, st = S.start(D, _sampled(seed), f"seed {seed}")
+    while st["t"] < t_min and not st["ended"]:
+        st = S.next_pause(D, s)
+    return s, st
+
+
+def test_deciding_in_a_sampled_future_never_changes_the_past():
+    s, before = _play_sampled_until(3)
+    t = s["t"]
+    _, plans_before, _ = engine.install_plans(D, s["decisions"], s["future"])
+    after = S.decide(D, s, [{"group": "lighting", "option": "lighting_mid", "year": "now"},
+                            {"group": "computers", "option": "computers_upgrade", "year": "now"}])
+    _, plans_after, _ = engine.install_plans(D, s["decisions"], s["future"])
+    assert before["history"][:t - 1] == after["history"][:t - 1]
+    for iid in plans_before:                                             # every install before now is unchanged
+        assert [x for x in plans_before[iid] if x[0] < t] == [x for x in plans_after[iid] if x[0] < t]
+
+
+def test_the_outlook_keeps_new_units_that_already_failed():
+    s, st = _play_sampled_until(9)
+    t = s["t"]
+    _, mine, _ = engine.install_plans(D, s["decisions"], s["future"])
+    assert any(time <= t for _, time, _ in _later_installs(mine))          # a new unit has already failed by now
+    for f in S.outlook_futures(D, s, n=15, seed=5):
+        _, theirs, _ = engine.install_plans(D, s["decisions"], f)
+        for iid in mine:
+            assert [x for x in mine[iid] if x[0] <= t] == [x for x in theirs[iid] if x[0] <= t]
 
 
 if __name__ == "__main__":

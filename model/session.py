@@ -1,7 +1,7 @@
 """Play through one future, one pause at a time.
 
 Time: time t is the end of year t, and t = 0 is today. A decision taken at a pause at time t is a swap
-with "year": t. It is installed and paid at the end of year t (so it is part of year t's cash row, like
+with "year": t and "firm": true (so the engine never pulls it into the past). It is installed and paid at the end of year t (so it is part of year t's cash row, like
 every install in the engine) and active from year t + 1. Rows for years before t never change.
 
 The engine stays the only source of numbers. A session holds the future, the decisions so far and the
@@ -187,7 +187,7 @@ def _check_swap(data, session, swap):
     option = data["options"].get(sw.get("option"))
     if not option or option["group"] != sw.get("group"):
         raise ValueError(f"{sw.get('option')!r} is not an option of group {sw.get('group')!r}.")
-    sw["year"] = year
+    sw["year"], sw["firm"] = year, True       # exactly then: never pulled into the past (engine.FirmYear)
     return sw
 
 

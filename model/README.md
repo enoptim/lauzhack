@@ -74,7 +74,7 @@ res["stories"]                     # a bad, typical and good future, in words
 engine.simulate(d, plan_a, future=res["futures"][42])  # replay any single future
 ```
 What varies between futures (parameters in `model_assumptions.csv`, category `future`):
-- **The world (aleatoric):** a yearly electricity price path (log random walk), heatwave summers and price spikes each year with a probability, whether and when the new lab arrives, and when each old unit actually fails (lifetime spread; overdue units fail with a yearly hazard and cost a `failure_premium` as an emergency replacement).
+- **The world (aleatoric):** a yearly electricity price path (log random walk), heatwave summers and price spikes each year with a probability, whether and when the new lab arrives, when each old unit actually fails (lifetime spread; overdue units fail with a yearly hazard and cost a `failure_premium` as an emergency replacement), and how long each unit installed later lasts. New units get the same lifetime spread, drawn per item and per install from a seed in the future (`engine.unit_life`), so rerunning a future always gives the same lives; when a new unit dies it is also an emergency replacement.
 - **What we don't know (epistemic):** the strength of each people effect, drawn once per future from its low / central / high range.
 
 Every future is an ordinary `simulate()` run, so all accounting identities hold in each one. Every plan, and the "do nothing" path inside each run, faces the same futures, so differences come from the decision. Percentiles describe outcomes under these assumed distributions, not known real-world probabilities. A future with no randomness reproduces the deterministic run exactly (tested).
@@ -102,6 +102,10 @@ Futures:
 - `montecarlo.draw_future_after(data, rng, future, t)` draws a future that keeps everything revealed by time t (price path, announced or started events, failures) and draws the rest as usual. The outlook uses it.
 
 An upgrade planned for the year its old unit breaks goes in as an emergency, with the failure premium, just like a like-for-like replacement at that moment.
+
+Decisions in play mode are "firm" (`"firm": true` on the swap, `engine.FirmYear`): they go in exactly in their year. Outside play mode, a planned year is pulled forward when the old unit breaks first; in play mode that would rewrite the past.
+
+In a sampled future, units installed during the game wear out at random too (see "Many possible futures"), so the ventilation you bought in year 2 can break early. The scripted futures keep nominal lives for new units, so the demo story stays the same every time.
 
 Try it:
 ```sh
