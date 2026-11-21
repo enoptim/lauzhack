@@ -1,0 +1,13 @@
+month,heating_share,cooling_share,solar_share,source
+1,0.197,0.0,0.035,"Open-Meteo 2015-2024 degree days (heating SIA 20/12, cooling >18 C); PVGIS solar"
+2,0.164,0.0,0.051,"Open-Meteo 2015-2024 degree days (heating SIA 20/12, cooling >18 C); PVGIS solar"
+3,0.148,0.0,0.087,"Open-Meteo 2015-2024 degree days (heating SIA 20/12, cooling >18 C); PVGIS solar"
+4,0.085,0.0,0.108,"Open-Meteo 2015-2024 degree days (heating SIA 20/12, cooling >18 C); PVGIS solar"
+5,0.033,0.022,0.118,"Open-Meteo 2015-2024 degree days (heating SIA 20/12, cooling >18 C); PVGIS solar"
+6,0.0,0.184,0.129,"Open-Meteo 2015-2024 degree days (heating SIA 20/12, cooling >18 C); PVGIS solar"
+7,0.0,0.363,0.134,"Open-Meteo 2015-2024 degree days (heating SIA 20/12, cooling >18 C); PVGIS solar"
+8,0.0,0.346,0.116,"Open-Meteo 2015-2024 degree days (heating SIA 20/12, cooling >18 C); PVGIS solar"
+9,0.008,0.084,0.094,"Open-Meteo 2015-2024 degree days (heating SIA 20/12, cooling >18 C); PVGIS solar"
+10,0.048,0.001,0.064,"Open-Meteo 2015-2024 degree days (heating SIA 20/12, cooling >18 C); PVGIS solar"
+11,0.138,0.0,0.037,"Open-Meteo 2015-2024 degree days (heating SIA 20/12, cooling >18 C); PVGIS solar"
+12,0.179,0.0,0.027,"Open-Meteo 2015-2024 degree days (heating SIA 20/12, cooling >18 C); PVGIS solar"

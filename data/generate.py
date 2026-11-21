@@ -19,6 +19,14 @@ from pathlib import Path
 DATA = Path(__file__).resolve().parent
 RAW = DATA / "raw"
 SEARCH = "https://plan.epfl.ch/search?query={q}&limit=500&lang=en&interface=desktop"
+LAT, LON = 46.519, 6.566  # EPFL
+PVGIS = (f"https://re.jrc.ec.europa.eu/api/v5_2/PVcalc?lat={LAT}&lon={LON}&peakpower=1&loss=14&angle=10&aspect=0"
+         "&mountingplace=building&outputformat=json")
+WEATHER = (f"https://archive-api.open-meteo.com/v1/archive?latitude={LAT}&longitude={LON}"
+           "&start_date=2015-01-01&end_date=2024-12-31&daily=temperature_2m_mean&timezone=Europe%2FZurich")
+STAFF_PER_DESK = 0.9  # made up: share of desks that have an assigned person
+PV_MAX_KWP_ROOF_HP = 250     # roof shared with heat pump outdoor units and AHUs (estimate)
+PV_MAX_KWP_NO_ROOF_HP = 290  # lake-water heat pump moves the heat pump units off the roof (estimate)
 
 E, MADE, PLAN = "estimate", "made up", "EPFL plan"
 FLOOR_HEIGHT = 4.0  # m, estimate from the street photo; Casper may override
@@ -43,6 +51,9 @@ def fetch():
                 rooms[f["id"]] = f
     (RAW / "epfl_bc_rooms.geojson").write_text(
         json.dumps({"type": "FeatureCollection", "features": list(rooms.values())}))
+    for url, name in ((PVGIS, "pvgis_lausanne.json"), (WEATHER, "openmeteo_lausanne_daily.json")):
+        with urllib.request.urlopen(url, timeout=120) as r:
+            (RAW / name).write_bytes(r.read())
 
 
 # ------------------------------------------------------------------ geometry helpers
@@ -87,6 +98,9 @@ ROOM_TYPES = {
     "roof":         ("Roof: heat pump outdoor units, air handling units for floors 2-4, room for solar panels",
                      None, "none", 0, "workdays", None, 0, 0, 0),
 }
+
+# Room types whose seats count people once; staff also visit meeting rooms, kitchens etc. (not counted again)
+POPULATION_TYPES = {"office", "makerspace", "seminar", "computer_lab"}
 
 # Room uses read from Casper's floor plan screenshots (branch casper, building-context/) or made up.
 OVERRIDES = {
@@ -136,8 +150,26 @@ OPT_COLS = [
     "maintenance_chf_per_unit_year", "consumable_chf_per_use",
     "airflow_m3h", "heat_recovery_pct", "efficacy_lm_per_w", "solar_gain_reduction_pct",
     "heating_efficiency", "cooling_efficiency", "generation_kwh_per_unit_year",
+    "flicker_free", "cri", "filter_pm1_removal_pct", "humidity_control", "seconds_per_drink", "enclosed_filtered",
     "description", "source",
 ]
+
+# Physical facts per option as numbers (for the people-effect mapping); estimates matching the descriptions
+FACTS = {
+    "monitors_current": dict(flicker_free=0), "monitors_budget": dict(flicker_free=1),
+    "monitors_mid": dict(flicker_free=1), "monitors_premium": dict(flicker_free=1),
+    "lighting_current": dict(flicker_free=1, cri=80),  # electronic ballast runs at high frequency
+    "lighting_budget": dict(flicker_free=0, cri=80),   # cheap LED drivers
+    "lighting_mid": dict(flicker_free=1, cri=83),
+    "lighting_premium": dict(flicker_free=1, cri=92),
+    "ventilation_current": dict(filter_pm1_removal_pct=50, humidity_control=0),
+    "ventilation_budget": dict(filter_pm1_removal_pct=50, humidity_control=0),
+    "ventilation_mid": dict(filter_pm1_removal_pct=60, humidity_control=0),
+    "ventilation_premium": dict(filter_pm1_removal_pct=80, humidity_control=1),
+    "coffee_current": dict(seconds_per_drink=50), "coffee_budget": dict(seconds_per_drink=40),
+    "coffee_mid": dict(seconds_per_drink=40), "coffee_premium": dict(seconds_per_drink=90),
+    "printers_3d_current": dict(enclosed_filtered=0), "printers_3d_upgrade": dict(enclosed_filtered=1),
+}
 
 
 def opt(option_id, tier, name, unit, description, **kw):
@@ -312,17 +344,100 @@ OPTIONS = [
         "Monocrystalline panels on the roof around the atrium skylight; electricity used on site first, "
         "surplus sold to the grid.",
         purchase_chf_per_unit=900, install_chf_per_unit=450, lifetime_years=25, maintenance_chf_per_unit_year=15,
-        generation_kwh_per_unit_year=1050),
+        generation_kwh_per_unit_year=None),  # set from PVGIS in main()
 ]
 
-AGES = {"lighting": 21, "blinds": 21, "ventilation": 21, "heating_cooling": 21, "water_heater": 21,
+for _o in OPTIONS:
+    _o.update(FACTS.get(_o["option_id"], {}))
+
+# Ages in years (made up). Building from 2004; heat pumps replaced 2009, water heater 2010, roof AHUs
+# (floors 2-4) 2012, floor 4 renovated 2017; IT and coffee machines bought over several years.
+AGES = {"lighting": 21, "blinds": 21, "ventilation": 21, "heating_cooling": 17, "water_heater": 16,
         "monitors": 8, "computers": 6, "coffee": 11, "printers_3d": 6, "servers": 4, "solar_pv": ""}
+AGE_BY_FLOOR = {
+    "monitors": {0: 2, 1: 8, 2: 5, 3: 3, 4: 1},
+    "computers": {0: 2, 1: 6, 2: 4, 3: 3, 4: 1},
+    "coffee": {0: 3, 1: 11, 2: 6, 3: 9, 4: 2},
+    "lighting": {4: 9}, "blinds": {4: 9},
+    "ventilation": {2: 14, 3: 14, 4: 14},  # keyed by the floor the AHU serves
+}
+AGE_BY_ROOM = {("BC_463", "printers_3d"): 2}
+
+
+# People effects from the literature (values checked against the papers/abstracts). The mapping from
+# product facts to these effects lives in Oscar's own file.
+ALLEN = "Allen et al. 2016, Environ Health Perspect 124:805-812, doi:10.1289/ehp.1510037"
+MILTON = "Milton, Glencross & Walters 2000, Indoor Air 10:212-221, doi:10.1034/j.1600-0668.2000.010004212.x"
+SEPPANEN = "Seppanen, Fisk & Lei 2006, LBNL-60946, https://www.osti.gov/biblio/903490"
+UFP = ("Stephens et al. 2013, Atmos Environ 79:334, doi:10.1016/j.atmosenv.2013.06.050; Kim et al. 2015, ES&T 49:12044, "
+       "doi:10.1021/acs.est.5b02805; Azimi et al. 2016/2017, doi:10.1021/acs.est.5b04983, doi:10.1111/jiec.12578")
+LITERATURE = [
+    dict(key="cognitive_score_change_pct_per_400ppm_co2", value=-21, low=-41, high=0, unit="% per 400 ppm",
+         description="Change in decision-making test scores (not productivity directly) per 400 ppm more CO2, "
+                     "ventilation held constant, 24 people in a lab office. Low = steepest step in the study "
+                     "(945 to 1400 ppm); high = 0 because a later study found no effect of CO2 alone",
+         source=ALLEN + "; high: Zhang et al. 2017, Indoor Air 27:47-64, doi:10.1111/ina.12284"),
+    dict(key="cognitive_score_ratio_945_vs_550ppm_co2", value=0.85, low=0.75, high=0.95, unit="ratio",
+         description="Cognitive score at ~945 ppm CO2 relative to ~550 ppm (bounds from the paper's Table 5 CIs)",
+         source=ALLEN),
+    dict(key="cognitive_score_ratio_1400_vs_550ppm_co2", value=0.50, low=0.42, high=0.58, unit="ratio",
+         description="Cognitive score at ~1400 ppm CO2 relative to ~550 ppm (bounds from the paper's Table 5 CIs)",
+         source=ALLEN),
+    dict(key="sick_leave_rr_moderate_vs_high_outdoor_air", value=1.53, low=1.22, high=1.92, unit="relative risk",
+         description="Relative risk of short-term sick leave with ~12 L/s (43 m3/h) vs ~24 L/s (86 m3/h) outdoor air "
+                     "per person; office workers, 40 buildings, observational (95% CI)", source=MILTON),
+    dict(key="sick_leave_attributable_pct_moderate_outdoor_air", value=35, low=18, high=48, unit="%",
+         description="Share of short-term sick leave among people at ~12 L/s per person that is due to the lower "
+                     "ventilation; low/high derived from the relative risk CI as (RR-1)/RR", source=MILTON),
+    dict(key="temperature_optimum_performance_c", value=21.75, low=21, high=24, unit="C",
+         description="Room temperature with the highest office-task performance. Fitted curve (relative to max): "
+                     "P = 0.1647524*T - 0.0058274*T^2 + 0.0000623*T^3 - 0.4685328; meta-analysis, high uncertainty",
+         source=SEPPANEN),
+    dict(key="relative_performance_at_30c", value=0.911, low=0.90, high="", unit="share of max",
+         description="Office-task performance at 30 C relative to the optimum (no CI reported; low from the "
+                     "authors' 2003 model)", source=SEPPANEN),
+    dict(key="performance_loss_pct_per_c_above_25c", value=1.4, low=1.1, high=2.0, unit="% per C",
+         description="Performance lost per degree between 25 and 30 C (from the fitted curve; high from the "
+                     "authors' 2003 model)", source=SEPPANEN),
+    dict(key="headache_eyestrain_ratio_flicker_free_vs_flickering", value=0.5, low="", high=0.5, unit="ratio",
+         description="Weekly headaches and eyestrain under flicker-free (high-frequency) vs 100 Hz flickering "
+                     "fluorescent light: 'more than halved'; double-blind office study, no CI in the abstract",
+         source="Wilkins et al. 1989, Lighting Res Technol 21:11-18, doi:10.1177/096032718902100102"),
+    dict(key="sleep_gain_min_per_night_daylit_workplace", value=46.7, low=7.9, high=85.5, unit="min/night",
+         description="Extra sleep on workday nights for workers with windows vs windowless workplaces (small pilot; "
+                     "daylight, not artificial lighting, so only a proxy for circadian lighting)",
+         source="Boubekri et al. 2014, J Clin Sleep Med 10:603-611, doi:10.5664/jcsm.3780"),
+    dict(key="ufp_emission_rate_pla_per_min", value=460000000, low=110000000, high=20000000000,
+         unit="particles/min", description="Ultrafine particles emitted by an open desktop 3D printer using PLA "
+                                           "(range across three studies)", source=UFP),
+    dict(key="ufp_emission_rate_abs_per_min", value=61000000000, low=16000000000, high=190000000000,
+         unit="particles/min", description="Ultrafine particles emitted by an open desktop 3D printer using ABS "
+                                           "(range across three studies)", source=UFP),
+    dict(key="printer_enclosure_ufp_reduction_pct", value=80, low=67, high=99.95, unit="%",
+         description="Reduction in ultrafine particles from enclosing the printer with filtration (chamber tests; "
+                     "low = enclosure without filter, high = enclosure with HEPA)",
+         source="Azimi, Fazli & Stephens 2017, doi:10.1111/jiec.12578; Kwon et al. 2017, ES&T 51:10357, "
+                "doi:10.1021/acs.est.7b01454; Barnes et al. 2025, Rapid Prototyping J, doi:10.1108/rpj-05-2025-0182"),
+]
+
+
+def age_of(group, room, served_floor=None):
+    if (room["room_id"], group) in AGE_BY_ROOM:
+        return AGE_BY_ROOM[(room["room_id"], group)]
+    floor = room["floor"] if served_floor is None else served_floor
+    return AGE_BY_FLOOR.get(group, {}).get(floor, AGES[group])
 
 
 # ------------------------------------------------------------------ build
 def main():
     if "--fetch" in sys.argv:
         fetch()
+    pvgis = json.loads((RAW / "pvgis_lausanne.json").read_text())["outputs"]
+    pv_month = [m["E_m"] for m in pvgis["monthly"]["fixed"]]
+    for o in OPTIONS:
+        if o["option_id"] == "solar_pv_upgrade":
+            o["generation_kwh_per_unit_year"] = round(pvgis["totals"]["fixed"]["E_y"])
+            o["source"] = "generation: PVGIS for EPFL (10 deg tilt, south, 14% losses); prices: estimate"
     footprint = json.loads((RAW / "epfl_bc_footprint.geojson").read_text())["features"][0]
     raw_rooms = json.loads((RAW / "epfl_bc_rooms.geojson").read_text())["features"]
     fp_ring = footprint["geometry"]["coordinates"][0][0]
@@ -360,9 +475,10 @@ def main():
         option = f"{group}_none" if group == "solar_pv" else f"{group}_current"
         suffix = f":{serves.replace(' ', '')}" if serves else ""
         r = by_id[room_id]
+        served = int(serves.split()[1]) if serves.startswith("floor ") else None
         inv.append(dict(item_id=f"{room_id}:{group}{suffix}", room_id=room_id, floor=r["floor"], group=group,
-                        option_id=option, units=units, age_years=AGES[group], serves=serves or room_id,
-                        source=MADE))
+                        option_id=option, units=units, age_years=age_of(group, r, served),
+                        serves=serves or room_id, source=MADE))
 
     for r in rooms:
         t, a, s = r["type"], r["area_m2"], r["seats"]
@@ -395,7 +511,7 @@ def main():
     heated_total = sum(heated_by_floor.values())
     add("BC_ROOF", "heating_cooling", int(round(heated_total * 0.04, -1)), serves="building")  # ~40 W/m2
     add("BC_991.0", "water_heater", 1, serves="building")
-    add("BC_ROOF", "solar_pv", 250, serves="building")
+    add("BC_ROOF", "solar_pv", PV_MAX_KWP_ROOF_HP, serves="building")
 
     # ---- write CSVs
     def write(name, cols, rows):
@@ -407,18 +523,21 @@ def main():
     write("rooms.csv", ["room_id", "code", "floor", "type", "area_m2", "seats", "centroid_x_m", "centroid_y_m",
                         "heated", "cooled", "type_source"], rooms)
     write("room_types.csv",
-          ["type", "description", "m2_per_seat", "schedule", "lighting_hours_per_workday", "lighting_days",
-           "m2_per_fixture", "heated", "cooled", "has_blinds", "source"],
-          [dict(type=t, description=v[0], m2_per_seat=v[1] or "", schedule=v[2], lighting_hours_per_workday=v[3],
-                lighting_days=v[4], m2_per_fixture=v[5] or "", heated=v[6], cooled=v[7], has_blinds=v[8],
-                source=MADE) for t, v in ROOM_TYPES.items()])
+          ["type", "description", "m2_per_seat", "counts_toward_population", "schedule",
+           "lighting_hours_per_workday", "lighting_days", "m2_per_fixture", "heated", "cooled", "has_blinds",
+           "source"],
+          [dict(type=t, description=v[0], m2_per_seat=v[1] or "", counts_toward_population=int(t in POPULATION_TYPES),
+                schedule=v[2], lighting_hours_per_workday=v[3], lighting_days=v[4], m2_per_fixture=v[5] or "",
+                heated=v[6], cooled=v[7], has_blinds=v[8], source=MADE) for t, v in ROOM_TYPES.items()])
     write("options.csv", OPT_COLS, OPTIONS)
     write("inventory.csv", ["item_id", "room_id", "floor", "group", "option_id", "units", "age_years", "serves",
                             "source"], inv)
 
-    # schedules: share of seats (or of event participants) occupied, by hour starting at that hour
-    office = {7: .10, 8: .40, 9: .65, 10: .70, 11: .70, 12: .40, 13: .60, 14: .70, 15: .70, 16: .65,
-              17: .45, 18: .20, 19: .08, 20: .03}
+    # schedules: share of seats (or of event participants) occupied, by hour starting at that hour.
+    # office: share of staff present (peak = daily_attendance_share) x staff per desk = share of desks occupied
+    staff_present = {7: .10, 8: .40, 9: .65, 10: .70, 11: .70, 12: .40, 13: .60, 14: .70, 15: .70, 16: .65,
+                     17: .45, 18: .20, 19: .08, 20: .03}
+    office = {h: round(v * STAFF_PER_DESK, 3) for h, v in staff_present.items()}
     meeting = {9: .30, 10: .45, 11: .45, 12: .10, 13: .30, 14: .45, 15: .45, 16: .35, 17: .15}
     teaching = {8: .55, 9: .65, 10: .65, 11: .60, 12: .10, 13: .50, 14: .60, 15: .60, 16: .50, 17: .30,
                 18: .15, 19: .05}
@@ -447,8 +566,8 @@ def main():
              description="Area of cooled room types (offices, meeting, teaching, makerspace)", source="derived"),
         dict(key="desks", value=desks, unit="desks", description="Desks in offices and the makerspace",
              source="derived"),
-        dict(key="headcount_staff", value=round(desks * 0.9), low=round(desks * 0.8), high=desks, unit="people",
-             description="Researchers and staff with a desk in the building", source=MADE),
+        dict(key="headcount_staff", value=round(desks * STAFF_PER_DESK), low=round(desks * 0.8), high=desks,
+             unit="people", description="Researchers and staff with a desk in the building", source=MADE),
         dict(key="teaching_seats", value=teaching_seats, unit="seats",
              description="Seats in classrooms, lecture rooms and computer rooms", source="derived"),
         dict(key="floor_height_m", value=FLOOR_HEIGHT, low=3.6, high=4.4, unit="m",
@@ -456,8 +575,9 @@ def main():
         dict(key="workdays_per_year", value=250, unit="days",
              description="260 weekdays minus ~9-10 public holidays in Vaud", source=E),
         dict(key="daily_attendance_share", value=0.7, low=0.55, high=0.85, unit="share",
-             description="Share of staff in the building on a workday (remote work, travel, vacation, sickness); "
-                         "equals the peak of office_weekday in schedule.csv", source=E),
+             description="Share of staff in the building on a workday. Already includes all absence: remote work, "
+                         "travel, vacation and today's sick days (sick_days_per_employee_year, ~3% of workdays). "
+                         "Peak of office_weekday in schedule.csv = this x staff per desk", source=E),
         dict(key="heating_demand_kwh_m2_year", value=50, low=35, high=70, unit="kWh/m2/yr",
              description="Useful heat per heated m2, including ventilation losses with today's AHUs (50% heat "
                          "recovery) and the glass atrium roof", source=E),
@@ -475,6 +595,32 @@ def main():
              description="Price received for surplus solar electricity sold to the grid", source=E),
         dict(key="pv_subsidy_chf_per_kwp", value=300, low=150, high=450, unit="CHF/kWp",
              description="One-off federal subsidy for new solar installations", source=E),
+        dict(key="pv_self_consumption_share", value=0.8, low=0.65, high=0.95, unit="share",
+             description="Share of solar output used in the building (worth electricity_price_chf_kwh); the rest "
+                         "is sold at pv_feed_in_chf_kwh. High because servers and ventilation run at midday",
+             source=E),
+        dict(key="pv_max_kwp_with_roof_heat_pumps", value=PV_MAX_KWP_ROOF_HP, low=200, high=300, unit="kWp",
+             description="Largest solar array that fits next to today's rooftop heat pump units and AHUs (around "
+                         "the atrium skylight)", source=E),
+        dict(key="pv_max_kwp_without_roof_heat_pumps", value=PV_MAX_KWP_NO_ROOF_HP, low=240, high=340, unit="kWp",
+             description="Largest solar array if the lake-water heat pump (heating_cooling_premium) frees the roof",
+             source=E),
+        # financial state: EPFL as owner-occupier (pays the energy bill and the salaries; no rent paid)
+        dict(key="discount_rate_real", value=0.03, low=0.02, high=0.05, unit="1/yr",
+             description="Real discount rate for NPV (all prices are in real 2026 CHF, no inflation)", source=E),
+        dict(key="horizon_years", value=15, low=10, high=25, unit="years",
+             description="Evaluation horizon; year 1 is the first simulated year", source=MADE),
+        dict(key="capex_budget_chf", value=1500000, low=1000000, high=2500000, unit="CHF",
+             description="What facilities can spend on upgrades up front in year 1", source=MADE),
+        dict(key="opening_reserve_chf", value=2500000, low=2000000, high=3500000, unit="CHF",
+             description="Building reserve at the start of year 1; upgrades are paid from it", source=MADE),
+        dict(key="min_reserve_chf", value=1000000, low=500000, high=1500000, unit="CHF",
+             description="Floor the reserve must not fall below (emergency repairs)", source=MADE),
+        dict(key="other_operating_cf_chf_year", value=350000, low=300000, high=450000, unit="CHF/yr",
+             description="Yearly budget EPFL allocates to the building, net of costs not modelled (cleaning, "
+                         "security); pays energy, maintenance and consumables, the rest goes into the reserve. "
+                         "Salaries are not paid from it; people effects are valued with salary_cost_chf_year",
+             source=MADE),
         dict(key="salary_cost_chf_year", value=110000, low=80000, high=140000, unit="CHF/yr/person",
              description="Fully loaded cost per staff member (mix of PhD students, postdocs, professors, admin)",
              source=E),
@@ -485,28 +631,56 @@ def main():
         dict(key="green_loan_rate_pct", value=2.5, low=1.5, high=4.0, unit="%/yr",
              description="Interest on a green loan for energy upgrades", source=E),
     ]
-    write("assumptions.csv", ["key", "value", "low", "high", "unit", "description", "source"], A)
+    write("assumptions.csv", ["key", "value", "low", "high", "unit", "description", "source"], A + LITERATURE)
 
-    write("events.csv", ["event_id", "name", "parameter", "change", "value", "start_month", "duration_days",
-                         "description", "source"], [
-        dict(event_id="hackathon_weekend", name="Hackathon weekend", parameter="event_people", change="set",
-             value=300, start_month=11, duration_days=2,
-             description="LauzHack: ~300 people use the whole building day and night for a weekend (cafe, halls, "
-                         "classrooms and computer rooms as hacking space); occupancy follows the hackathon column "
-                         "of schedule.csv.", source="team (LauzHack 2026 attendance)"),
-        dict(event_id="new_lab", name="New research lab moves in", parameter="headcount_staff", change="add",
-             value=60, start_month=3, duration_days="",
-             description="A new lab brings 60 people: more desks, plug loads, coffee and hot water, and more air "
-                         "needed per floor.", source=MADE),
-        dict(event_id="energy_price_spike", name="Energy price spike", parameter="electricity_price_chf_kwh",
-             change="multiply", value=1.8, start_month=1, duration_days=365,
+    # years count from 1 (first simulated year); empty end_year = until the end of the horizon;
+    # empty months = the whole year
+    write("events.csv", ["event_id", "name", "kind", "parameter", "change", "value", "start_year", "end_year",
+                         "months", "duration_hours", "description", "source"], [
+        dict(event_id="energy_price_spike", name="Energy price spike", kind="annual",
+             parameter="electricity_price_chf_kwh", change="multiply", value=1.8, start_year=3, end_year=3,
              description="Electricity prices jump for a year, similar to the 2022-23 European energy crisis.",
              source=E),
-        dict(event_id="heatwave_summer", name="Heatwave summer", parameter="cooling_demand_kwh_m2_year",
-             change="multiply", value=1.5, start_month=6, duration_days=92,
-             description="A hot summer like 2003 or 2022: cooling demand up ~50% in June-August; the glass atrium "
-                         "and rooms without automatic blinds overheat.", source=E),
+        dict(event_id="new_lab", name="New research lab moves in", kind="annual", parameter="headcount_staff",
+             change="add", value=60, start_year=4, end_year="",
+             description="A new lab brings 60 people for good: more than the desks available, more plug loads, "
+                         "coffee and hot water, and more air needed per floor.", source=MADE),
+        dict(event_id="heatwave_summer", name="Heatwave summer", kind="annual",
+             parameter="cooling_demand_kwh_m2_year", change="multiply", value=1.5, start_year=6, end_year=6,
+             months="6;7;8",
+             description="A hot summer like 2003 or 2022: cooling demand in June-August is 1.5x normal; the glass "
+                         "atrium and rooms without automatic blinds overheat.", source=E),
+        dict(event_id="hackathon_weekend", name="Hackathon weekend", kind="stress_test", parameter="event_people",
+             change="set", value=300, months="11", duration_hours=24,
+             description="LauzHack: ~300 people hack for 24 hours (Saturday noon to Sunday noon) in the cafe, halls, "
+                         "classrooms and computer rooms, mostly on the ground floor. Hour-by-hour check, not a money "
+                         "event; occupancy follows the hackathon column of schedule.csv.",
+             source="team (LauzHack 2026 attendance)"),
     ])
+
+    # monthly shares: heating from SIA 380/1 heating degree days (20/12), cooling from degree days above
+    # 18 C, solar from PVGIS; weather = Open-Meteo daily means 2015-2024 at EPFL
+    daily = json.loads((RAW / "openmeteo_lausanne_daily.json").read_text())["daily"]
+    hdd, cdd = [0.0] * 12, [0.0] * 12
+    for day, t in zip(daily["time"], daily["temperature_2m_mean"]):
+        if t is None:
+            continue
+        m = int(day[5:7]) - 1
+        if t < 12:
+            hdd[m] += 20 - t
+        if t > 18:
+            cdd[m] += t - 18
+
+    def shares(xs):
+        s = [round(x / sum(xs), 3) for x in xs]
+        s[s.index(max(s))] += round(1 - sum(s), 3)  # make the column sum exactly 1
+        return [round(v, 3) for v in s]
+
+    hs, cs, ps = shares(hdd), shares(cdd), shares(pv_month)
+    write("monthly.csv", ["month", "heating_share", "cooling_share", "solar_share", "source"],
+          [dict(month=m + 1, heating_share=hs[m], cooling_share=cs[m], solar_share=ps[m],
+                source="Open-Meteo 2015-2024 degree days (heating SIA 20/12, cooling >18 C); PVGIS solar")
+           for m in range(12)])
 
     # ---- geometry for the 3D scene
     floor_area_by = defaultdict(float)
@@ -549,7 +723,7 @@ def main():
         where[i["group"]].add(by_id[i["room_id"]]["type"])
     for g, n in totals.items():
         lines.append(f"| {g} | {n} | {unit_of[g]} | {', '.join(sorted(where[g]))} |")
-    lines += ["", f"Staff with desks: {round(desks * 0.9)} (of {desks} desks). Heated area {heated_total:.0f} m², "
+    lines += ["", f"Staff with desks: {round(desks * STAFF_PER_DESK)} (of {desks} desks). Heated area {heated_total:.0f} m², "
                   f"cooled area {cooled_area:.0f} m²."]
     (DATA / "building_summary.md").write_text("\n".join(lines) + "\n")
 
