@@ -1,5 +1,5 @@
 import { ArrowLeft, ArrowRight, Dices, Eye, EyeOff, Pause, Play, TriangleAlert } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useLocation, useSearchParams } from 'react-router';
 import type { Catalog, FutureSample, FuturePathView, Scenario, Swap } from '@/api/types';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -15,6 +15,7 @@ import { chf, chfShort, kwh, pricePerKwh, years } from './format';
 import { flagText, groupLabels, isContextFlag, seriesColor, whatIfDetails, whatIfLabels } from './labels';
 import MoneyBreakdown from './MoneyBreakdown';
 import SimulationIntro from './SimulationIntro';
+import PlayStory, { storyBeats } from './PlayStory';
 import PlansChart, { paybackYear, type ExampleNote, type PlanLine } from './PlansChart';
 import { FUTURES_N, useEngine, WHAT_IFS, type WhatIf } from './useEngine';
 
@@ -30,7 +31,7 @@ const TIMINGS: { value: Timing; label: string }[] = [
   { value: 5, label: 'In year 5' },
   { value: 8, label: 'In year 8' },
 ];
-const MS_PER_YEAR = 250;
+const MS_PER_YEAR = 400;
 /** One fixed colour per plan, by its place in the list. The first is the brand orange. */
 const PLAN_COLORS = ['#c34e00', '#2f6fc0', '#a3368f', '#0f766e', '#6f7f1f', '#7c5a00'];
 
@@ -162,16 +163,25 @@ export default function ResultsPage() {
   const [exampleIndex, setExampleIndex] = useState<number | null>(null);
   const example = exampleIndex !== null && futures?.samples.length ? futures.samples[exampleIndex % futures.samples.length] : null;
 
+  // Play always plays one real future, so the events it tells match the line it draws.
+  // Without a chosen example it pins the typical future: the one closest to the middle line.
+  const typicalRef = useRef(0);
+
   /** Play starts from today; while playing it pauses; while paused it resumes. */
   function play() {
     if (playState === 'playing') { setPlayState('paused'); return; }
-    if (playState === 'idle') { setPlayToken(token => token + 1); setPlayYear(0); }
+    if (playState === 'idle') {
+      if (exampleIndex === null) setExampleIndex(typicalRef.current);
+      setPlayToken(token => token + 1);
+      setPlayYear(0);
+    }
     setPlayState('playing');
   }
 
-  // After the simulating screen, the chart plays itself once, so the story starts moving straight away.
+  // After the simulating screen, the chart plays the typical future once, so the story starts moving straight away.
   const endIntro = useCallback(() => {
     setIntro(false);
+    setExampleIndex(index => index ?? typicalRef.current);
     setPlayToken(token => token + 1);
     setPlayYear(0);
     setPlayState('playing');
@@ -202,6 +212,14 @@ export default function ResultsPage() {
   const lines = useMemo(() => planLines.filter((line): line is PlanLine => line !== null && (line.id === selected || !hidden.has(line.id))),
     [planLines, selected, hidden]);
   const failures = useMemo(() => planFailures(example, chosen, horizon), [example, chosen, horizon]);
+  const typicalIndex = useMemo(() => {
+    const middle = planLines[selected]?.middle;
+    if (!futures?.samples.length || !middle) return 0;
+    const distance = (sample: FutureSample) => sample.paths[`p${selected}`][view].slice(0, horizon)
+      .reduce((sum, value, k) => sum + Math.abs(value - middle[k + 1]), 0);
+    return futures.samples.reduce((best, sample, k, all) => (distance(sample) < distance(all[best]) ? k : best), 0);
+  }, [futures, planLines, selected, view, horizon]);
+  typicalRef.current = typicalIndex;
   const notes = useMemo(() => exampleNotes(failures), [failures]);
 
   function selectPlan(index: number) {
@@ -264,6 +282,7 @@ export default function ResultsPage() {
   const flags = (finance?.flags ?? []).filter(flag => !isContextFlag(flag) && (flag.year === undefined || flag.year <= horizon));
   const contextFlags = (finance?.flags ?? []).filter(flag => isContextFlag(flag) && (flag.year === undefined || flag.year <= horizon));
   const subject = multi ? plans[selected]?.name : 'the upgrade';
+  const beats = example ? storyBeats(example, failures, { boughtIn, purchase, timing, horizon, subject }) : [];
   const today = plan?.snapshot_baseline.building;
   const after = plan?.snapshot.building;
 
@@ -472,6 +491,8 @@ export default function ResultsPage() {
           </Alert>
         ) : <Skeleton className="h-[28rem] w-full" />}
 
+        <PlayStory beats={beats} playYear={playState === 'idle' ? null : playYear} planColor={PLAN_COLORS[selected % PLAN_COLORS.length]} empty={!example} />
+
         <p className="flex flex-wrap gap-x-6 gap-y-1 text-sm text-muted-foreground">
           <span className="flex items-center gap-2">
             <span className="h-3 w-5 rounded-sm" style={{ background: `color-mix(in oklch, ${PLAN_COLORS[selected % PLAN_COLORS.length]} 20%, transparent)` }} />
@@ -498,7 +519,7 @@ export default function ResultsPage() {
           <p className="h-16 overflow-hidden text-sm text-pretty" aria-live="polite">
             {example && futures ? (
               <>
-                <span className="font-semibold">Future {((exampleIndex ?? 0) % futures.samples.length) + 1} of {futures.samples.length}. </span>
+                <span className="font-semibold">Future {((exampleIndex ?? 0) % futures.samples.length) + 1} of {futures.samples.length}{(exampleIndex ?? 0) % futures.samples.length === typicalIndex ? ', the one closest to the middle line' : ''}. </span>
                 {storyText(example, failures)}
               </>
             ) : (
