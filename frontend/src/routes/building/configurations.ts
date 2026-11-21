@@ -24,4 +24,4 @@ export function storeConfigurations(configurations: SavedConfiguration[]) {
   localStorage.setItem(storageKey, JSON.stringify(configurations));
 }
 
-export const configurationName = (id: number) => `Configuration ${id}`;
+export const configurationName = (position: number) => `Configuration ${position}`;
