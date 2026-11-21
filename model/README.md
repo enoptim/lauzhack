@@ -32,8 +32,8 @@ Timing per swap: `"now"` (default), `"end_of_life"`, or `"year": k` to phase it 
 |---|---|
 | `model_assumptions.csv` | Physics and people-effect parameters, plus placeholders for numbers the data team is adding (financial state, solar self-consumption, roof space). A key in the team's `assumptions.csv` always wins. |
 | `option_drivers.csv` | People-effect values per option: lighting, screen and glare quality, daylight, CO2 and humidity control, seconds per drink, amenity, enclosed printers, hot-desking. |
-| `events_timing.csv` | Start/end year and kind (`annual` or `stress_test`) until the team adds them to `events.csv`. |
-| `monthly.csv` | Placeholder monthly heating, cooling and solar shares; a team `monthly.csv` replaces it. |
+| `events_timing.csv` | Fallback start/end year and kind. Unused now: the team's `events.csv` has these columns, and they win. |
+| `monthly.csv` | Fallback monthly heating, cooling and solar shares. Unused now: the team's `monthly.csv` replaces it. |
 
 ## Modelling choices
 - Old units are replaced like-for-like when they die (overdue ones at year 0). Upgrades are compared against that "do nothing" path, so an overdue upgrade only costs its premium.
