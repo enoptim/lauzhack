@@ -1,3 +1,4 @@
+import Basement from './Basement';
 import TopCantina from './TopCantina';
 import TopLanding from './TopLanding';
 import GroundFloor from './GroundFloor';
@@ -87,6 +88,7 @@ function Facade({ floors }: { floors: number }) {
 }
 
 export default function OfficeBuilding({ floor, equipmentSelection }: { floor: number | null; equipmentSelection?: FloorEquipmentSelection }) {
+  if (floor === -1) return <Basement waterHeaterSelection={equipmentSelection?.water_heater} />;
   const visibleFloors = floor === null ? FLOOR_COUNT : floor + 1;
   return <group scale={[WIDTH / LAYOUT_WIDTH, 1, LENGTH / LAYOUT_LENGTH]}>
     <Box size={[48, .4, 108]} color="#bfc5bc" position={[0, -.5, 0]}/>

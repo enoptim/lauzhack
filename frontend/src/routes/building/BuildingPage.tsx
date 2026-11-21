@@ -4,17 +4,17 @@ import { useNavigate } from 'react-router';
 import BuildingScene from '@/components/BuildingScene';
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { FLOOR_COUNT } from '@/data/building';
-import { draftKey, equipmentForFloor, equipmentLabels, lightingItems, type EquipmentGroup, type FloorSwap } from './equipment';
+import { draftKey, equipmentForFloor, equipmentLabels, lightingItems, type EquipmentGroup, type EquipmentSwap } from './equipment';
 
 const keepCurrent = 'keep-current';
 const selectableOutline = '#f5ad20';
 const selectedOutline = '#007eab';
-const floorLabel = (floor: number) => floor === 0 ? 'Ground floor' : `Floor ${floor}`;
+const floorLabel = (floor: number) => floor === -1 ? 'Basement' : floor === 0 ? 'Ground floor' : `Floor ${floor}`;
 
 export default function BuildingPage() {
   const [floor, setFloor] = useState<number | null>(null);
   const [selectedGroup, setSelectedGroup] = useState<EquipmentGroup | null>(null);
-  const [draft, setDraft] = useState(() => new Map<string, FloorSwap>());
+  const [draft, setDraft] = useState(() => new Map<string, EquipmentSwap>());
   const navigate = useNavigate();
   const floorLights = lightingItems.filter(item => item.floor === floor);
   const equipment = floor !== null && selectedGroup ? equipmentForFloor(floor, selectedGroup) : null;
@@ -25,7 +25,9 @@ export default function BuildingPage() {
     setDraft(previous => {
       const next = new Map(previous);
       if (option === keepCurrent) next.delete(key);
-      else next.set(key, { group: selectedGroup, floor, option });
+      else next.set(key, selectedGroup === 'water_heater'
+        ? { group: selectedGroup, option }
+        : { group: selectedGroup, floor, option });
       return next;
     });
   }
@@ -42,6 +44,7 @@ export default function BuildingPage() {
       <div className="min-h-0">
         <BuildingScene floor={floor} equipmentSelection={floor !== null ? {
           monitors: selectionFor('monitors'), computers: selectionFor('computers'), coffee: selectionFor('coffee'),
+          water_heater: selectionFor('water_heater'),
         } : undefined}>
           {floor !== null && floorLights.map(item => (
             <mesh
@@ -72,6 +75,7 @@ export default function BuildingPage() {
             <SelectContent>
               <SelectGroup>
                 <SelectItem value="all">Whole building</SelectItem>
+                <SelectItem value="-1">Basement</SelectItem>
                 {Array.from({ length: FLOOR_COUNT }, (_, level) => (
                   <SelectItem key={level} value={String(level)}>{floorLabel(level)}</SelectItem>
                 ))}
@@ -83,7 +87,9 @@ export default function BuildingPage() {
           <section className="flex flex-col gap-2">
             <h2 className="font-medium">{equipmentLabels[selectedGroup]} · {floorLabel(floor)}</h2>
             <p className="text-sm text-muted-foreground">Installed: {equipment.installed?.name ?? 'Mixed equipment'}</p>
-            <label htmlFor="equipment-option" className="text-sm font-medium">Configuration for the whole floor</label>
+            <label htmlFor="equipment-option" className="text-sm font-medium">
+              {selectedGroup === 'water_heater' ? 'Configuration for the whole building' : 'Configuration for the whole floor'}
+            </label>
             <Select value={draft.get(draftKey(floor, selectedGroup))?.option ?? keepCurrent} onValueChange={chooseOption}>
               <SelectTrigger id="equipment-option" className="w-full"><SelectValue /></SelectTrigger>
               <SelectContent position="popper" className="w-(--radix-select-trigger-width)">
@@ -99,6 +105,7 @@ export default function BuildingPage() {
         ) : (
           <p className="text-sm text-muted-foreground">
             {floor === null ? 'Choose a floor to see its equipment.'
+              : floor === -1 ? 'Click the outlined hot-water tank to configure the building’s water heating.'
               : 'Click any outlined item to configure that equipment for the whole floor.'}
           </p>
         )}

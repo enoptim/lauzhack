@@ -37,7 +37,7 @@ export default function BuildingScene({ floor, children, equipmentSelection }: {
       />
       <OfficeBuilding floor={floor} equipmentSelection={equipmentSelection} />
       {children}
-      <Campus />
+      {floor !== -1 && <Campus />}
       <MountainHorizon />
       <OrbitControls target={initialTarget} minDistance={8} maxDistance={300} maxPolarAngle={Math.PI / 2.05} />
     </Canvas>
