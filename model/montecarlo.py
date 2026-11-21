@@ -157,8 +157,9 @@ def load_scripted(data, name):
     - price_path: a number (flat) or a list with one multiplier per year.
     - events: [{id, start_year, end_year}].
     - remaining_life: {item_id: years} for units whose failure the script sets.
-    - Every other unit with a lifetime fails at its nominal time (lifetime - age) if that is still ahead;
-      if it is already overdue, it keeps running for the whole horizon.
+    - other_units "nominal" (default): every other unit fails at its nominal time (lifetime - age) if that
+      is still ahead; if it is already overdue, it keeps running for the whole horizon.
+      "keep_running": every other unit keeps running, so only the script's failures happen (a clean demo).
     - params: people-effect strengths at their central values, plus any the script sets.
     - No install_lives: units installed during the run live exactly their nominal life, so the story stays
       predictable."""
@@ -176,13 +177,16 @@ def load_scripted(data, name):
         if e["id"] not in data["events"]:
             raise ValueError(f"{name}: unknown event {e['id']!r}")
         events.append({"id": e["id"], "start_year": int(e["start_year"]), "end_year": e.get("end_year")})
+    others = spec.get("other_units", "nominal")
+    if others not in ("nominal", "keep_running"):
+        raise ValueError(f"{name}: other_units must be 'nominal' or 'keep_running'")
     remaining = {}
     for i in data["items"]:
         life = data["options"][i["option"]]["lifetime_years"]
         if not life:
             continue
         nominal = life - (i["age"] or 0)
-        remaining[i["id"]] = nominal if nominal > 0 else engine.INF
+        remaining[i["id"]] = nominal if (nominal > 0 and others == "nominal") else engine.INF
     for iid, r in spec.get("remaining_life", {}).items():
         if iid not in data["item_by_id"]:
             raise ValueError(f"{name}: unknown item {iid!r}")

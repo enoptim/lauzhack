@@ -44,13 +44,12 @@ def test_floor0_ventilation_fails_at_time_2():
     assert plans[VENT0][0] == (2, "ventilation_current", "failure")
 
 
-def test_overdue_units_keep_running_in_the_script():
+def test_only_the_scripted_failure_happens_in_the_demo():
     f = _future()
-    overdue = [i for i in D["items"] if D["options"][i["option"]]["lifetime_years"]
-               and i["age"] >= D["options"][i["option"]]["lifetime_years"] and i["id"] != VENT0]
-    assert overdue and all(f["remaining_life"][i["id"]] == engine.INF for i in overdue)
+    others = [i for i in D["items"] if D["options"][i["option"]]["lifetime_years"] and i["id"] != VENT0]
+    assert others and all(f["remaining_life"][i["id"]] == engine.INF for i in others)   # other_units: keep_running
     _, plans, _ = engine.install_plans(D, [], f)
-    assert all(plans[i["id"]] == [] for i in overdue)
+    assert {iid for iid, ins in plans.items() if ins} == {VENT0}
 
 
 # --- the engine fix: an upgrade at the failure time is an emergency
@@ -63,11 +62,12 @@ def test_upgrade_at_the_failure_time_is_an_emergency():
 
 def test_a_firm_year_is_never_pulled_into_the_past():
     item = D["item_by_id"][VENT0]
-    firm = ("ventilation_mid", engine.FirmYear(3))
+    firm = ("ventilation_mid", engine.FirmYear(3, [(3, "ventilation_mid")]))
     assert engine.item_plan(D, item, ("ventilation_mid", 3), 15, 1.5)[0] == (2, "ventilation_mid", "failure")  # planning: pulled
     assert engine.item_plan(D, item, firm, 15, 1.5)[:2] == [(2, "ventilation_current", "failure"),
                                                           (3, "ventilation_mid", "planned")]               # play: exactly then
-    assert engine.item_plan(D, item, ("ventilation_mid", engine.FirmYear(2)), 15, 1.5)[0] == (2, "ventilation_mid", "failure")
+    assert engine.item_plan(D, item, ("ventilation_mid", engine.FirmYear(2, [(2, "ventilation_mid")])), 15, 1.5)[0] == \
+        (2, "ventilation_mid", "failure")
 
 
 def test_upgrade_at_the_failure_time_pays_the_premium():
@@ -95,12 +95,12 @@ def test_playing_with_no_decisions():
             seen[st["t"]] = _types(st)
             assert len(st["history"]) == st["t"]                             # nothing after now
             assert all(row["year"] <= st["t"] for row in st["history"])
-    assert times == sorted(set(times))
-    assert ("event_announced", "new_lab") in seen[1]                          # a year's notice before year 3
-    assert ("failure", "ventilation") in seen[2] and ("event_started", "new_lab") in seen[2]
-    assert ("new_flag", "desk_shortfall") in seen[3]
-    assert ("event_started", "heatwave_summer") in seen[4]
-    assert ("event_started", "energy_price_spike") in seen[5] and ("price_jump", None) in seen[5]
+    assert times == [1, 2, 3, 4, 5]                                           # the five demo moments
+    assert seen[1] == {("event_announced", "new_lab")}                        # a year's notice before year 3
+    assert seen[2] == {("failure", "ventilation"), ("event_started", "new_lab")}
+    assert seen[3] == {("new_flag", "desk_shortfall")}                        # no reserve warning: not the player's doing
+    assert seen[4] == {("event_started", "heatwave_summer")}
+    assert seen[5] == {("event_started", "energy_price_spike")}               # the event explains the price jump
     vent = next(r for r in S._failures(D, s)[2] if r["group"] == "ventilation")
     assert vent["floors"] == [0] and vent["item_ids"] == [VENT0]
     ref = engine.simulate(D, [], future=_future(), detail_years=())
@@ -110,9 +110,10 @@ def test_playing_with_no_decisions():
 
 
 def test_failures_are_grouped_per_group():
-    s, st = _play_to(4)
-    blinds = [r for r in st["reasons"] if r["type"] == "failure" and r["group"] == "blinds"]
-    assert len(blinds) == 1 and len(blinds[0]["item_ids"]) > 1 and len(blinds[0]["floors"]) > 1
+    s, _ = S.start(D, montecarlo.load_scripted(D, NAME) | {"remaining_life": _sampled()["remaining_life"]}, "x")
+    reasons = [r for rs in S._failures(D, s).values() for r in rs]
+    assert len({(r["time"], r["group"]) for r in reasons}) == len(reasons)    # one reason per group and time
+    assert any(len(r["item_ids"]) > 1 and len(r["floors"]) > 1 for r in reasons)
 
 
 def test_failure_reactions_preview_every_option():
@@ -186,6 +187,79 @@ def test_same_decisions_give_the_same_game():
     _, a = _play_to(99, plan)
     _, b = _play_to(99, plan)
     assert a == b and a["ended"]
+
+
+# --- the plan: scheduled, done and planned
+def test_a_scheduled_change_runs_without_stopping():
+    plan = [{"group": "lighting", "option": "lighting_mid", "year": 3}]
+    s, st = S.start(D, _future(), NAME)
+    st = S.decide(D, s, plan)
+    assert st["plan"] == {"done": [], "planned": [plan[0] | {"firm": True}]}
+    times = []
+    while not st["ended"]:
+        st = S.next_pause(D, s)
+        times.append(st["t"])
+    assert times == [1, 2, 3, 4, 5, 15]                                       # no extra stop for the planned change
+    plain = engine.simulate(D, [], future=_future(), detail_years=())
+    assert st["history"][2]["capex"] > plain["years"][2]["capex"]             # bought in year 3, as planned
+    assert st["plan"]["done"] == [plan[0] | {"firm": True}]
+
+
+def test_set_plan_replaces_only_what_is_not_done():
+    s, st = S.start(D, _future(), NAME)
+    S.decide(D, s, [{"group": "lighting", "option": "lighting_mid", "year": "now"},
+                    {"group": "blinds", "option": "blinds_upgrade", "year": 4}])
+    st = S.next_pause(D, s)
+    st = S.next_pause(D, s)                                                   # t = 2
+    st = S.set_plan(D, s, [{"group": "solar_pv", "option": "solar_pv_upgrade", "year": 3}])
+    assert [d["group"] for d in st["plan"]["done"]] == ["lighting"]           # locked
+    assert [d["group"] for d in st["plan"]["planned"]] == ["solar_pv"]        # the blinds plan is gone
+    try:
+        S.set_plan(D, s, [{"group": "blinds", "option": "blinds_upgrade", "year": 1}])
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("a plan step in the past was accepted")
+
+
+def test_choosing_an_upgrade_for_a_broken_unit_cancels_its_later_plan():
+    later = {"group": "ventilation", "option": "ventilation_mid", "item_id": VENT0, "year": 4}
+    s, st = S.start(D, _future(), NAME)
+    S.decide(D, s, [later])
+    st = S.next_pause(D, s)
+    st = S.next_pause(D, s)                                                   # t = 2: it broke before year 4
+    k = next(i for i, r in enumerate(st["reasons"]) if r["type"] == "failure")
+    reaction = next(r for r in st["reactions"] if r["reason"] == k)
+    assert reaction["planned_later"] == [later | {"firm": True}]
+    st = S.decide(D, s, [{"group": "ventilation", "option": "ventilation_premium", "item_id": VENT0, "year": "now"}])
+    assert st["plan"]["planned"] == [{"group": "ventilation", "option": "ventilation_premium", "item_id": VENT0,
+                                      "year": 2, "firm": True}]
+    _, plans, _ = engine.install_plans(D, s["decisions"], s["future"])
+    assert plans[VENT0] == [(2, "ventilation_premium", "failure")]
+
+
+def test_a_second_change_to_the_same_item_keeps_the_first():
+    s, st = S.start(D, _future(), NAME)
+    st = S.next_pause(D, s)                                                   # t = 1
+    st = S.decide(D, s, [{"group": "lighting", "option": "lighting_mid", "year": "now"}])
+    year1 = st["history"][0]
+    while st["t"] < 5:
+        st = S.next_pause(D, s)
+    st = S.decide(D, s, [{"group": "lighting", "option": "lighting_premium", "year": "now"}])
+    assert st["history"][0] == year1                                          # the year-1 purchase is still there
+    _, plans, _ = engine.install_plans(D, s["decisions"], s["future"])
+    assert plans["BC_990.0:lighting"] == [(1, "lighting_mid", "planned"), (5, "lighting_premium", "planned")]
+
+
+def test_overspending_is_flagged_but_doing_nothing_is_not():
+    s, st = S.start(D, _future(), NAME)
+    big = [{"group": g, "option": f"{g}_premium", "year": "now"} for g in ("lighting", "ventilation", "heating_cooling", "monitors")]
+    S.decide(D, s, big)
+    flags = []
+    while not st["ended"]:
+        st = S.next_pause(D, s)
+        flags += [r["details"].get("flag") for r in st["reasons"] if r["type"] == "new_flag"]
+    assert "reserve_below_minimum" in flags
 
 
 # --- random lives for units installed later

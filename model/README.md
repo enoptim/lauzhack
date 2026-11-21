@@ -82,38 +82,39 @@ Every future is an ordinary `simulate()` run, so all accounting identities hold 
 Note: in the deterministic run, overdue units are replaced as planned at year 0. In the futures they keep running until they fail, so upgrading now costs the full price rather than only the premium over a like-for-like replacement.
 
 ## Play through one future (`session.py`)
-Instead of running 15 years at once, the player lives through one future. The run pauses whenever something happens, the player can react, and the past never changes. At the end the player's path is compared with doing nothing in the same future.
+Instead of running 15 years at once, the player lives through one future: **your plan runs until something happens; then you can change the parts that haven't happened yet.** The past never changes. At the end the player's path is compared with doing nothing in the same future.
 
-Time: time t is the end of year t, and t = 0 is today. A decision at a pause at time t has `"year": t`. It is installed and paid at the end of year t, so it is part of year t's cash row, and it is active from year t + 1. Rows for earlier years never change.
+Time: time t is the end of year t, and t = 0 is today. A decision for year k is installed and paid at the end of year k (part of year k's cash row) and active from year k + 1.
 
-A session holds the future, the decisions so far and the current pause time. Every state comes from `engine.simulate` with those decisions in that future; the session only decides when to pause and what to show.
+The plan:
+- Decisions can be for now or for later years. The run carries them out on schedule without stopping.
+- At a pause at time t the plan has two parts: `done` (years before t, locked) and `planned` (year t or later). `decide` adds to the plan; `set_plan` replaces everything planned.
+- A newer decision for an item replaces that item's planned steps from its year on, never earlier ones. So choosing an upgrade for a broken unit now cancels the upgrade you had planned for it later, and buying mid lights in year 1 then premium lights in year 5 keeps both purchases.
+- Play-mode swaps are "firm" (`"firm": true`, `engine.FirmYear`): each goes in exactly in its year. Outside play mode a planned year is pulled forward when the old unit breaks first; in play mode that would rewrite the past.
 
 It pauses at the first time after now when:
-- a unit breaks (an install of kind "failure"). Failures at the same time are grouped per group: "Blinds on floors 0–3 reached end of life (470 windows)";
+- a unit breaks (an install of kind "failure"). The pause comes before anything is bought: the reactions offer every option for the broken items (like-for-like is the default if the player just continues), each previewed, plus any change still planned for them. Failures at the same time are grouped per group: "Blinds on floors 0–3 reached end of life (470 windows)". A replacement for a broken unit goes in as an emergency, with the failure premium;
 - an event is announced. An event starting in year Y with a notice period of n years (`event_notice_years_<event>` in `model_assumptions.csv`; the new lab has 1) is announced at time Y − 1 − n, so a player can buy laptops before the lab arrives;
 - an event starts (time Y − 1);
-- a warning appears in year T that was not there in year T − 1: not enough desks, a floor over its ventilation capacity, or the player's reserve below its minimum;
-- the electricity price for the next year rises more than `price_jump_pause_threshold` (20%).
+- a warning appears in year T that was not there in year T − 1: not enough desks, a floor over its ventilation capacity, or the player's reserve below its minimum *and* below where doing nothing would leave it (so the player is only warned about their own spending);
+- the electricity price for the next year rises more than `price_jump_pause_threshold` (20%), unless a price event starting then already explains it.
 
-Each state has `t`, `reasons`, `history` (finance rows for years 1 to t only, for the player and doing nothing: never later years), `snapshot` (the building in year t; at t = 0, today's building), `reactions` (for a failure: every option for the broken items, previewed at this time; for other reasons: groups worth looking at) and `situation` (structured facts for an LLM to narrate, all from the engine).
+Each state has `t`, `reasons`, `plan` (`done` and `planned`), `history` (finance rows for years 1 to t only, for the player and doing nothing: never later years), `snapshot` (the building in year t; at t = 0, today's building), `reactions` and `situation` (structured facts for an LLM to narrate, all from the engine).
 
 Futures:
-- `montecarlo.load_scripted(data, name)` builds a scripted future from `scripted_futures.json` in the same shape as `draw_future`. Units the script doesn't mention fail at their nominal age if that is still ahead; units already past their life keep running, so the story isn't drowned in failures at time 0. People effects are at their central values.
-- `montecarlo.draw_future_after(data, rng, future, t)` draws a future that keeps everything revealed by time t (price path, announced or started events, failures) and draws the rest as usual. The outlook uses it.
-
-An upgrade planned for the year its old unit breaks goes in as an emergency, with the failure premium, just like a like-for-like replacement at that moment.
-
-Decisions in play mode are "firm" (`"firm": true` on the swap, `engine.FirmYear`): they go in exactly in their year. Outside play mode, a planned year is pulled forward when the old unit breaks first; in play mode that would rewrite the past.
-
-In a sampled future, units installed during the game wear out at random too (see "Many possible futures"), so the ventilation you bought in year 2 can break early. The scripted futures keep nominal lives for new units, so the demo story stays the same every time.
+- `montecarlo.load_scripted(data, name)` builds a scripted future from `scripted_futures.json` in the same shape as `draw_future`. With `"other_units": "keep_running"` only the script's failures happen; with `"nominal"` (default) other units fail at their nominal age if that is still ahead. People effects are at their central values, and new units keep their nominal lives, so the story is the same every time.
+- `ventilation_failure`, the demo, stops five times: the new lab is announced (t=1), floor 0's ventilation breaks and the lab starts (t=2), not enough desks (t=3, unless the player bought laptops), a heatwave (t=4) and an energy price spike (t=5).
+- A sampled future (`{"seed": 42}`) is one Monte Carlo draw: everything wears out at random, units installed during the game too, so the ventilation you bought in year 2 can break early.
+- `montecarlo.draw_future_after(data, rng, future, t)` draws a future that keeps everything revealed by time t (price path, announced or started events, failures, lives of units already broken) and draws the rest as usual. The outlook uses it.
 
 Try it:
 ```sh
 A=localhost:8000/api/session; J='content-type: application/json'
 SID=$(curl -s -X POST $A/start -H "$J" -d '{"future":"ventilation_failure"}' | python3 -c 'import json,sys; print(json.load(sys.stdin)["session_id"])')
-curl -s -X POST $A/next -H "$J" -d "{\"session_id\":\"$SID\"}"         # t=1: computers fail, the new lab is announced
+curl -s -X POST $A/decide -H "$J" -d "{\"session_id\":\"$SID\",\"swaps\":[{\"group\":\"lighting\",\"option\":\"lighting_mid\",\"year\":\"now\"},{\"group\":\"ventilation\",\"option\":\"ventilation_mid\",\"floor\":0,\"year\":4}]}"
+curl -s -X POST $A/next -H "$J" -d "{\"session_id\":\"$SID\"}"         # t=1: the new lab is announced
 curl -s -X POST $A/decide -H "$J" -d "{\"session_id\":\"$SID\",\"swaps\":[{\"group\":\"computers\",\"option\":\"computers_upgrade\",\"year\":\"now\"}]}"
-curl -s -X POST $A/next -H "$J" -d "{\"session_id\":\"$SID\"}"         # t=2: floor 0's ventilation breaks
+curl -s -X POST $A/next -H "$J" -d "{\"session_id\":\"$SID\"}"         # t=2: floor 0's ventilation breaks before its planned upgrade
 curl -s -X POST $A/outlook -H "$J" -d "{\"session_id\":\"$SID\",\"n\":100}"
 ```
 
@@ -139,7 +140,8 @@ Try it by hand at http://localhost:8000/playground (`playground/index.html`, pla
 | `GET /api/session/futures` | | the scripted futures you can play |
 | `POST /api/session/start` | `{future}`: a scripted name, or `{"seed": 42}` for a sampled one | `session_id` and the opening state (see "Play through one future") |
 | `POST /api/session/next` | `{session_id}` | the state at the next pause, or the end summary (`ended: true`, `result`) |
-| `POST /api/session/decide` | `{session_id, swaps}` | the updated state at the same pause; 400 if a swap's year is before now. `"year": "now"` means the current pause |
+| `POST /api/session/decide` | `{session_id, swaps}` | adds to the plan (now or later years) and returns the updated state at the same pause; 400 if a swap's year is before now. `"year": "now"` means the current pause |
+| `POST /api/session/plan` | `{session_id, plan}` | replaces everything not done yet with `plan`; done decisions stay |
 | `POST /api/session/preview` | `{session_id, swap}` | what a swap (or a list) would change in this future with the decisions so far |
 | `POST /api/session/outlook` | `{session_id, n, seed}` | a fresh forecast from now: fan of the gain vs doing nothing from year t+1, P10/P50/P90 NPVs, chance of beating doing nothing |
 | `GET /api/session/{id}` | | the current state |

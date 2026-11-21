@@ -4,6 +4,11 @@ Time: time t is the end of year t, and t = 0 is today. A decision taken at a pau
 with "year": t and "firm": true (so the engine never pulls it into the past). It is installed and paid at the end of year t (so it is part of year t's cash row, like
 every install in the engine) and active from year t + 1. Rows for years before t never change.
 
+The plan: decisions can be for now or for later years. The run carries them out on schedule without stopping.
+At a pause, the plan has two parts: "done" (years before t: locked, the past) and "planned" (year t or later:
+the player can keep, change or drop them with set_plan, or add to them with decide). A newer decision for an
+item replaces that item's planned steps from its year on (engine.resolve, firm swaps), never earlier ones.
+
 The engine stays the only source of numbers. A session holds the future, the decisions so far and the
 current pause time t; every state is read from engine.simulate runs with those decisions in that future.
 
@@ -12,8 +17,10 @@ A session pauses at the first time T > t where something happens:
   event_announced  an event with a notice period becomes known, at time start_year - 1 - notice
   event_started    an event starts in the coming year, at time start_year - 1
   new_flag         a warning (desk shortfall, a floor over ventilation capacity, the reserve below its
-                   minimum) appears in year T that was not there in year T - 1
-  price_jump       the electricity price for year T + 1 is up more than the threshold on year T
+                   minimum and below where doing nothing would leave it) appears in year T that was not
+                   there in year T - 1
+  price_jump       the electricity price for year T + 1 is up more than the threshold on year T (unless a
+                   price event starting then already explains it)
 """
 import random
 
@@ -122,10 +129,10 @@ def _warnings(data, session, res):
         if f["type"] in ("ventilation_over_capacity", "desk_shortfall"):
             present.setdefault((f["type"], f.get("floor")), {}).setdefault(f["year"], f)
     low = data["params"]["min_reserve_chf"]
-    for row in res["years"]:                       # the player's reserve itself, not compared with doing nothing
-        if row["cash_closing"] < low:
+    for row in res["years"]:                       # the player's reserve: low, and lower than doing nothing
+        if row["cash_closing"] < low and row["cash_closing"] < row["cash_closing_baseline"] - 1e-6:
             present.setdefault(("reserve_below_minimum", None), {})[row["year"]] = {
-                "reserve": row["cash_closing"], "minimum": low}
+                "reserve": row["cash_closing"], "minimum": low, "reserve_doing_nothing": row["cash_closing_baseline"]}
     out = {}
     for (flag, floor), years in present.items():
         for Y in sorted(years):
@@ -167,6 +174,9 @@ def reasons_by_time(data, session, res=None):
                  _price_jumps(data, res)):
         for T, rs in part.items():
             out.setdefault(T, []).extend(rs)
+    for T, rs in out.items():                      # a price event starting now already explains a price jump
+        if any(r["type"] == "event_started" and r["details"]["parameter"] == "electricity_price_chf_kwh" for r in rs):
+            out[T] = [r for r in rs if r["type"] != "price_jump"]
     return out
 
 
@@ -226,7 +236,11 @@ def _reactions(data, session, reasons, res):
                 options.append({"option_id": o["option_id"], "name": o["name"], "tier": o["tier"],
                                 "like_for_like": o["option_id"] in old, "swaps": swaps,
                                 "preview": _preview(data, session, swaps, base=res)})
-            out.append({"reason": k, "type": "failure", "group": r["group"], "options": options})
+            items = set(r["item_ids"])
+            planned_later = [d for d in session["decisions"] if d["year"] > r["time"]
+                             and items & {i["id"] for i in engine.swap_items(data, d)}]
+            out.append({"reason": k, "type": "failure", "group": r["group"], "options": options,
+                        "planned_later": planned_later})
             continue
         if r["type"] in ("event_announced", "event_started"):
             groups = EVENT_GROUPS.get(r["details"]["event_id"], [])
@@ -270,6 +284,12 @@ def _situation(data, session, T, reasons, reactions, res):
     }
 
 
+def _plan(session, T):
+    """The decisions split at time T: done (before T, locked) and planned (T or later, can still change)."""
+    return {"done": [d for d in session["decisions"] if d["year"] < T],
+            "planned": [d for d in session["decisions"] if d["year"] >= T]}
+
+
 def _state(data, session, T):
     """Everything the player sees at a pause at time T. Rows after year T are never included."""
     res = _sim(data, session, detail_years=(max(T, 1),))
@@ -278,7 +298,7 @@ def _state(data, session, T):
     snapshot = (viz.snapshot(data, res, T, "state") if T >= 1
                 else viz.snapshot(data, res, 1, "state_baseline"))        # today: the building as it is
     state = {"t": T, "horizon": _horizon(data), "ended": False, "future": session["future_name"],
-             "reasons": reasons, "decisions": session["decisions"],
+             "reasons": reasons, "decisions": session["decisions"], "plan": _plan(session, T),
              "history": viz.finance(res)["years"][:T], "snapshot": snapshot, "reactions": reactions,
              "situation": _situation(data, session, T, reasons, reactions, res)}
     session["state"] = viz.clean(state)
@@ -292,7 +312,7 @@ def _end(data, session):
     res = _sim(data, session, detail_years=(H,))
     last = res["years"][-1]
     state = {"t": H, "horizon": H, "ended": True, "future": session["future_name"], "reasons": [],
-             "decisions": session["decisions"], "history": viz.finance(res)["years"],
+             "decisions": session["decisions"], "plan": _plan(session, H), "history": viz.finance(res)["years"],
              "snapshot": viz.snapshot(data, res, H, "state"), "reactions": [],
              "result": {"npv_cash": res["npv_cash"], "npv_economic": res["npv_economic"],
                         "payback_cash": res["payback_cash"], "payback_economic": res["payback_economic"],
@@ -326,13 +346,41 @@ def next_pause(data, session):
     return _state(data, session, session["t"])
 
 
+def _drop_overridden(data, decisions, t):
+    """Drop planned decisions (year >= t) that newer decisions fully override for every item they cover."""
+    keep = []
+    for k, d in enumerate(decisions):
+        if d["year"] >= t:
+            items = {i["id"] for i in engine.swap_items(data, d)}
+            later = set()
+            for e in decisions[k + 1:]:
+                if e["year"] <= d["year"]:
+                    later |= {i["id"] for i in engine.swap_items(data, e)}
+            if items <= later:
+                continue
+        keep.append(d)
+    return keep
+
+
 def decide(data, session, swaps):
-    """Add decisions from now on. Every swap needs a year >= t ("now" means t); otherwise nothing is added
-    and a ValueError explains why. Returns the updated state at the same pause."""
+    """Add to the plan, now or for later years. Every swap needs a year >= t ("now" means t); otherwise
+    nothing is added and a ValueError explains why. A new decision replaces the planned steps of the items
+    it covers from its year on (e.g. choosing an upgrade for a broken unit now cancels the upgrade you had
+    planned for it later). Returns the updated state at the same pause."""
     if session["ended"]:
         raise ValueError("This run has ended.")
     checked = [_check_swap(data, session, s) for s in swaps]
-    session["decisions"] = session["decisions"] + checked
+    session["decisions"] = _drop_overridden(data, session["decisions"] + checked, session["t"])
+    return _state(data, session, session["t"])
+
+
+def set_plan(data, session, plan):
+    """Replace everything not done yet (decisions for year t or later) with `plan`. Done decisions stay."""
+    if session["ended"]:
+        raise ValueError("This run has ended.")
+    checked = [_check_swap(data, session, s) for s in plan]
+    done = [d for d in session["decisions"] if d["year"] < session["t"]]
+    session["decisions"] = _drop_overridden(data, done + checked, session["t"])
     return _state(data, session, session["t"])
 
 

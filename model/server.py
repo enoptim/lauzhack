@@ -124,6 +124,11 @@ class SessionDecide(BaseModel):
     swaps: list
 
 
+class SessionPlan(BaseModel):
+    session_id: str
+    plan: list
+
+
 class SessionPreview(BaseModel):
     session_id: str
     swap: dict | list
@@ -176,6 +181,15 @@ def session_next(body: SessionId):
 def session_decide(body: SessionDecide):
     try:
         return {"session_id": body.session_id, **play.decide(DATA, _session(body.session_id), body.swaps)}
+    except (ValueError, KeyError) as e:
+        raise HTTPException(400, str(e))
+
+
+@app.post("/api/session/plan")
+def session_plan(body: SessionPlan):
+    """Replace everything not done yet with this plan; done decisions stay."""
+    try:
+        return {"session_id": body.session_id, **play.set_plan(DATA, _session(body.session_id), body.plan)}
     except (ValueError, KeyError) as e:
         raise HTTPException(400, str(e))
 
