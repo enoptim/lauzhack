@@ -1,3 +1,4 @@
+import TopCantina from './TopCantina';
 import TopLanding from './TopLanding';
 import GroundFloor from './GroundFloor';
 import Staircase from './Staircase';
@@ -24,7 +25,7 @@ function Floor({ level }: { level: number }) {
       {/* Offices, interior glazing, and corridor balustrades. */}
       {level > 0 && Array.from({ length: 12 }, (_, i) => {
         const z = -44 + i * 8;
-        if (level === 4 && side === 1 && z >= -4) return null;
+        if (level === 4 && ((side === 1 && z >= -4) || (side === -1 && z < 36))) return null;
         return <group key={i}>
           <Box size={[7.5, 2.7, .12]} color={white} position={[side * 16.1, 1.35, z]}/>
           <Glass size={[.05, 2.8, 7.8]} position={[side * 12.3, 1.4, z + 4]}/>
@@ -43,7 +44,7 @@ function Floor({ level }: { level: number }) {
       {/* Leave a clear opening where the staircase landing meets the corridor. */}
       {[-4.5, 4.5].map(x => <Glass key={x} size={[7, 1.05, .06]} position={[x, .55, 32]}/>)}
     </>}
-    {level === 4 && <TopLanding/>}
+    {level === 4 && <><TopLanding/><TopCantina/></>}
     {(level === 4 ? [-40] : [-40, 40]).map(z => <group key={z}>
       <Box size={[5, 3, 5]} color="#bdc4c1" position={[12, 1.5, z]}/>
       <Box size={[1.8, 2.4, .06]} color="#7e9195" position={[12, 1.2, z + 2.55]}/>
