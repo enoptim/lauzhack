@@ -1,3 +1,4 @@
+import GroundFloor from './GroundFloor';
 import Staircase from './Staircase';
 import { FLOOR_COUNT, FLOOR_HEIGHT, WIDTH, LENGTH } from '../data/building';
 import { Box, Desk, Plant } from './Furniture';
@@ -20,14 +21,13 @@ function Floor({ level }: { level: number }) {
     </>}
     {[-1, 1].map(side => <group key={side}>
       {/* Offices, interior glazing, and corridor balustrades. */}
-      {Array.from({ length: 12 }, (_, i) => {
+      {level > 0 && Array.from({ length: 12 }, (_, i) => {
         const z = -44 + i * 8;
         return <group key={i}>
           <Box size={[7.5, 2.7, .12]} color={white} position={[side * 16.1, 1.35, z]}/>
           <Glass size={[.05, 2.8, 7.8]} position={[side * 12.3, 1.4, z + 4]}/>
           <Box size={[.1, 3.3, .1]} color={metal} position={[side * 12.3, 1.65, z]}/>
           <Desk position={[side * 16, 0, z + 3]}/>
-          {level === 0 && <Desk position={[side * 16, 0, z + 6]}/>}
         </group>;
       })}
       {level > 0 && <>
@@ -46,10 +46,10 @@ function Floor({ level }: { level: number }) {
       <Box size={[1.8, 2.4, .06]} color="#7e9195" position={[12, 1.2, z + 2.55]}/>
       <Plant position={[-7, 0, z]}/>
     </group>)}
-    {level === 0 && [-15, -5, 5, 15].map(z => <group key={z}>
-      <Desk position={[-3, 0, z]}/><Desk position={[3, 0, z]}/>
-      <Plant position={[6, 0, z]}/>
-    </group>)}
+    {level === 0 && <>
+      <GroundFloor/>
+      {[-1,1].flatMap(side => [-24,-8,8,24].map(z => <Glass key={`${side}-${z}`} size={[.08,3.2,14]} position={[side*8.1,1.6,z-1]}/>))}
+    </>}
   </group>;
 }
 
