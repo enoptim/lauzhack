@@ -189,7 +189,7 @@ export default function ResultsPage() {
         <div className="flex flex-wrap items-center justify-between gap-x-8 gap-y-4">
           <div className="flex flex-col gap-1">
             <h2 className="text-base font-semibold">Money compared with doing nothing</h2>
-            <p className="text-sm text-muted-foreground">Only the costs that depend on your choice, added up year by year.</p>
+            <p className="text-sm text-muted-foreground">Only the extra costs each choice causes, added up year by year. Costs both choices share are left out.</p>
           </div>
           <div className="flex flex-wrap items-center gap-3">
             <ToggleGroup type="single" variant="outline" value={String(horizon)} aria-label="Years to show"

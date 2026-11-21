@@ -155,7 +155,7 @@ export default function MoneyChart({ rows, horizon, staffEffects, equipment, pla
             + line(C.nothing, 'Doing nothing has cost', r.nothing)
             + small(nothingParts || 'nothing extra yet')
             + line(C.upgrade, 'The upgrade has cost', r.upgrade)
-            + small('the purchase today')
+            + small(r.upgrade - rows[0].upgrade < 1000 ? 'the purchase today; after that it costs nothing extra, because its energy bill is lower' : 'the purchase today, plus years it cost more')
             + `<div style="padding-top:6px;border-top:1px solid ${C.grid};font-weight:600">${r.year === 0 ? `You pay ${chfShort(r.upgrade)} up front` : gap >= 0 ? `The upgrade has saved you ${chfShort(gap)} so far` : `The upgrade still needs ${chfShort(-gap)} to pay for itself`}</div>`
             + (r.nothingReplaces >= 50_000 ? `<div style="margin-top:6px;color:${C.muted}"><b style="color:${C.ink}">Why the grey line jumps:</b> this year the old ${equipment} would wear out. Doing nothing means buying new units for ${chf(r.nothingReplaces)}. With the upgrade, you already have them.</div>` : '')
             + `</div>`;
@@ -177,7 +177,7 @@ export default function MoneyChart({ rows, horizon, staffEffects, equipment, pla
           symbol: 'none', z: 5,
           lineStyle: { width: 3, color: C.upgrade, cap: 'round', join: 'round', type: 'solid' },
           itemStyle: { color: C.upgrade },
-          endLabel: { show: true, color: C.upgrade, fontSize: 13, fontWeight: 600, distance: 10, lineHeight: 18, formatter: `With the upgrade\n${chfShort(last.upgrade)}` },
+          endLabel: { show: true, color: C.upgrade, fontSize: 13, fontWeight: 600, distance: 10, lineHeight: 18, formatter: last.upgrade - rows[0].upgrade < 1000 ? `With the upgrade\n${chfShort(last.upgrade)}, paid once` : `With the upgrade\n${chfShort(last.upgrade)}` },
           labelLayout: { moveOverlap: 'shiftY' },
           markPoint: payback === null ? undefined : {
             symbol: 'circle', symbolSize: 12,
