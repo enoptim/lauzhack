@@ -398,6 +398,24 @@ def test_futures_policy():
                 assert f["year"] <= 10
 
 
+# --- risk: chance of an emergency breakdown of the equipment a plan touches
+def test_risk_chances():
+    vent = [{"group": "ventilation", "option": "ventilation_mid"}]
+    s = montecarlo.run(D, {"now": vent, "eol": [{**vent[0], "timing": "end_of_life"}]}, n=40, seed=3,
+                       overrides={"replace_on_plan": 0})["summary"]
+    now, eol = s["now"]["risk"], s["eol"]["risk"]
+    assert all(y["plan"] == 0 for y in now["emergency_by_year"]) and now["emergency_chf_mean"] == 0
+    assert now["emergency_by_year"][-1]["nothing"] > 0.8 and now["emergency_chf_mean_baseline"] > 0
+    assert all(y["plan"] == y["nothing"] for y in eol["emergency_by_year"])        # buying when it breaks: same breakdowns
+    for k in ("plan", "nothing"):
+        xs = [y[k] for y in now["emergency_by_year"]]
+        assert xs == sorted(xs)                                                     # chances only grow with the years
+    planned = montecarlo.run(D, {"now": vent}, n=40, seed=3, overrides={"replace_on_plan": 1})["summary"]["now"]["risk"]
+    assert planned["emergency_by_year"][-1]["nothing"] < now["emergency_by_year"][-1]["nothing"]   # planning avoids some
+    r = engine.simulate(D, vent)["risk"]
+    assert r["emergency_year"] is None and r["emergency_chf"] == 0 and r["emergency_chf_baseline"] == 0
+
+
 if __name__ == "__main__":
     tests =[v for k, v in dict(globals()).items() if k.startswith("test_")]
     failed = 0

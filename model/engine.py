@@ -581,7 +581,8 @@ def people_value(out_s, out_b, ctx):
 
 
 # ---------------------------------------------------------------- layer 4: money
-def plan_money(data, plans, sel_final, horizon, params=None):
+def plan_money(data, plans, sel_final, horizon, params=None, only=None):
+    """Equipment spending per year, and the assets it buys. `only` = an install kind ("failure"): count just those."""
     p = params or data["params"]
     capex = [0.0] * (horizon + 1)
     assets = []
@@ -595,7 +596,8 @@ def plan_money(data, plans, sel_final, horizon, params=None):
                 cost *= 1 + p.get("failure_premium", 0)
             if item["group"] == "solar_pv" and oid != item["option"]:
                 cost -= u * p["pv_subsidy_chf_per_kwp"]
-            capex[t] += cost
+            if only is None or kind == only:
+                capex[t] += cost
             retire = installs[k + 1][0] if k + 1 < len(installs) else INF
             assets.append((t, cost, _life(o), min(t + _life(o), retire)))
     return capex, assets
@@ -745,12 +747,25 @@ def simulate(data, scenario=None, events_on=(), overrides=None, detail_years=(1,
             row["selection"], row["selection_baseline"] = sel_s, sel_b
         years.append(row)
 
+    # Emergencies of the equipment this plan touches: first year and total cost, with the plan and doing nothing.
+    touched = [iid for iid in choices if iid in plans_s]
+
+    def first_failure(plans):
+        years_ = [t for iid in touched for t, _, kind in plans[iid] if kind == "failure"]
+        return min(years_) if years_ else None
+
+    def failure_chf(plans, sel):
+        return sum(plan_money(data, {iid: plans[iid] for iid in touched}, sel, H, p, only="failure")[0])
+
+    risk = {"emergency_year": first_failure(plans_s), "emergency_year_baseline": first_failure(plans_b),
+            "emergency_chf": failure_chf(plans_s, final_s), "emergency_chf_baseline": failure_chf(plans_b, baseline(data))}
+
     if upfront > p["capex_budget_chf"]:
         flags.append({"year": 0, "type": "over_budget", "capex": round(upfront), "budget": p["capex_budget_chf"]})
     return {"choices": choices, "events": list(events_on), "capex_year0": upfront,
             "npv_cash": npv["cash"], "npv_economic": npv["economic"],
             "payback_cash": payback(cums["cash"]), "payback_economic": payback(cums["economic"]),
-            "npv_breakdown": dict(parts), "years": years, "flags": flags,
+            "npv_breakdown": dict(parts), "years": years, "flags": flags, "risk": risk,
             "plans": {k: v for k, v in plans_s.items() if v != plans_b[k]}}
 
 

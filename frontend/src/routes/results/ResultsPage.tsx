@@ -11,7 +11,7 @@ import { Switch } from '@/components/ui/switch';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { cn } from '@/lib/utils';
 import { readConfig } from './config';
-import { chf, chfShort, kwh, pricePerKwh, years } from './format';
+import { chances, chf, chfShort, kwh, pricePerKwh, years } from './format';
 import { flagText, groupLabels, isContextFlag, seriesColor, whatIfDetails, whatIfLabels } from './labels';
 import MoneyBreakdown from './MoneyBreakdown';
 import SimulationIntro from './SimulationIntro';
@@ -148,7 +148,7 @@ export default function ResultsPage() {
   const plan = runs?.plan;
   // An engine started before the futures update answers without these fields: say so instead of drawing nonsense.
   const outdated = Boolean(engine.futures.data && Object.values(engine.futures.data.summary)
-    .some(s => typeof s.start !== 'number' || !s.fan.cash_running) || (engine.futures.data && !engine.futures.data.samples));
+    .some(s => typeof s.start !== 'number' || !s.fan.cash_running || !s.risk) || (engine.futures.data && !engine.futures.data.samples));
   const futures = outdated ? null : engine.futures.data;
   const busy = useDelayed(engine.futures.loading, 200);
   // One example future at a time ("Show one possible future"); null shows all futures as a band.
@@ -270,6 +270,8 @@ export default function ResultsPage() {
   const badPayback = focus ? paybackYear(focus.low) : null;
   const residual = world?.finance.years.find(y => y.year === horizon)?.residual_value ?? 0;
   const breakdown = futures?.summary[`p${selected}`]?.npv_breakdown_mean ?? finance?.npv_breakdown;
+  const risk = futures?.summary[`p${selected}`]?.risk ?? null;
+  const riskYear = risk?.emergency_by_year[Math.min(horizon, risk.emergency_by_year.length) - 1] ?? null;
   const flags = (finance?.flags ?? []).filter(flag => !isContextFlag(flag) && (flag.year === undefined || flag.year <= horizon));
   const contextFlags = (finance?.flags ?? []).filter(flag => isContextFlag(flag) && (flag.year === undefined || flag.year <= horizon));
   const subject = multi ? plans[selected]?.name : 'the upgrade';
@@ -385,6 +387,35 @@ export default function ResultsPage() {
           </div>
         ))}
       </dl>
+
+      <section aria-label="Risk of breakdowns" className="flex flex-col gap-3 rounded-xl border bg-card p-4 md:p-5">
+        <div className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1">
+          <h2 className="text-base font-semibold">Emergency breakdowns in the next {horizon} years</h2>
+          <p className="text-sm text-muted-foreground">Old equipment this plan replaces breaks and must be replaced in a hurry, at 15% extra cost. Out of {FUTURES_N} possible futures.</p>
+        </div>
+        {riskYear && risk ? (
+          <div className={cn('grid gap-3 transition-opacity duration-200 sm:grid-cols-2', busy && 'opacity-60')}>
+            {[
+              { who: 'Doing nothing', share: riskYear.nothing, bill: risk.emergency_chf_mean_baseline, color: 'var(--warning)' },
+              { who: multi ? `With ${plans[selected]?.name}` : 'With the upgrade', share: riskYear.plan, bill: risk.emergency_chf_mean, color: PLAN_COLORS[selected % PLAN_COLORS.length] },
+            ].map(row => (
+              <div key={row.who} className="flex items-center gap-4 rounded-lg bg-muted/50 px-4 py-3">
+                <span aria-hidden="true" className="grid shrink-0 grid-cols-5 gap-1">
+                  {Array.from({ length: 10 }, (_, k) => (
+                    <span key={k} className="size-2.5 rounded-full border" style={k < Math.round(row.share * 10)
+                      ? { background: row.color, borderColor: row.color } : { borderColor: 'var(--border)' }} />
+                  ))}
+                </span>
+                <span className="flex min-w-0 flex-col">
+                  <span className="text-sm text-muted-foreground">{row.who}</span>
+                  <span className="text-lg font-semibold tabular-nums first-letter:uppercase">{chances(row.share, FUTURES_N)}</span>
+                  <span className="text-sm text-muted-foreground tabular-nums">Average emergency bill over 15 years: {chfShort(row.bill)}</span>
+                </span>
+              </div>
+            ))}
+          </div>
+        ) : <div className="grid gap-3 sm:grid-cols-2"><Skeleton className="h-[5.5rem]" /><Skeleton className="h-[5.5rem]" /></div>}
+      </section>
 
       <section aria-label="Money over time" className="flex flex-col gap-5 rounded-xl border bg-card p-4 shadow-[0_1px_2px_oklch(0_0_0/0.04),0_8px_24px_-12px_oklch(0.3_0.02_60/0.14)] md:p-6">
         <div className="flex flex-wrap items-center justify-between gap-x-8 gap-y-4">

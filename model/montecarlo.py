@@ -100,7 +100,7 @@ def _slim(res):
     """What the summary needs from one run. Keeps pickling cheap when runs come from worker processes."""
     return {"npv_cash": res["npv_cash"], "npv_economic": res["npv_economic"], "start": -res["capex_year0"],
             "payback_cash": res["payback_cash"], "payback_economic": res["payback_economic"],
-            "flag_types": sorted({f["type"] for f in res["flags"]}), "npv_breakdown": res["npv_breakdown"],
+            "flag_types": sorted({f["type"] for f in res["flags"]}), "npv_breakdown": res["npv_breakdown"], "risk": res["risk"],
             "cash": [y["cumulative_cash_cf"] for y in res["years"]],
             "economic": [y["cumulative_economic_cf"] for y in res["years"]],
             # the same without the value of equipment still standing at the end (counted in the last year)
@@ -208,6 +208,15 @@ def run(data, scenarios, n=300, seed=2026, events=(), overrides=None, pool=None,
             "prob_paid_back_by_year": [{"year": y, "share": sum(x is not None and x <= y for x in pb) / n}
                                        for y in range(1, H + 1)],
             "npv_breakdown_mean": breakdown,
+            # chance of at least one emergency breakdown of the equipment this plan touches, by year
+            "risk": {
+                "emergency_by_year": [{"year": y,
+                                       "plan": sum(r["risk"]["emergency_year"] is not None and r["risk"]["emergency_year"] <= y for r in runs) / n,
+                                       "nothing": sum(r["risk"]["emergency_year_baseline"] is not None and r["risk"]["emergency_year_baseline"] <= y for r in runs) / n}
+                                      for y in range(1, H + 1)],
+                "emergency_chf_mean": sum(r["risk"]["emergency_chf"] for r in runs) / n,
+                "emergency_chf_mean_baseline": sum(r["risk"]["emergency_chf_baseline"] for r in runs) / n,
+            },
             "start": _pct([r["start"] for r in runs], 0.5),     # money vs doing nothing today: minus the purchase
             "npv_cash_mean": sum(cash) / n,
             "npv_economic_mean": sum(econ) / n,

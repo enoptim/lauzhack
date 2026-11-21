@@ -318,6 +318,8 @@ export interface FuturesSummary {
   /** Average over all futures of each part of the discounted 15-year value. */
   npv_breakdown_mean: NpvBreakdown;
   npv_cash_mean: number;
+  /** Chance of at least one emergency breakdown of the equipment the plan touches, by year, with the plan and doing nothing. */
+  risk: { emergency_by_year: { year: number; plan: number; nothing: number }[]; emergency_chf_mean: number; emergency_chf_mean_baseline: number };
   /** Money vs doing nothing today, before year 1: minus the purchase price. */
   start: number;
   npv_economic_mean: number;
