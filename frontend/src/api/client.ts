@@ -3,10 +3,11 @@
 // In development Vite proxies /api to http://localhost:8000 (see vite.config.ts).
 // Set VITE_API_URL to call a different host.
 import type {
-  Assumption, BandsResult, BreakevenRequest, BreakevenResult, Catalog, ChatRequest, ChatResult, FuturesRequest, FuturesResult,
-  Evaluation, Metric, OptimizationProblem, OptimizeResult, PreviewRequest, PreviewResult, Scenario,
-  Granularity, ParetoRequest, ParetoResult, SearchOptions, SearchRequest, SearchResult,
-  RunRequest, SimulateResult, StressTestResult, TornadoResult,
+  Assumption, BandsResult, BreakevenRequest, BreakevenResult, Catalog, ChatRequest, ChatResult, Evaluation,
+  FuturesRequest, FuturesResult, Granularity, Metric, OptimizationProblem, OptimizeResult, ParetoRequest,
+  ParetoResult, PlaySwap, PreviewRequest, PreviewResult, RunRequest, Scenario, ScriptedFuture, SearchOptions,
+  SearchRequest, SearchResult, SessionOutlook, SessionPreview, SessionState, SimulateResult,
+  StressTestResult, TornadoResult,
 } from './types';
 
 const BASE: string = import.meta.env.VITE_API_URL ?? '';
@@ -44,4 +45,20 @@ export const api = {
     request<SearchOptions>(`/api/search/options?granularity=${granularity}`),
   /** The assistant. Takes 10-30 s: it runs the engine several times before answering. */
   chat: (body: ChatRequest) => request<ChatResult>('/api/chat', body),
+
+  // Play through one future (model/session.py). Sessions live in the API's memory.
+  sessionFutures: () => request<ScriptedFuture[]>('/api/session/futures'),
+  sessionStart: (future: string | { seed: number }) => request<SessionState>('/api/session/start', { future }),
+  session: (sessionId: string) => request<SessionState>(`/api/session/${sessionId}`),
+  sessionNext: (sessionId: string) => request<SessionState>('/api/session/next', { session_id: sessionId }),
+  /** Add to the plan: changes for now ("now") or later years. */
+  sessionDecide: (sessionId: string, swaps: PlaySwap[]) =>
+    request<SessionState>('/api/session/decide', { session_id: sessionId, swaps }),
+  /** Replace everything not done yet. */
+  sessionPlan: (sessionId: string, plan: PlaySwap[]) =>
+    request<SessionState>('/api/session/plan', { session_id: sessionId, plan }),
+  sessionPreview: (sessionId: string, swap: PlaySwap | PlaySwap[]) =>
+    request<SessionPreview>('/api/session/preview', { session_id: sessionId, swap }),
+  sessionOutlook: (sessionId: string, n = 100, seed = 2026) =>
+    request<SessionOutlook>('/api/session/outlook', { session_id: sessionId, n, seed }),
 };

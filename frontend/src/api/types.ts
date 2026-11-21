@@ -699,3 +699,116 @@ export interface ParetoResult {
   settings: SearchSettings;
   search: SearchInfo;
 }
+
+// ---------------------------------------------------------------- /api/session (play through one future)
+// See model/README.md, "Play through one future". Time t is the end of year t; a change for year k is
+// bought at the end of year k and works from year k + 1.
+
+/** A change in play mode. "now" means the current pause; the server stores it as a number with firm: true. */
+export type PlaySwap = Omit<Swap, 'year' | 'timing'> & { year: number | 'now'; firm?: boolean };
+/** A change as the server stores it. */
+export type SessionSwap = Omit<Swap, 'year' | 'timing'> & { year: number; firm: true };
+
+export interface PauseReason {
+  type: 'failure' | 'event_announced' | 'event_started' | 'new_flag' | 'price_jump';
+  time: number;
+  /** Plain words, e.g. "Ventilation on the ground floor reached end of life (9 modules)". */
+  title: string;
+  group: string | null;
+  floors: number[];
+  item_ids: string[];
+  details: Record<string, unknown>;
+}
+
+/** What adding swaps would change, in this future with the plan so far. */
+export interface SessionPreview {
+  swaps: SessionSwap[];
+  year: number;
+  extra_capex_chf: number;
+  delta_npv_cash: number;
+  delta_npv_economic: number;
+  new_flags: Flag[];
+  /** From here on: the first year the change works (missing if it would come after the last year). */
+  first_active_year?: number;
+  delta_kwh?: number;
+  delta_operating_cost?: number;
+  delta_comfort?: number;
+  delta_meeting_co2_ppm?: number;
+  delta_perf_change?: number;
+}
+
+export interface ReplacementOption {
+  option_id: string;
+  name: string;
+  tier: string;
+  /** The same model again: what happens if the player just continues. */
+  like_for_like: boolean;
+  swaps: SessionSwap[];
+  preview: SessionPreview;
+}
+
+/** Something broke: every option for the broken items, at this moment. */
+export interface FailureReaction {
+  reason: number;
+  type: 'failure';
+  group: string;
+  options: ReplacementOption[];
+  /** Changes still planned for these items later; choosing now replaces them. */
+  planned_later: SessionSwap[];
+}
+
+/** News, a warning or a price jump: equipment groups worth a look. */
+export interface GroupReaction {
+  reason: number;
+  type: Exclude<PauseReason['type'], 'failure'>;
+  groups: { group: string; floor: number | null; options: string[] }[];
+}
+
+export interface SessionResult {
+  npv_cash: number;
+  npv_economic: number;
+  payback_cash: number | null;
+  payback_economic: number | null;
+  npv_breakdown: NpvBreakdown;
+  flags: Flag[];
+  reserve_at_end: number;
+  reserve_at_end_doing_nothing: number;
+  decisions: number;
+}
+
+export interface SessionState {
+  session_id: string;
+  t: number;
+  horizon: number;
+  ended: boolean;
+  future: string | null;
+  reasons: PauseReason[];
+  decisions: SessionSwap[];
+  /** done: before now, locked. planned: now or later, can still change. */
+  plan: { done: SessionSwap[]; planned: SessionSwap[] };
+  /** Years 1 to t only: the future is never sent. */
+  history: FinanceYear[];
+  snapshot: Snapshot;
+  reactions: (FailureReaction | GroupReaction)[];
+  /** Structured facts for an LLM to narrate. */
+  situation: Record<string, unknown>;
+  /** Only when ended. */
+  result?: SessionResult;
+}
+
+export interface ScriptedFuture {
+  name: string;
+  description: string;
+}
+
+export interface SessionOutlook {
+  t: number;
+  n: number;
+  seed: number;
+  fan: { cash: FanPoint[]; economic: FanPoint[] };
+  npv_cash: Percentiles;
+  npv_economic: Percentiles;
+  prob_beats_doing_nothing_cash: number;
+  prob_beats_doing_nothing_economic: number;
+  method: string;
+}

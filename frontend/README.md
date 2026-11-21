@@ -15,6 +15,7 @@ Open the URL printed by Vite. Use the page picker in the header or enter a route
 - `/` — 3D building viewer. It requires WebGL. Left-drag to orbit, scroll to zoom, and right-drag to pan. Equipment changes are saved to the configuration you’re editing. Open **Review configurations** to create a configuration, see its planned changes, or switch which one you’re editing. In that same dialog, **Simulate and compare** runs every configuration with planned changes against the current setup.
 - `/assistant` — Chat with the building: describe a goal and limits, and it finds and explains the best plan.
 - `/results` — Results placeholder.
+- `/play` — Play through one future: your plan runs until something happens (a breakdown, news, a price jump), then you decide. Uses the `/api/session` endpoints (see `model/README.md`, "Play through one future"). The code is in `src/routes/play/`.
 
 The Assistant page calls `POST /api/chat` (see [chat/README.md](../chat/README.md)), so it needs the API running (`make dev`) and an OpenRouter key in `chat/.env`. “Show results” on a recommended plan opens it on `/results`.
 
