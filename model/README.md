@@ -100,7 +100,7 @@ A problem:
 - `constraints`: limits. `max_change_pct` and `min_change_pct` are relative to doing nothing (-20 = at least 20% lower).
 - `locked`: things that stay as they are. `allowed`: the only options a group may use; one option forces it.
 - `per_floor`: choose floor by floor instead of once per group for the whole building.
-- By default a plan may not cause warnings (over budget, reserve too low, and so on). `allow_warnings: true` turns this off.
+- By default a plan may not cause new warnings (over budget, reserve too low, and so on). Warnings doing nothing already has, such as too few desks once the new lab arrives, do not count against a plan. `allow_warnings: true` turns this off.
 - The metrics are listed in `METRICS` and at `GET /api/metrics`. Money and energy are yearly averages over the horizon; air quality and comfort are year 1. Every metric comes from `engine.simulate`.
 - Upgrades are bought now. "When it breaks" is not part of the search yet.
 

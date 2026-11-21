@@ -363,7 +363,7 @@ def upgrade_tradeoffs(savings="running_costs", budget_chf=None, locked=None, all
     events = [events] if isinstance(events, str) else list(events or [])
     _check([], events)
     metric, pct, unit, _ = _SAVINGS[savings]
-    cons = [] if allow_warnings else [{"metric": "warnings", "max": 0}]
+    cons = [] if allow_warnings else [{"metric": "new_warnings", "max": 0}]
     cons += [{"metric": "upfront_cost_chf", "max": budget_chf}] if budget_chf is not None else []
     res = search.pareto(DATA, x_metric="upfront_cost_chf", y_metric=metric, constraints=cons,
                         scope={"locked": locked} if locked else None, events=events,
@@ -381,7 +381,7 @@ def upgrade_tradeoffs(savings="running_costs", budget_chf=None, locked=None, all
                     "cost. knee_index is the balanced choice: past it, each extra franc buys less saving. "
                     "payback_years counts only extra_cost_vs_like_for_like_chf (worn-out units are replaced anyway), "
                     "so it can be 0 for a costly package; null means it never pays back. By default no package "
-                    "causes warnings."}
+                    "causes new warnings (ones doing nothing doesn't already have)."}
 
 
 def tradeoff_chart(result):

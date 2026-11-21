@@ -11,7 +11,7 @@ A problem (what the chat assistant writes from the user's words):
       "allowed":     {"coffee": ["coffee_current", "coffee_mid"]},  # only these options for a group
       "per_floor":   false,       # choose per floor, or one option per group for the whole building
       "events":      [],          # what-if events on in the evaluation
-      "allow_warnings": false     # by default a plan may not cause warnings (adds warnings <= 0)
+      "allow_warnings": false     # by default a plan may not cause new warnings (adds new_warnings <= 0)
     }
 
 Options are bought now (timing "now"). Choosing "when it breaks" is not part of the search yet.
@@ -62,6 +62,8 @@ METRICS = {
     "comfort_score": ("0-100", "max", "index", "Comfort score in year 1 (a score, not money)"),
     "warnings": ("count", "min", "calculated",
                  "Number of warnings for the plan (over budget, reserve too low, ventilation over capacity, desks short)"),
+    "new_warnings": ("count", "min", "calculated",
+                     "Warnings the plan causes that doing nothing doesn't already have (by kind, and floor for ventilation)"),
 }
 _OUTCOMES = ("office_co2_ppm", "meeting_co2_ppm", "classroom_co2_ppm", "summer_overheating_degc", "sick_days",
              "comfort_score")
@@ -99,9 +101,27 @@ def metrics(data, res):
         "payback_years": res["payback_cash"],
         "lowest_reserve_chf": min([ys[0]["cash_opening"]] + [y["cash_closing"] for y in ys]),
         "warnings": len([f for f in res["flags"] if f["type"] != "reserve_below_minimum_without_upgrades"]),
+        "new_warnings": len(_warning_ids(res["flags"]) - _warning_ids(_baseline_flags(data, tuple(res["events"])))),
     }
     out |= {k: ys[0]["outcomes"][k] for k in _OUTCOMES}
     return out
+
+
+def _warning_ids(flags):
+    """A warning's identity: its kind, plus the floor for ventilation. The year doesn't matter."""
+    return {(f["type"], f.get("floor") if f["type"] == "ventilation_over_capacity" else None)
+            for f in flags if f["type"] != "reserve_below_minimum_without_upgrades"}
+
+
+_BASE_FLAGS = {}
+
+
+def _baseline_flags(data, events):
+    """Doing nothing's warnings, per data and events (memoised)."""
+    key = (id(data), events)
+    if key not in _BASE_FLAGS:
+        _BASE_FLAGS[key] = engine.simulate(data, [], list(events), detail_years=())["flags"]
+    return _BASE_FLAGS[key]
 
 
 # ---------------------------------------------------------------- problem
@@ -148,9 +168,10 @@ def normalize(data, problem):
                 c[bound] = today[c["metric"]] * (1 + c.pop(rel) / 100)
         if "max" not in c and "min" not in c:
             raise ValueError(f"constraint on {c['metric']} needs max, min, max_change_pct or min_change_pct")
-    # By default a plan may not cause warnings (over budget, reserve too low, ...).
-    if not p.get("allow_warnings") and not any(c["metric"] == "warnings" for c in p["constraints"]):
-        p["constraints"].append({"metric": "warnings", "max": 0})
+    # By default a plan may not cause new warnings (over budget, reserve too low, ...): ones doing nothing
+    # already has (e.g. too few desks once the new lab arrives) don't count against the plan.
+    if not p.get("allow_warnings") and not any(c["metric"] in ("warnings", "new_warnings") for c in p["constraints"]):
+        p["constraints"].append({"metric": "new_warnings", "max": 0})
     return p
 
 
