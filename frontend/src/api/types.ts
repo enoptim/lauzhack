@@ -404,9 +404,211 @@ export interface ChatScenario {
   summary: ChatScenarioSummary;
 }
 
+export interface ChatChartPoint {
+  x: number;
+  y: number;
+  /** The changes in words, e.g. "LED panels (floors 1, 2), Heat pump", or "Do nothing". */
+  label: string;
+  scenario: Scenario;
+}
+
+/** Up-front cost (x) against yearly saving (y). Every point is a package no other package beats on both. */
+export interface ChatChart {
+  type: 'pareto';
+  x_metric: string;
+  y_metric: string;
+  x_label: string;
+  y_label: string;
+  /** Sorted by x. */
+  points: ChatChartPoint[];
+  /** The balanced choice: past it, each extra franc buys less saving. */
+  knee_index: number;
+}
+
 export interface ChatResult {
   /** Markdown. */
   reply: string;
   /** Set when the assistant picked a scenario to show. */
   scenario: ChatScenario | null;
+  /** Set when the assistant compared packages (upgrade_tradeoffs). */
+  chart?: ChatChart | null;
+}
+
+// ---------------------------------------------------------------- /api/optimize, /api/pareto (model/README.md)
+/** Picks zones (one group in one place). floor and option narrow it; a list means any of them. */
+export interface ZoneSelector {
+  group: string;
+  floor?: number | number[];
+  option?: string | string[];
+}
+
+/** Hard limits on what may change. */
+export interface OptimizeScope {
+  /** If given, only these may change. */
+  allowed?: ZoneSelector[];
+  /** These stay as they are. */
+  locked?: ZoneSelector[];
+  /** These must change. */
+  required?: ZoneSelector[];
+  /** Never install these option ids. */
+  excluded_options?: string[];
+}
+
+/** A metric name from GET /api/optimize/options, with a lower and/or upper limit. */
+export interface MetricConstraint {
+  metric: string;
+  min?: number;
+  max?: number;
+}
+
+export interface OptimizeObjective {
+  metric: string;
+  /** Default: the metric's "better" direction. */
+  sense?: 'min' | 'max';
+}
+
+export type Granularity = 'floor' | 'building';
+
+export interface OptimizeRequest {
+  goal: 'min_cost_for_target' | 'max_savings' | 'min_total_cost' | 'custom';
+  /** min_cost_for_target (the metric to reach) and max_savings (the metric to maximize). */
+  metric?: string;
+  /** min_cost_for_target. */
+  target?: number;
+  /** The most the plan may cost, in cost_metric (min_total_cost: up-front cost). */
+  budget?: number;
+  cost_metric?: string;
+  /** min_total_cost: the timeframe. */
+  years?: number;
+  /** min_total_cost: lowest CHF or lowest kWh. */
+  basis?: 'chf' | 'kwh';
+  /** custom. */
+  objective?: OptimizeObjective;
+  constraints?: MetricConstraint[];
+  scope?: OptimizeScope;
+  events?: string[];
+  overrides?: Record<string, number>;
+  granularity?: Granularity;
+  horizon_years?: number;
+  discounted?: boolean;
+  include_residual?: boolean;
+  /** Default true: also return the regular /api/simulate output for the plan. */
+  include_engine_output?: boolean;
+}
+
+export interface ParetoRequest {
+  /** Minimized. Default upfront_cost_chf. */
+  x_metric?: string;
+  /** Maximized. Default operating_cost_saving_chf_year. */
+  y_metric?: string;
+  constraints?: MetricConstraint[];
+  scope?: OptimizeScope;
+  events?: string[];
+  overrides?: Record<string, number>;
+  granularity?: Granularity;
+  horizon_years?: number;
+  discounted?: boolean;
+  include_residual?: boolean;
+  /** Default 15; null keeps every point. */
+  max_points?: number | null;
+}
+
+export interface MetricInfo {
+  unit: string;
+  better: 'lower' | 'higher';
+  description: string;
+}
+
+/** One decision: which option one group has in one place. */
+export interface OptimizeZone {
+  /** e.g. "lighting@2", or the group name for one-place groups. */
+  zone: string;
+  group: string;
+  floor: number | null;
+  current_option: string;
+  /** The alternatives. */
+  options: string[];
+  units: number;
+  item_ids: string[];
+}
+
+export interface OptimizeOptions {
+  metrics: Record<string, MetricInfo>;
+  zones: OptimizeZone[];
+}
+
+export interface OptimizeChange {
+  zone: string;
+  group: string;
+  floor: number | null;
+  from_option: string;
+  to_option: string;
+  from_name: string;
+  to_name: string;
+  units: number;
+  upfront_cost_chf: number;
+  /** Mesh names, to highlight in 3D. */
+  item_ids: string[];
+}
+
+export interface OptimizeSettings {
+  granularity: Granularity;
+  horizon_years: number;
+  discounted: boolean;
+  include_residual: boolean;
+  events: string[];
+  overrides: Record<string, number>;
+}
+
+export interface OptimizeSearch {
+  evaluations: number;
+  seconds: number;
+  zones: number;
+  method: string;
+}
+
+export interface OptimizeResult {
+  /** best_effort: no plan meets every constraint; this is the closest one. */
+  status: 'ok' | 'best_effort';
+  /** One plain sentence, e.g. why a target is out of reach. */
+  message: string;
+  objective: { metric: string; sense: 'min' | 'max'; value: number | null };
+  /** value is what the plan achieves. */
+  constraints: (MetricConstraint & { value: number | null; met: boolean })[];
+  /** Ready for /api/simulate; [] = do nothing. */
+  scenario: Scenario;
+  changes: OptimizeChange[];
+  /** Every zone's option after the plan. */
+  configuration: Record<string, string>;
+  /** Every metric for the plan; null where it doesn't apply (e.g. a payback that never happens). */
+  metrics: Record<string, number | null>;
+  /** Doing nothing. */
+  baseline: Record<string, number | null>;
+  flags: Flag[];
+  settings: OptimizeSettings;
+  /** The /api/simulate output for the plan; null when include_engine_output is false. */
+  engine: SimulateResult | null;
+  search: OptimizeSearch;
+}
+
+export interface ParetoPoint {
+  x: number;
+  y: number;
+  scenario: Scenario;
+  changes: OptimizeChange[];
+  metrics: Record<string, number | null>;
+}
+
+export interface ParetoResult {
+  x_metric: string;
+  y_metric: string;
+  /** Sorted by x. The first is doing nothing unless the scope forbids it. */
+  points: ParetoPoint[];
+  /** The balanced choice. */
+  knee_index: number;
+  /** Points before thinning to max_points. */
+  total_non_dominated: number;
+  baseline: Record<string, number | null>;
+  settings: OptimizeSettings;
+  search: OptimizeSearch;
 }

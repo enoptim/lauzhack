@@ -9,6 +9,7 @@ Events are a list of event ids, e.g. ["new_lab", "heatwave_summer"].
 """
 import sys
 from pathlib import Path
+from typing import Literal
 
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
@@ -17,6 +18,7 @@ from pydantic import BaseModel
 
 import engine
 import montecarlo
+import optimize
 import viz
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))  # repo root, for chat/
@@ -59,6 +61,41 @@ class Breakeven(BaseModel):
 class Chat(BaseModel):
     messages: list
     scenario: list = []
+
+
+class Optimize(BaseModel):
+    """See the Optimizer section in README.md. Fields a goal doesn't use are ignored."""
+    goal: Literal["min_cost_for_target", "max_savings", "min_total_cost", "custom"]
+    metric: str | None = None             # min_cost_for_target, max_savings
+    target: float | None = None           # min_cost_for_target
+    budget: float | None = None           # the most cost_metric may be (min_total_cost: up-front cost)
+    cost_metric: str = "upfront_cost_chf"
+    years: int | None = None              # min_total_cost
+    basis: Literal["chf", "kwh"] = "chf"  # min_total_cost
+    objective: dict | None = None         # custom
+    constraints: list = []
+    scope: dict | None = None
+    events: list = []
+    overrides: dict = {}
+    granularity: Literal["floor", "building"] = "floor"
+    horizon_years: int | None = None
+    discounted: bool = False
+    include_residual: bool = True
+    include_engine_output: bool = True
+
+
+class Pareto(BaseModel):
+    x_metric: str = "upfront_cost_chf"
+    y_metric: str = "operating_cost_saving_chf_year"
+    constraints: list = []
+    scope: dict | None = None
+    events: list = []
+    overrides: dict = {}
+    granularity: Literal["floor", "building"] = "floor"
+    horizon_years: int | None = None
+    discounted: bool = False
+    include_residual: bool = True
+    max_points: int | None = 15
 
 
 @app.get("/api/catalog")
@@ -120,6 +157,53 @@ def breakeven(body: Breakeven):
     if body.param not in DATA["params"]:
         raise HTTPException(status_code=400, detail=f"Unknown assumption: {body.param}")
     return viz.clean(engine.breakeven(DATA, body.scenario, body.events, body.overrides, body.param))
+
+
+def _optimize(b: Optimize):
+    common = dict(scope=b.scope, events=b.events, overrides=b.overrides, granularity=b.granularity,
+                  include_engine_output=b.include_engine_output)
+    timeframe = dict(horizon_years=b.horizon_years, discounted=b.discounted, include_residual=b.include_residual)
+    if b.goal == "min_cost_for_target":
+        if b.metric is None or b.target is None:
+            raise ValueError("min_cost_for_target needs a metric and a target.")
+        cap = [{"metric": b.cost_metric, "max": b.budget}] if b.budget is not None else []
+        return optimize.min_cost_for_target(DATA, b.metric, b.target, cost_metric=b.cost_metric,
+                                            constraints=b.constraints + cap, **common, **timeframe)
+    if b.goal == "max_savings":
+        return optimize.max_savings(DATA, metric=b.metric or "operating_cost_saving_chf_year", budget=b.budget,
+                                    cost_metric=b.cost_metric, constraints=b.constraints, **common, **timeframe)
+    if b.goal == "min_total_cost":  # years is the timeframe here
+        if b.years is None:
+            raise ValueError("min_total_cost needs years.")
+        return optimize.min_total_cost(DATA, b.years, basis=b.basis, budget=b.budget, constraints=b.constraints,
+                                       discounted=b.discounted, include_residual=b.include_residual, **common)
+    if not b.objective:
+        raise ValueError("custom needs an objective, e.g. {\"metric\": \"upfront_cost_chf\", \"sense\": \"min\"}.")
+    return optimize.solve(DATA, b.objective, constraints=b.constraints, **common, **timeframe)
+
+
+@app.post("/api/optimize")
+def optimize_plan(body: Optimize):
+    """Search for the best set of upgrades for a goal. ValueError (bad metric, conflicting scope) → 400."""
+    try:
+        return viz.clean(_optimize(body))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.post("/api/pareto")
+def pareto(body: Pareto):
+    """The plans no other plan beats on both axes (e.g. up-front cost vs yearly saving), sorted by x."""
+    try:
+        return viz.clean(optimize.pareto(DATA, **body.model_dump()))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.get("/api/optimize/options")
+def optimize_options(granularity: Literal["floor", "building"] = "floor"):
+    """Metrics and zones (decisions), so a UI can build its menus."""
+    return viz.clean({"metrics": optimize.METRICS, "zones": optimize.zones(DATA, granularity)})
 
 
 @app.get("/playground", include_in_schema=False)

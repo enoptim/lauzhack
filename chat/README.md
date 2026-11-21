@@ -16,6 +16,8 @@ The tools:
 - `list_options`: the products for one group, with prices and descriptions.
 - `rank_upgrades`: every single upgrade, ranked by payback, for the whole building or floor by floor.
 - `simulate_scenario`: runs the engine on a set of swaps, optionally with events such as a price spike.
+- `find_best_upgrades`: searches every combination of upgrades for a goal (`model/optimize.py`). Goals: the cheapest package that reaches a savings target, the most savings within a budget, or the lowest total cost over some years. It can keep some things as they are, change only some things, or force a change. When savings are counted on the energy bill or in kWh, a package may not raise total running costs (e.g. capsule coffee machines use less electricity but cost more in capsules), unless the user cares only about energy.
+- `upgrade_tradeoffs`: the best packages from cheapest to biggest saving, so people can see what more saving costs. Each package saves the most possible for its cost.
 - `show_scenario`: the package the model recommends, sent to the app.
 
 The model never does the maths. Every number it gives comes from the engine.
@@ -49,6 +51,12 @@ The reply:
   - `events`: any what-if events it used.
   - `item_ids`: the items that change. They match the mesh names, so they can be highlighted in 3D.
   - `summary`: the figures the assistant quoted, such as `upfront_cost_chf`, `energy_bill_chf_month` and `payback_years`.
+- `chart`: `null`, or a chart to draw when the assistant compared packages (`upgrade_tradeoffs`):
+  - `type`: `"pareto"`, meaning every point is a package no other package beats on both cost and saving.
+  - `x_metric`, `x_label`: up-front cost in CHF.
+  - `y_metric`, `y_label`: the yearly saving, e.g. "Running-cost saving (CHF/year)".
+  - `points`: sorted by cost. Each has `x`, `y`, a `label` listing the changes, and the `scenario` (swaps for `/api/simulate`).
+  - `knee_index`: the balanced point. Past it, each extra franc buys less saving.
 
 ## Files
 

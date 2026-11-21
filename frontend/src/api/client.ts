@@ -4,6 +4,7 @@
 // Set VITE_API_URL to call a different host.
 import type {
   Assumption, BandsResult, BreakevenRequest, BreakevenResult, Catalog, ChatRequest, ChatResult, FuturesRequest, FuturesResult,
+  Granularity, OptimizeOptions, OptimizeRequest, OptimizeResult, ParetoRequest, ParetoResult,
   PreviewRequest, PreviewResult,
   RunRequest, SimulateResult, StressTestResult, TornadoResult,
 } from './types';
@@ -30,6 +31,13 @@ export const api = {
   futures: (body: FuturesRequest) => request<FuturesResult>('/api/futures', body),
   assumptions: () => request<Assumption[]>('/api/assumptions'),
   breakeven: (body: BreakevenRequest = {}) => request<BreakevenResult>('/api/breakeven', body),
+  /** The best set of upgrades for a goal. Takes up to ~5 s. */
+  optimize: (body: OptimizeRequest) => request<OptimizeResult>('/api/optimize', body),
+  /** Cost against saving: the packages no other package beats on both. Takes up to ~15 s. */
+  pareto: (body: ParetoRequest = {}) => request<ParetoResult>('/api/pareto', body),
+  /** Metric names and zones, for building optimizer menus. */
+  optimizeOptions: (granularity: Granularity = 'floor') =>
+    request<OptimizeOptions>(`/api/optimize/options?granularity=${granularity}`),
   /** The assistant. Takes 10-30 s: it runs the engine several times before answering. */
   chat: (body: ChatRequest) => request<ChatResult>('/api/chat', body),
 };

@@ -15,5 +15,5 @@ frontend:         ## Vite dev server (proxies /api to the engine)
 dev:              ## API and frontend together; Ctrl+C stops both
 	@trap 'kill 0' INT TERM EXIT; $(MAKE) api & $(MAKE) frontend & wait
 
-test:             ## engine validation tests
-	cd model && python3 test_engine.py
+test:             ## engine and optimizer validation tests
+	cd model && python3 test_engine.py && python3 test_optimize.py

@@ -38,11 +38,10 @@ They want to know what to change, what it costs up front, what it saves, and whe
 
 Rules:
 - Every number you give must come from a tool. Never estimate or do your own sums on savings.
-- For a goal ("cut the bill by 5%", "save CHF 2,000 a month", "spend at most CHF 100k"):
-  1. Call rank_upgrades to find the upgrades with the shortest payback. Use by_floor with a group to fit a target closely.
-  2. Pick the cheapest package that meets the goal. Doing an upgrade on only some floors is fine.
-  3. Check the package with simulate_scenario. Adjust until it meets the goal.
-  4. Call show_scenario with the package you recommend, so the app shows it.
+- For a goal ("save CHF 10,000 a year", "cut energy use by 10%", "the best we can do with CHF 200k", "cheapest over 10 years"), call find_best_upgrades. It searches every combination, so don't build packages by hand. Then call show_scenario with the scenario it returns.
+- If find_best_upgrades says best_effort, say plainly that the target is out of reach, what the most achievable is, and what it costs.
+- For "what are my options" or "how does cost trade against savings", call upgrade_tradeoffs. Describe three packages: the cheapest useful one, the balanced one (knee_index) and the biggest saving. Show the one the user prefers; by default the balanced one.
+- Use rank_upgrades to explore single upgrades.
 - When the user asks for a specific change, simulate it and show it.
 - For what-if questions about the future (price spike, heatwave, new lab), pass the matching events. The single-year figures are for year 1; use what_if.by_year for the years the event hits.
 - "Energy bill" means the electricity bill. Running costs also include maintenance and supplies such as coffee capsules. Point out when an upgrade lowers the energy bill but raises running costs.
@@ -90,8 +89,8 @@ def chat(messages, scenario=None, on_tool=None):
     scenario: the swaps the app shows right now (optional), e.g. [{"group": "lighting", "option": "lighting_mid", "floor": 2}]
     on_tool:  optional callback(name, args) for logging
 
-    Returns {"reply": str, "scenario": dict | None}. `scenario` is set when the model picked one to show
-    (see tools.app_scenario).
+    Returns {"reply": str, "scenario": dict | None, "chart": dict | None}. `scenario` is set when the model
+    picked one to show (see tools.app_scenario). `chart` is set when it ran upgrade_tradeoffs (see tools.tradeoff_chart).
     """
     system = SYSTEM
     if scenario:
@@ -99,13 +98,13 @@ def chat(messages, scenario=None, on_tool=None):
     convo = [{"role": "system", "content": system}] + [
         {"role": m["role"], "content": m["content"]} for m in messages if m.get("role") in ("user", "assistant")
     ]
-    shown = None
+    shown = chart = None
     for _ in range(MAX_STEPS):
         msg = _post({"model": MODEL, "messages": convo, "tools": tools.SCHEMAS})["choices"][0]["message"]
         calls = msg.get("tool_calls") or []
         convo.append({"role": "assistant", "content": msg.get("content") or "", **({"tool_calls": calls} if calls else {})})
         if not calls:
-            return {"reply": msg.get("content") or "", "scenario": shown}
+            return {"reply": msg.get("content") or "", "scenario": shown, "chart": chart}
         for call in calls:
             name = call["function"]["name"]
             try:
@@ -115,10 +114,12 @@ def chat(messages, scenario=None, on_tool=None):
                 result = tools.run(name, args)
                 if name == "show_scenario":
                     shown = tools.app_scenario(**args)
+                elif name == "upgrade_tradeoffs":
+                    chart = tools.tradeoff_chart(result)
             except Exception as e:  # the model sees the error and can fix its call
                 result = {"error": str(e)}
             convo.append({"role": "tool", "tool_call_id": call["id"], "content": json.dumps(result)})
-    return {"reply": "Sorry, I couldn't finish that. Try a simpler question.", "scenario": shown}
+    return {"reply": "Sorry, I couldn't finish that. Try a simpler question.", "scenario": shown, "chart": chart}
 
 
 def _log(name, args):
@@ -139,6 +140,8 @@ def main():
         if out["scenario"]:
             s = out["scenario"]
             print(f"\n[App shows: {s['title']}, {len(s['item_ids'])} items highlighted]")
+        if out["chart"]:
+            print(f"[App plots: {len(out['chart']['points'])} packages, cost against saving]")
         if once:
             break
 
