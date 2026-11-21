@@ -6,7 +6,7 @@
 | 0 | 2610 | 55 | 14 | 342 | computer_lab 511, circulation 466, hall 432, seminar 360 |
 | 1 | 2270 | 84 | 73 | 0 | office 1130, hall 380, circulation 261, meeting 135 |
 | 2 | 2270 | 84 | 72 | 0 | office 1121, hall 378, circulation 261, meeting 135 |
-| 3 | 2270 | 82 | 72 | 0 | office 1131, hall 380, circulation 261, meeting 135 |
+| 3 | 2271 | 82 | 72 | 0 | office 1131, hall 380, circulation 261, meeting 135 |
 | 4 | 1484 | 49 | 37 | 65 | hall 294, meeting 281, office 223, makerspace 185 |
 | roof | 2736 | 1 | 0 | 0 | roof 2736 |
 
@@ -23,5 +23,6 @@
 | heating_cooling | 440 | kW | roof |
 | water_heater | 1 | system | plant_room |
 | solar_pv | 250 | kWp | roof |
+| lauzhack_banner | 1 | banner | cafe |
 
 Staff with desks: 241 (of 268 desks). Heated area 10973 m², cooled area 5768 m².

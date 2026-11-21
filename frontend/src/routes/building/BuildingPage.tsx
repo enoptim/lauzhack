@@ -22,6 +22,7 @@ export default function BuildingPage() {
   const floorLights = lightingItems.filter(item => item.floor === floor);
   const equipment = selectedGroup ? equipmentForFloor(floor, selectedGroup) : null;
   const solarDraft = draft.get(draftKey(null, 'solar_pv'));
+  const showBanner = draft.get(draftKey(0, 'lauzhack_banner'))?.option === 'lauzhack_banner_add';
 
   function chooseOption(group: EquipmentGroup, option: string) {
     const key = draftKey(floor, group);
@@ -44,7 +45,7 @@ export default function BuildingPage() {
   return (
     <main aria-label="Building viewer" className="grid min-h-full grid-rows-[minmax(20rem,55dvh)_auto] md:h-full md:grid-cols-[minmax(0,1fr)_20rem] md:grid-rows-[minmax(0,1fr)]">
       <div className="min-h-0">
-        <BuildingScene floor={floor} equipmentSelection={floor !== null ? {
+        <BuildingScene floor={floor} showBanner={showBanner} equipmentSelection={floor !== null ? {
           monitors: selectionFor('monitors'), computers: selectionFor('computers'), coffee: selectionFor('coffee'),
           water_heater: selectionFor('water_heater'), servers: selectionFor('servers'),
         } : undefined}>
@@ -89,6 +90,12 @@ export default function BuildingPage() {
             </SelectContent>
           </Select>
         </div>
+        {floor === 0 && (
+          <button type="button" className="rounded-md border border-input px-4 py-2 text-sm font-medium hover:bg-accent"
+            onClick={() => chooseOption('lauzhack_banner', showBanner ? keepCurrent : 'lauzhack_banner_add')}>
+            {showBanner ? 'Remove the LauzHack banner' : 'Hang the LauzHack banner'}
+          </button>
+        )}
         {floor === null && !solarDraft && (
           <button type="button" className="rounded-md border border-input px-4 py-2 text-sm font-medium hover:bg-accent"
             onClick={() => {

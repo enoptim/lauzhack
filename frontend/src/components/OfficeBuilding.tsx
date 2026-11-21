@@ -29,7 +29,7 @@ function GroundSlab({ width, length, y, thickness, color }: {
   </>;
 }
 
-function Floor({ level, equipmentSelection }: { level: number; equipmentSelection?: FloorEquipmentSelection }) {
+function Floor({ level, equipmentSelection, showBanner }: { level: number; equipmentSelection?: FloorEquipmentSelection; showBanner: boolean }) {
   const y = level * FLOOR_HEIGHT;
   return <group position={[0, y, 0]}>
     {/* Ring slabs leave a genuine open atrium through all upper floors. */}
@@ -72,7 +72,7 @@ function Floor({ level, equipmentSelection }: { level: number; equipmentSelectio
       <Plant position={[-7, 0, z]}/>
     </group>)}
     {level === 0 && <>
-      <GroundFloor workstationSelection={equipmentSelection}/>
+      <GroundFloor workstationSelection={equipmentSelection} showBanner={showBanner}/>
     </>}
   </group>;
 }
@@ -102,7 +102,7 @@ function Facade({ floors }: { floors: number }) {
   </group>;
 }
 
-export default function OfficeBuilding({ floor, equipmentSelection }: { floor: number | null; equipmentSelection?: FloorEquipmentSelection }) {
+export default function OfficeBuilding({ floor, equipmentSelection, showBanner }: { floor: number | null; equipmentSelection?: FloorEquipmentSelection; showBanner: boolean }) {
   if (floor === -1) return <>
     <Basement equipmentSelection={equipmentSelection} />
     <group scale={[WIDTH / LAYOUT_WIDTH, 1, LENGTH / LAYOUT_LENGTH]}>
@@ -114,7 +114,7 @@ export default function OfficeBuilding({ floor, equipmentSelection }: { floor: n
     <Basement />
     <group scale={[WIDTH / LAYOUT_WIDTH, 1, LENGTH / LAYOUT_LENGTH]}>
     <GroundSlab width={48} length={108} thickness={.4} y={-.5} color="#bfc5bc" />
-    {Array.from({ length: visibleFloors }, (_, level) => <Floor key={level} level={level} equipmentSelection={level === floor ? equipmentSelection : undefined}/>)}
+    {Array.from({ length: visibleFloors }, (_, level) => <Floor key={level} level={level} showBanner={showBanner} equipmentSelection={level === floor ? equipmentSelection : undefined}/>)}
     <Staircase floors={visibleFloors}/>
     {floor !== 0 && <Facade floors={floor ?? FLOOR_COUNT}/>}
     {/* Broad canopy frames the long transparent atrium skylight. */}

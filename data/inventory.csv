@@ -918,3 +918,4 @@ BC_ROOF:ventilation:floor4,BC_ROOF,5,ventilation,ventilation_current,5,14,floor 
 BC_ROOF:heating_cooling:building,BC_ROOF,5,heating_cooling,heating_cooling_current,440,17,building,made up
 BC_991.0:water_heater:building,BC_991.0,-1,water_heater,water_heater_current,1,16,building,made up
 BC_ROOF:solar_pv:building,BC_ROOF,5,solar_pv,solar_pv_none,250,,building,made up
+BC_094.6:lauzhack_banner,BC_094.6,0,lauzhack_banner,lauzhack_banner_none,1,,BC_094.6,made up

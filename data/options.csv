@@ -30,3 +30,5 @@ water_heater_current,water_heater,current,Central electric water heater + circul
 water_heater_upgrade,water_heater,upgrade,Heat-pump water heating,system,0,150,0,all,18,1,,20000,8000,20,350,,,,,,,,,,,,,,,"Hot water made by a heat pump (COP ~3) with a smaller, better insulated tank and loop.",estimate
 solar_pv_none,solar_pv,current,No solar panels,kWp,,,,,,,,0,0,,0,,,,,,,,0,,,,,,,Roof currently has no solar panels.,made up
 solar_pv_upgrade,solar_pv,upgrade,Rooftop solar panels,kWp,,,,,,,,700,400,25,15,,,,,,,,1085,,,,,,,"Monocrystalline panels on the roof around the atrium skylight; electricity used on site first, surplus sold to the grid.","generation: PVGIS for EPFL (10 deg tilt, south, 14% losses); prices: estimate"
+lauzhack_banner_none,lauzhack_banner,current,No banner,banner,,,,,,,,0,0,,0,,,,,,,,,,,,,,,The ground-floor atrium has no banner.,made up
+lauzhack_banner_add,lauzhack_banner,upgrade,Hang the LauzHack banner,banner,,,,,,,,0,0,,0,,,,,,,,,,,,,,,Hang a decorative LauzHack banner in the ground-floor atrium.,made up
