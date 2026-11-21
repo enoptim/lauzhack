@@ -265,7 +265,7 @@ export default function ResultsPage() {
         </div>
 
         <div className="flex flex-wrap items-center gap-x-10 gap-y-4 border-b pb-4">
-          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-4 gap-y-2 text-sm sm:flex-nowrap">
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm">
             <span id="price-label" className="shrink-0 text-muted-foreground">Electricity price</span>
             <div className="relative w-72 shrink-0 py-3">
               <Slider min={PRICE_MIN} max={PRICE_MAX} step={0.01} value={[price]} aria-labelledby="price-label"
@@ -274,7 +274,7 @@ export default function ResultsPage() {
             </div>
             <span className="w-28 whitespace-nowrap font-medium tabular-nums">{pricePerKwh(price)}</span>
             {yearlySaving !== null && (
-              <span className="whitespace-nowrap text-muted-foreground tabular-nums">
+              <span className="w-72 whitespace-nowrap text-muted-foreground tabular-nums">
                 {yearlySaving >= 0 ? <>the upgrade saves <b className="font-semibold text-foreground">{chfShort(yearlySaving)} a year</b> on bills</>
                   : <>the upgrade costs <b className="font-semibold text-foreground">{chfShort(-yearlySaving)} a year</b> more in bills</>}
               </span>
