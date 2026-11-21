@@ -1,0 +1,28 @@
+const CHF = new Intl.NumberFormat('de-CH', { maximumFractionDigits: 0 });
+
+/** CHF 760,500 → "CHF 761k"; keeps the sign with a real minus. */
+export function chfShort(value: number): string {
+  const sign = value < 0 ? '−' : '';
+  const abs = Math.abs(value);
+  if (abs >= 1e6) return `${sign}CHF ${(abs / 1e6).toFixed(abs >= 1e7 ? 0 : 2)}M`;
+  if (abs >= 1e3) return `${sign}CHF ${Math.round(abs / 1e3)}k`;
+  return `${sign}CHF ${Math.round(abs)}`;
+}
+
+export function chf(value: number): string {
+  return `${value < 0 ? '−' : ''}CHF ${CHF.format(Math.abs(value)).replaceAll('’', ',')}`;
+}
+
+export function kwh(value: number): string {
+  if (value >= 1e6) return `${(value / 1e6).toFixed(2)} GWh`;
+  return `${Math.round(value / 1e3)} MWh`;
+}
+
+export function years(value: number | null): string {
+  if (value === null) return 'never';
+  return `${value.toFixed(1)} years`;
+}
+
+export function pricePerKwh(value: number): string {
+  return `CHF ${value.toFixed(2)} / kWh`;
+}

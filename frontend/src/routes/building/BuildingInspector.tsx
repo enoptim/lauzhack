@@ -1,5 +1,6 @@
 import { Blinds, Coffee, Fan, Flag, Heater, Lightbulb, ListChecks, Monitor, PcCase, Server, Sun } from 'lucide-react';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useNavigate } from 'react-router';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -60,6 +61,17 @@ export default function BuildingInspector({ floor, selectedGroup, draft, onFloor
   const [showResults, setShowResults] = useState(false);
   const dialogTitle = useRef<HTMLHeadingElement>(null);
   const hasAlternatives = configurations.some(({ scenario }) => scenario.length > 0);
+  const navigate = useNavigate();
+
+  /** Open the Results page with every configuration that has changes, the one being edited shown first in detail. */
+  function openResults() {
+    const plans = configurations
+      .map(({ id, scenario }, index) => ({ id, name: configurationName(index + 1), scenario }))
+      .filter(({ scenario }) => scenario.length > 0);
+    const selected = Math.max(0, plans.findIndex(({ id }) => id === activeId));
+    const config = { plans: plans.length ? plans.map(({ name, scenario }) => ({ name, scenario })) : [{ name: 'Current setup', scenario: [] }], selected };
+    navigate(`/results?config=${encodeURIComponent(JSON.stringify(config))}`, { state: { intro: true } });
+  }
   const reviewList = useRef<HTMLDivElement>(null);
   const reviewedItem = useRef<HTMLDivElement>(null);
   const inspectorBody = useRef<HTMLDivElement>(null);
@@ -252,7 +264,13 @@ export default function BuildingInspector({ floor, selectedGroup, draft, onFloor
                     className="min-h-10 rounded-lg border bg-card px-4 text-sm font-medium hover:bg-sidebar-accent focus-visible:outline-2 focus-visible:outline-ring">
                     + New configuration
                   </button>
-                  <button type="button" onClick={() => setShowResults(true)}
+                  {hasAlternatives && (
+                    <button type="button" onClick={() => setShowResults(true)}
+                      className="min-h-10 px-2 text-sm text-muted-foreground underline underline-offset-4 hover:text-foreground">
+                      Quick table
+                    </button>
+                  )}
+                  <button type="button" onClick={openResults}
                     className="min-h-10 rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground hover:bg-primary/90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring">
                     {hasAlternatives ? 'Simulate and compare' : 'Simulate current setup'}
                   </button>
