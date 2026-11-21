@@ -6,6 +6,7 @@ import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectVa
 import { FLOOR_COUNT } from '@/data/building';
 import { draftKey, equipmentForFloor, equipmentLabels, isBuildingWide, lightingItems, type EquipmentGroup, type EquipmentSwap } from './equipment';
 
+import ExteriorBlinds from './ExteriorBlinds';
 import RoofEquipment from './RoofEquipment';
 
 const keepCurrent = 'keep-current';
@@ -47,8 +48,10 @@ export default function BuildingPage() {
           monitors: selectionFor('monitors'), computers: selectionFor('computers'), coffee: selectionFor('coffee'),
           water_heater: selectionFor('water_heater'), servers: selectionFor('servers'),
         } : undefined}>
-          {floor === null && <RoofEquipment ventilation={selectionFor('ventilation')}
-            solar={solarDraft ? selectionFor('solar_pv') : undefined} />}
+          {floor === null && <>
+            <RoofEquipment ventilation={selectionFor('ventilation')} solar={solarDraft ? selectionFor('solar_pv') : undefined} />
+            <ExteriorBlinds {...selectionFor('blinds')} />
+          </>}
           {floor !== null && floorLights.map(item => (
             <mesh
               key={item.id}
@@ -116,7 +119,7 @@ export default function BuildingPage() {
           </section>
         ) : (
           <p className="text-sm text-muted-foreground">
-            {floor === null ? 'Click an outlined rooftop unit or choose a floor to see its equipment.'
+            {floor === null ? 'Click outlined rooftop equipment or a window blind, or choose a floor.'
               : floor === -1 ? 'Click an outlined hot-water tank or server rack to configure that equipment.'
               : 'Click any outlined item to configure that equipment for the whole floor.'}
           </p>

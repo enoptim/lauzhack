@@ -6,12 +6,12 @@ import { FLOOR_COUNT, FLOOR_HEIGHT, LAYOUT_LENGTH, LAYOUT_WIDTH, LENGTH, WIDTH }
 import { sideRooms } from '@/data/sideRooms';
 import type { Swap } from '@/api/types';
 
-export const equipmentLabels = { lighting: 'Lighting', monitors: 'Monitors', computers: 'Computers', coffee: 'Coffee machines', water_heater: 'Water heaters', servers: 'Server racks', ventilation: 'Ventilation', solar_pv: 'Solar panels' };
+export const equipmentLabels = { lighting: 'Lighting', monitors: 'Monitors', computers: 'Computers', coffee: 'Coffee machines', water_heater: 'Water heaters', servers: 'Server racks', ventilation: 'Ventilation', solar_pv: 'Solar panels', blinds: 'Blinds' };
 export type EquipmentGroup = keyof typeof equipmentLabels;
 export type EquipmentSwap = Swap & { group: EquipmentGroup };
 
 export const isBuildingWide = (group: EquipmentGroup) =>
-  group === 'water_heater' || group === 'ventilation' || group === 'solar_pv';
+  group === 'water_heater' || group === 'ventilation' || group === 'solar_pv' || group === 'blinds';
 export const draftKey = (floor: number | null, group: EquipmentGroup) => isBuildingWide(group) ? group : `${floor}:${group}`;
 
 function csvRecords(csv: string) {

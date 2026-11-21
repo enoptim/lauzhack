@@ -3,7 +3,7 @@
 - [x] Monitors (`monitors`)
 - [x] Computers (`computers`)
 - [x] Lighting (`lighting`)
-- [ ] Blinds (`blinds`)
+- [x] Blinds (`blinds`) — selectable exterior blinds in Whole building view apply one choice to the entire building.
 - [x] Ventilation (`ventilation`) — six rooftop units share one building-wide choice.
 - [ ] Heating and cooling (`heating_cooling`)
 - [x] Servers (`servers`) — six selectable racks in the basement server room.
