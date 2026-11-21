@@ -281,6 +281,38 @@ def test_monte_carlo_reproducible_and_sane():
     assert all(abs(x) < TOL for x in a["summary"]["nothing"]["npv_economic"].values())   # same futures for both paths
     assert 0 <= a["compare"]["plan vs nothing"]["prob_better_economic"] <= 1
 
+# --- additions for the results view: break-even, overrides everywhere, assumptions list
+def test_breakeven_gives_zero_npv():
+    import engine as e
+    sc = [{"group": "ventilation", "option": "ventilation_mid"}]
+    be = e.breakeven(D, sc)["npv_cash"]
+    assert be["value"] is not None and be["pays_off"] == "above"
+    npv = e.simulate(D, sc, overrides={"electricity_price_chf_kwh": be["value"]})["npv_cash"]
+    assert abs(npv) < 500                                            # within CHF 500 of zero
+
+
+def test_overrides_reach_bands_and_tornado():
+    base = engine.bands(D, LIGHT_MID)["central"]
+    pricey = engine.bands(D, LIGHT_MID, overrides={"electricity_price_chf_kwh": 0.4})["central"]
+    assert pricey > base
+    t = engine.tornado(D, LIGHT_MID, overrides={"electricity_price_chf_kwh": 0.4})
+    assert abs(t["central"] - pricey) < TOL
+    assert all(r["parameter"] != "electricity_price_chf_kwh" for r in t["rows"])
+
+
+def test_futures_accept_events_and_overrides():
+    import montecarlo
+    a = montecarlo.run(D, {"p": LIGHT_MID}, n=20, seed=1)["summary"]["p"]["npv_cash"]["p50"]
+    b = montecarlo.run(D, {"p": LIGHT_MID}, n=20, seed=1, overrides={"electricity_price_chf_kwh": 0.4})["summary"]["p"]["npv_cash"]["p50"]
+    assert b > a
+
+
+def test_assumptions_list_is_complete():
+    import viz
+    rows = viz.assumptions(D)
+    assert {r["key"] for r in rows} == set(D["params"])
+    assert all(r["label"] in ("fact", "research", "guess", "result") for r in rows)
+
 
 if __name__ == "__main__":
     tests = [v for k, v in dict(globals()).items() if k.startswith("test_")]

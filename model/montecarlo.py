@@ -92,11 +92,16 @@ def _pct(xs, q):
     return xs[f] + (xs[c] - xs[f]) * (k - f)
 
 
-def run(data, scenarios, n=300, seed=2026):
+def run(data, scenarios, n=300, seed=2026, events=(), overrides=None):
     """scenarios: {name: scenario list}. Returns per-scenario summaries, pairwise comparisons,
-    and the futures themselves (so any run can be replayed with engine.simulate(..., future=...))."""
+    and the futures themselves (so any run can be replayed with engine.simulate(..., future=...)).
+    events: event ids switched on in every future, on top of the random ones (with their fixed timing).
+    overrides: assumptions fixed in every future; they win over the drawn people-effect strengths."""
     rng = random.Random(seed)
     futures = [draw_future(data, rng) for _ in range(n)]
+    if events or overrides:
+        futures = [{**f, "events": f["events"] + list(events), "params": {**f["params"], **(overrides or {})}}
+                   for f in futures]
     H = int(data["params"]["horizon_years"])
     results = {}
     for name, sc in scenarios.items():

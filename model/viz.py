@@ -9,6 +9,7 @@ Each number carries a kind in KIND, so the UI can style it consistently:
   index       a 0-100 or 0-1 score, never money (comfort, quality scores)
 """
 import math
+import re
 
 import engine
 
@@ -53,6 +54,27 @@ def catalog(data):
                     "start_year": e["start_year"], "end_year": e["end_year"]} for e in data["events"].values()],
         "horizon_years": data["params"]["horizon_years"],
     })
+
+
+def _label(source):
+    """Plain honesty label for an assumption: fact (measured or from EPFL plans), research (a cited study),
+    result (derived from other numbers) or guess (our estimate or design choice)."""
+    s = (source or "").lower()
+    if "epfl plan" in s and not s.startswith("derived"):
+        return "fact"
+    if s.startswith("derived"):
+        return "result"
+    if re.search(r"(19|20)\d\d", s) and "to verify" not in s:
+        return "research"
+    return "guess"
+
+
+def assumptions(data):
+    """Every assumption the engine uses: value, range, unit, source and a plain honesty label."""
+    return clean([{"key": k, "value": data["params"][k], "low": data["ranges"][k][0], "high": data["ranges"][k][1],
+                   "unit": m["unit"], "category": m["category"], "source": m["source"],
+                   "description": m["description"], "label": _label(m["source"])}
+                  for k, m in data["param_meta"].items()])
 
 
 # ------------------------------------------------------------------ per-item / per-room snapshot

@@ -6,7 +6,7 @@ In the repo this folder sits at `model/`, next to the team's `data/`; the engine
 (override with `TWIN_TEAM_DATA=/path/to/data`). Standard library only; the API needs `pip install -r requirements.txt`.
 
 ```sh
-python test_engine.py        # 34 validation tests
+python test_engine.py        # 41 validation tests
 ```
 
 ```python
@@ -86,13 +86,15 @@ cd model && uvicorn server:app --reload --port 8000
 ```
 | Endpoint | Body | Returns |
 |---|---|---|
+| `GET /api/assumptions` | | every assumption: value, low, high, unit, source, and a label (`fact`, `research`, `guess`, `result`) |
 | `GET /api/catalog` | | rooms, items (with `serves_floor`), options per group (price, lifetime, description), events |
 | `POST /api/simulate` | `{scenario, events, overrides, year}` | `finance` (NPVs, payback, waterfall breakdown, flags, per-year series) and `snapshot` / `snapshot_baseline` for that year |
-| `POST /api/preview` | `{scenario, swap, events}` | what adding one swap would change: extra capex, NPV deltas, kWh, performance, comfort, meeting-room CO2, new flags |
+| `POST /api/preview` | `{scenario, swap, events, overrides}` | what adding one swap would change: extra capex, NPV deltas, kWh, performance, comfort, meeting-room CO2, new flags |
 | `POST /api/stress_test` | `{scenario}` | hackathon weekend hour by hour on the ground floor |
-| `POST /api/tornado` | `{scenario, events}` | top 10 assumptions by swing in economic NPV |
-| `POST /api/bands` | `{scenario, events}` | economic NPV with weak / central / strong people effects |
-| `POST /api/futures` | `{scenarios: {name: scenario}, n, seed}` | Monte Carlo: P10/P50/P90, probabilities, fan chart per year, A-vs-B, three futures in words |
+| `POST /api/tornado` | `{scenario, events, overrides}` | top 10 assumptions by swing in economic NPV |
+| `POST /api/bands` | `{scenario, events, overrides}` | economic NPV with weak / central / strong people effects |
+| `POST /api/futures` | `{scenarios: {name: scenario}, n, seed, events, overrides}` | Monte Carlo: P10/P50/P90, probabilities, fan chart per year, A-vs-B, three futures in words. `events` are on in every future; `overrides` are fixed in every future |
+| `POST /api/breakeven` | `{scenario, events, overrides, param}` | the value of `param` (default electricity price) where cash and economic NPV are zero, and whether the plan pays off above or below it |
 
 A snapshot is keyed by the team's ids, which are also the mesh names:
 - `items[item_id]`: `option_id`, `kwh_year`, `kw_avg`, `kw_on` (drive wire thickness or glow from these)
