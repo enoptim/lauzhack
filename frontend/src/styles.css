@@ -7,3 +7,23 @@ body,
   overflow: hidden;
   background: #edf1ed;
 }
+
+/* Developer-only engine debug overlay (toggle with `) */
+.debug-panel {
+  position: fixed;
+  top: 12px;
+  right: 12px;
+  width: min(520px, calc(100vw - 24px));
+  max-height: calc(100vh - 24px);
+  overflow: auto;
+  padding: 10px 12px;
+  background: rgba(255, 255, 255, .95);
+  border: 1px solid #bdcbbd;
+  border-radius: 6px;
+  font: 12px/1.4 ui-monospace, Menlo, monospace;
+  color: #1d261d;
+}
+.debug-panel pre { margin: 4px 0 8px; white-space: pre-wrap; word-break: break-all; }
+.debug-panel p { margin: 6px 0; }
+.debug-panel summary { cursor: pointer; font-weight: 600; }
+.debug-error { color: #b3261e; }

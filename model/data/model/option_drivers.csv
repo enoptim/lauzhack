@@ -1,0 +1,23 @@
+option_id,lighting_quality,daylight_savings_pct,screen_quality,glare_control,daylight_factor,co2_control,humidity_control,seconds_per_drink,amenity,printer_enclosed,hot_desking,notes
+monitors_current,,,0.35,,,,,,,,,PWM flicker at low brightness; fixed stand
+monitors_budget,,,0.6,,,,,,,,,Flicker-free; height-adjustable
+monitors_mid,,,0.8,,,,,,,,,Flicker-free; low blue light; sharper text; full ergonomic stand
+monitors_premium,,,0.85,,,,,,,,,Flicker-free ultrawide; fully adjustable
+computers_current,,,,,,,,,,,0,Fixed desktop
+computers_upgrade,,,,,,,,,,,1,Laptop enables hot-desking
+lighting_current,0.4,0,,,,,,,,,,Cool white fluorescent; manual switching
+lighting_budget,0.45,0,,,,,,,,,,LED tubes; flicker depends on driver
+lighting_mid,0.7,0,,,,,,,,,,Flicker-free; 4000 K; CRI>80
+lighting_premium,0.9,20,,,,,,,,,,CRI>90; circadian; daylight dimming is 20 of its 45% control savings
+blinds_current,,,,0.3,0.6,,,,,,,Manual: lowered late or left down
+blinds_upgrade,,,,0.85,0.9,,,,,,,Automatic: blocks sun but keeps daylight and cuts glare
+ventilation_current,,,,,,0,0,,,,,Constant volume
+ventilation_budget,,,,,,1,0,,,,,CO2 demand control
+ventilation_mid,,,,,,1,0,,,,,CO2 demand control; 25% more airflow
+ventilation_premium,,,,,,1,1,,,,,CO2 and humidity control; 50% more airflow; ePM1 filters
+coffee_current,,,,,,,,60,0.5,,,Frequent breakdowns and queues
+coffee_budget,,,,,,,,30,0.3,,,Fast capsules; basic coffee
+coffee_mid,,,,,,,,40,0.7,,,About 40 s per cup; good quality
+coffee_premium,,,,,,,,90,1.0,,,Cafe quality and social hub; 1-2 min per drink
+printers_3d_current,,,,,,,,,,0,,Open frame: particles into the room
+printers_3d_upgrade,,,,,,,,,,1,,Enclosed with HEPA and carbon filter
