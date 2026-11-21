@@ -62,7 +62,7 @@ export default function MoneyChart({ runs, whatIfs, staffEffects, fan, visibleUn
           tickFormatter={value => `Year ${value}`} tickLine={false} axisLine={false} tickMargin={10}
           className="text-sm"
         />
-        <YAxis tickFormatter={value => chfShort(value)} tickLine={false} axisLine={false} width={84} className="text-sm" />
+        <YAxis tickFormatter={value => chfShort(value)} tickLine={false} axisLine={false} width={100} className="text-sm" />
 
         {belowMinimum && (
           <ReferenceArea x1={belowMinimum[0] - 0.5} x2={belowMinimum[1] + 0.5} fill="url(#below-minimum)" stroke="none"

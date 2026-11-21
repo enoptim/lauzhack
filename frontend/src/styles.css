@@ -35,25 +35,25 @@
   --brand-mid-green: oklch(0.68 0.092 117);
   --brand-light-green: oklch(0.82 0.092 121);
 
-  --background: oklch(0.985 0.002 270);
-  --foreground: oklch(0.21 0.012 270);
+  --background: oklch(0.98 0.005 78);
+  --foreground: oklch(0.22 0 0);
   --card: oklch(1 0 0);
-  --card-foreground: oklch(0.21 0.012 270);
+  --card-foreground: oklch(0.22 0 0);
   --popover: oklch(1 0 0);
   --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.51 0.19 277);
+  --primary: var(--brand-orange);
   --primary-foreground: oklch(1 0 0);
-  --secondary: oklch(0.965 0.004 270);
+  --secondary: oklch(0.97 0 0);
   --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.965 0.004 270);
-  --muted-foreground: oklch(0.5 0.014 270);
-  --accent: oklch(0.955 0.02 277);
-  --accent-foreground: oklch(0.38 0.15 277);
+  --muted: oklch(0.97 0 0);
+  --muted-foreground: oklch(0.556 0 0);
+  --accent: var(--brand-light-green);
+  --accent-foreground: var(--brand-dark-green);
   --destructive: oklch(0.577 0.245 27.325);
   --destructive-foreground: oklch(1 0 0);
-  --border: oklch(0.915 0.005 270);
-  --input: oklch(0.89 0.006 270);
-  --ring: oklch(0.51 0.19 277);
+  --border: oklch(0.922 0 0);
+  --input: oklch(0.922 0 0);
+  --ring: var(--brand-orange);
 
   /* Status semantics, used only by status dots and their labels. */
   --status-live: oklch(0.6 0.12 135);
@@ -72,12 +72,12 @@
 
   /* Chart series, validated for colour-blind separation on the light ground.
      1 = the plan as chosen, 2-4 = what-if lines. Red stays reserved for warnings. */
-  --chart-1: #5b5bd6;
-  --chart-2: #c27c0e;
-  --chart-3: #14928a;
+  --chart-1: var(--brand-orange);
+  --chart-2: #2f6fc0;
+  --chart-3: #6f7f1f;
   --chart-4: #a3368f;
-  --chart-5: oklch(0.7 0.01 270);
-  --warning: oklch(0.58 0.21 25);
+  --chart-5: oklch(0.7 0 0);
+  --warning: var(--destructive);
 
   /* Radius scale: controls md (6px), surfaces lg (10px), overlays xl (14px). */
   --radius: 0.625rem;
@@ -174,8 +174,8 @@
     -webkit-font-smoothing: antialiased;
   }
   ::selection {
-    background: oklch(0.88 0.06 277);
-    color: oklch(0.21 0.012 270);
+    background: var(--brand-light-green);
+    color: var(--brand-dark-green);
   }
   /* No double-tap zoom delay on controls. */
   a,

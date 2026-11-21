@@ -50,7 +50,8 @@ web
 
 ## Brand Commitments
 
-- Look and feel: a clean modern product platform, like Linear, Claude and GitHub. The user chose this over themed directions on 2026-11-21. Their craft level is the bar.
+- Colours: our own brand colours, defined by Casper in `frontend/src/styles.css` (orange primary, three greens). This is binding. Do not replace them.
+- Feel: a clean modern product platform, like Linear, Claude and GitHub: calm layout, careful spacing, soft details. Take their feel and craft level, not their colours. The user chose this over themed directions on 2026-11-21.
 - Charts are soft: smooth curves, gentle filled areas, thin lines, quiet axes. Not hard, poster-like or signage-like.
 - Light theme. The 3D building view keeps its current look until we restyle it after the Results page.
 - shadcn/ui stays the component base, restyled through the theme.

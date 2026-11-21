@@ -152,7 +152,7 @@ export default function ResultsPage() {
         ))}
       </dl>
 
-      <section aria-label="Money over time" className="flex flex-col gap-5 rounded-xl border bg-card p-4 shadow-[0_1px_2px_oklch(0_0_0/0.04),0_8px_24px_-12px_oklch(0.3_0.05_277/0.12)] md:p-6">
+      <section aria-label="Money over time" className="flex flex-col gap-5 rounded-xl border bg-card p-4 shadow-[0_1px_2px_oklch(0_0_0/0.04),0_8px_24px_-12px_oklch(0.3_0.02_60/0.14)] md:p-6">
         <div className="flex flex-wrap items-start justify-between gap-x-8 gap-y-4">
           <div className="flex flex-col gap-1">
             <h2 className="text-base font-semibold">Money compared with doing nothing</h2>
