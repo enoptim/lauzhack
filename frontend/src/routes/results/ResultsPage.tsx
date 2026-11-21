@@ -1,7 +1,7 @@
-import { ArrowLeft, ArrowRight, Eye, EyeOff, Pause, Play, TriangleAlert } from 'lucide-react';
-import { useCallback, useMemo, useState } from 'react';
+import { ArrowLeft, ArrowRight, Dices, Eye, EyeOff, Pause, Play, TriangleAlert } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useLocation, useSearchParams } from 'react-router';
-import type { Catalog, Scenario, Swap } from '@/api/types';
+import type { Catalog, FutureSample, FuturePathView, Scenario, Swap } from '@/api/types';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -15,9 +15,8 @@ import { chf, chfShort, kwh, pricePerKwh, years } from './format';
 import { flagText, groupLabels, isContextFlag, seriesColor, whatIfDetails, whatIfLabels } from './labels';
 import MoneyBreakdown from './MoneyBreakdown';
 import SimulationIntro from './SimulationIntro';
-import MoneyChart, { crossing, totals } from './MoneyChart';
-import PlansChart, { type PlanLine } from './PlansChart';
-import { useEngine, usePlanRuns, WHAT_IFS, type WhatIf } from './useEngine';
+import PlansChart, { paybackYear, type ExampleNote, type PlanLine } from './PlansChart';
+import { FUTURES_N, useEngine, WHAT_IFS, type WhatIf } from './useEngine';
 
 const PRICE_KEY = 'electricity_price_chf_kwh';
 const TODAY_PRICE = 0.2;
@@ -60,17 +59,67 @@ function installedOption(catalog: Catalog | null, swap: Swap) {
 
 const where = (swap: Swap) => swap.floor === undefined ? 'Whole building' : swap.floor === 0 ? 'Ground floor' : `Floor ${swap.floor}`;
 
-/** First year (with decimals) where a futures percentile line reaches zero, or null. */
-function fanPayback(points: { year: number; value: number }[]): number | null {
-  let previous = { year: 0, value: -Infinity };
-  for (const point of points) {
-    if (previous.value < 0 && point.value >= 0) {
-      if (!Number.isFinite(previous.value)) return point.year;
-      return previous.year + ((0 - previous.value) / (point.value - previous.value)) * (point.year - previous.year);
-    }
-    previous = point;
+/** True only after `on` has stayed true for `ms`: avoids a flash of "Recalculating" for instant answers. */
+function useDelayed(on: boolean, ms: number) {
+  const [shown, setShown] = useState(false);
+  useEffect(() => {
+    if (!on) { setShown(false); return; }
+    const timer = setTimeout(() => setShown(true), ms);
+    return () => clearTimeout(timer);
+  }, [on, ms]);
+  return shown;
+}
+
+/** "9.0 years", or "over 15 years" when it does not pay back within the years shown. */
+const paybackText = (value: number | null, horizon: number) => (value === null ? `over ${horizon} years` : years(value));
+
+const floorName = (floor: number) => (floor === -1 ? 'basement' : floor === 0 ? 'ground floor' : `floor ${floor}`);
+
+/** Failures in one example future of old equipment that this plan touches, one per year and group. */
+function planFailures(sample: FutureSample | null, scenario: Scenario, horizon: number) {
+  if (!sample) return [];
+  const touched = (group: string, floors: number[]) => scenario.some(swap => swap.group === group
+    && (swap.floor === undefined || floors.length === 0 || floors.includes(swap.floor)));
+  return sample.failures.filter(f => f.year <= horizon && touched(f.group, f.floors));
+}
+
+/** Notes on the example line. Only the 3 most expensive get a text label; the others are dots. */
+function exampleNotes(failures: FutureSample['failures']): ExampleNote[] {
+  const labelled = new Set([...failures].sort((a, b) => b.cost - a.cost).slice(0, 3));
+  return failures.map(f => {
+    const name = groupLabels[f.group] ?? f.group;
+    const where = f.group === 'ventilation' && f.floors.length ? ` (${f.floors.map(floorName).join(', ')})`
+      : f.rows > 1 ? ` (${f.rows} rooms)` : '';
+    return { year: f.year, text: `Old ${name.toLowerCase()} fails${where}: ${chfShort(f.cost)}`, label: labelled.has(f) ? `${name} fails` : '' };
+  });
+}
+
+/** One short story of an example future: the world, then the old equipment of this plan. */
+function storyText(sample: FutureSample, failures: FutureSample['failures']) {
+  const parts: string[] = [];
+  const price = /price ends at ([\d.]+)x today/.exec(sample.what_happened);
+  if (price) {
+    const change = Math.round((Number(price[1]) - 1) * 100);
+    parts.push(change === 0 ? 'Electricity ends at today’s price' : `Electricity ends ${Math.abs(change)}% ${change > 0 ? 'above' : 'below'} today’s price`);
   }
-  return null;
+  const count = (id: string) => sample.events.filter(e => e.id === id).length;
+  const heat = count('heatwave_summer');
+  const spikes = count('energy_price_spike');
+  const lab = sample.events.find(e => e.id === 'new_lab');
+  const world = [
+    heat && `${heat} heatwave ${heat === 1 ? 'summer' : 'summers'}`,
+    spikes && `${spikes} price ${spikes === 1 ? 'spike' : 'spikes'}`,
+    lab ? `the new lab in year ${lab.start_year}` : 'no new lab',
+  ].filter(Boolean);
+  parts.push(world.join(', '));
+  const byGroup = new Map<string, number[]>();
+  for (const f of failures) byGroup.set(f.group, [...(byGroup.get(f.group) ?? []), f.year]);
+  for (const [group, years] of byGroup) {
+    const list = years.length === 1 ? `year ${years[0]}` : `years ${years.slice(0, -1).join(', ')} and ${years.at(-1)}`;
+    parts.push(`Old ${(groupLabels[group] ?? group).toLowerCase()} fails in ${list}`);
+  }
+  if (!byGroup.size) parts.push('The old equipment of this plan lasts all these years');
+  return `${parts.join('. ')}.`;
 }
 
 export default function ResultsPage() {
@@ -101,10 +150,17 @@ export default function ResultsPage() {
 
   const overrides = useMemo(() => ({ ...(read?.config.overrides ?? {}), [PRICE_KEY]: price }), [price, params]); // eslint-disable-line react-hooks/exhaustive-deps
   const settled = useMemo(() => ({ ...(read?.config.overrides ?? {}), [PRICE_KEY]: settledPrice }), [settledPrice, params]); // eslint-disable-line react-hooks/exhaustive-deps
-  const engine = useEngine(scenario, overrides, settled, useMemo(() => (whatIf ? [whatIf] : []), [whatIf]));
-  const planRuns = usePlanRuns(allScenarios, overrides, whatIf);
+  const engine = useEngine(scenario, allScenarios, overrides, settled, whatIf);
   const runs = engine.runs.data;
   const plan = runs?.plan;
+  // An engine started before the futures update answers without these fields: say so instead of drawing nonsense.
+  const outdated = Boolean(engine.futures.data && Object.values(engine.futures.data.summary)
+    .some(s => typeof s.start !== 'number' || !s.fan.cash_running) || (engine.futures.data && !engine.futures.data.samples));
+  const futures = outdated ? null : engine.futures.data;
+  const busy = useDelayed(engine.futures.loading, 200);
+  // One example future at a time ("Show one possible future"); null shows all futures as a band.
+  const [exampleIndex, setExampleIndex] = useState<number | null>(null);
+  const example = exampleIndex !== null && futures?.samples.length ? futures.samples[exampleIndex % futures.samples.length] : null;
 
   /** Play starts from today; while playing it pauses; while paused it resumes. */
   function play() {
@@ -127,17 +183,26 @@ export default function ResultsPage() {
   }, []);
 
   const world = (whatIf && runs?.[whatIf]) || plan;
-  const rows = useMemo(() => (world ? totals(world, horizon, staffEffects) : []), [world, horizon, staffEffects]);
-  // Every plan's totals, for the plan list and the chart. The selected plan uses its own detailed run.
-  const planRows = useMemo(() => plans.map((_, index) => {
-    if (index === selected) return rows.length ? rows : null;
-    const run = planRuns.data?.[index];
-    return run ? totals(run, horizon, staffEffects) : null;
-  }), [plans, selected, rows, planRuns.data, horizon, staffEffects]);
-  const lines = useMemo<PlanLine[]>(() => plans.flatMap((plan, index) => {
-    const r = planRows[index];
-    return r && (index === selected || !hidden.has(index)) ? [{ id: index, name: plan.name, color: PLAN_COLORS[index % PLAN_COLORS.length], rows: r }] : [];
-  }), [plans, planRows, selected, hidden]);
+  // Each plan from the 200 futures: the middle future and the range where 8 in 10 land. Index = year (0 = today).
+  // Money is counted without the value of equipment still standing at the end (see the sentence under the verdict).
+  const view: FuturePathView = staffEffects ? 'economic_running' : 'cash_running';
+  const planLines = useMemo(() => plans.map((p, index): PlanLine | null => {
+    const s = futures?.summary[`p${index}`];
+    if (!s) return null;
+    const fan = s.fan[view].filter(f => f.year <= horizon);
+    const path = example?.paths[`p${index}`];
+    return {
+      id: index, name: p.name, color: PLAN_COLORS[index % PLAN_COLORS.length],
+      middle: [s.start, ...fan.map(f => f.p50)],
+      low: [s.start, ...fan.map(f => f.p10)],
+      high: [s.start, ...fan.map(f => f.p90)],
+      example: path ? [path.start, ...path[view].slice(0, horizon)] : null,
+    };
+  }), [plans, futures, view, horizon, example]);
+  const lines = useMemo(() => planLines.filter((line): line is PlanLine => line !== null && (line.id === selected || !hidden.has(line.id))),
+    [planLines, selected, hidden]);
+  const failures = useMemo(() => planFailures(example, chosen, horizon), [example, chosen, horizon]);
+  const notes = useMemo(() => exampleNotes(failures), [failures]);
 
   function selectPlan(index: number) {
     setSelected(index);
@@ -189,13 +254,13 @@ export default function ResultsPage() {
       && (swap.floor === undefined || item.serves_floor === swap.floor)).reduce((n, item) => n + item.units, 0);
     return sum + price * units;
   }, 0);
-  const last = rows.at(-1);
-  const endValue = last ? last.nothing - last.upgrade : 0;
-  const payback = crossing(rows);
+  const focus = planLines[selected] ?? null;
+  const endValue = focus?.middle[horizon] ?? 0;
+  const payback = focus ? paybackYear(focus.middle) : null;
+  const goodPayback = focus ? paybackYear(focus.high) : null;
+  const badPayback = focus ? paybackYear(focus.low) : null;
   const residual = world?.finance.years.find(y => y.year === horizon)?.residual_value ?? 0;
-  const fan = engine.futures.data?.summary.plan?.fan.cash.filter(p => p.year <= horizon) ?? null;
-  const goodPayback = fan ? fanPayback(fan.map(p => ({ year: p.year, value: p.p90 }))) : null;
-  const badPayback = fan ? fanPayback(fan.map(p => ({ year: p.year, value: p.p10 }))) : null;
+  const breakdown = futures?.summary[`p${selected}`]?.npv_breakdown_mean ?? finance?.npv_breakdown;
   const flags = (finance?.flags ?? []).filter(flag => !isContextFlag(flag) && (flag.year === undefined || flag.year <= horizon));
   const contextFlags = (finance?.flags ?? []).filter(flag => isContextFlag(flag) && (flag.year === undefined || flag.year <= horizon));
   const subject = multi ? plans[selected]?.name : 'the upgrade';
@@ -205,7 +270,7 @@ export default function ResultsPage() {
   return (
     <main className="mx-auto flex w-full max-w-7xl flex-col gap-8 px-4 py-8 md:px-8">
       {intro && (
-        <SimulationIntro ready={Boolean(plan && engine.catalog.data)} onDone={endIntro}
+        <SimulationIntro ready={Boolean(plan && (futures || outdated || engine.futures.error) && engine.catalog.data)} onDone={endIntro}
           changes={chosen.map(swap => `${groupLabels[swap.group] ?? swap.group} → ${optionName(engine.catalog.data, swap.group, swap.option) ?? swap.option}`)} />
       )}
       <Button asChild variant="outline" size="lg" className="w-fit">
@@ -220,8 +285,7 @@ export default function ResultsPage() {
           </div>
           <ul className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
             {plans.map((p, index) => {
-              const end = planRows[index]?.at(-1);
-              const value = end ? end.nothing - end.upgrade : null;
+              const value = planLines[index]?.middle[horizon] ?? null;
               const isSelected = index === selected;
               const isHidden = hidden.has(index) && !isSelected;
               return (
@@ -278,14 +342,15 @@ export default function ResultsPage() {
 
 
       <section aria-label="Verdict" className="flex flex-col gap-2">
-        {finance ? (
+        {focus ? (
           <p className={cn("font-semibold tracking-tight text-balance", endValue >= 0 ? "text-4xl md:text-5xl" : "text-2xl sm:text-3xl")}>
             {endValue >= 0 ? <>After {horizon} years, {subject} has saved <span className="text-primary">{chfShort(endValue)}</span></>
               : <>After {horizon} years, {subject} still needs <span className="text-warning">{chfShort(-endValue)}</span> to pay for itself</>}
           </p>
         ) : <Skeleton className="h-14 w-full max-w-2xl" />}
         <p className="text-lg text-muted-foreground text-pretty">
-          {endValue >= 0 ? 'Saved means: doing nothing would have cost this much more.' : 'It has not paid for itself yet within these years.'}
+          {focus && `In the middle of ${FUTURES_N} possible futures. In 8 of 10, the result is between ${chfShort(focus.low[horizon])} and ${chfShort(focus.high[horizon])}.`}
+          {endValue >= 0 ? ' Saved means: doing nothing would have cost this much more.' : ''}
           {whatIf ? ` This is with: ${whatIfLabels[whatIf].toLowerCase()}.` : ''}{staffEffects ? ' Staff effects are counted.' : ''}
           {Math.abs(residual) >= 50_000 && residual < 0 && ` Doing nothing would also leave you with ${chfShort(-residual)} more equipment value at the end.`}
         </p>
@@ -293,16 +358,17 @@ export default function ResultsPage() {
 
       <dl aria-label="Today and after" className="grid grid-cols-2 gap-px overflow-hidden rounded-xl border bg-border md:grid-cols-4">
         {[
-          { label: 'Energy bill, year 1', before: today && chfShort(today.costs_chf.energy), now: after && chfShort(after.costs_chf.energy) },
-          { label: 'Energy use, year 1', before: today && kwh(today.kwh_year), now: after && kwh(after.kwh_year) },
-          { label: 'CO₂ in meeting rooms', before: today && `${Math.round(today.outcomes.meeting_co2_ppm)} ppm`, now: after && `${Math.round(after.outcomes.meeting_co2_ppm)} ppm` },
-          { label: 'Pays back in', before: null, now: finance ? (payback !== null ? years(payback) : `not within ${horizon} years`) : null },
+          { label: 'Energy bill, year 1', sub: today && `today ${chfShort(today.costs_chf.energy)}`, now: after && chfShort(after.costs_chf.energy) },
+          { label: 'Energy use, year 1', sub: today && `today ${kwh(today.kwh_year)}`, now: after && kwh(after.kwh_year) },
+          { label: 'CO₂ in meeting rooms', sub: today && `today ${Math.round(today.outcomes.meeting_co2_ppm)} ppm`, now: after && `${Math.round(after.outcomes.meeting_co2_ppm)} ppm` },
+          { label: 'Pays back in', now: focus ? (payback !== null ? years(payback) : `not within ${horizon} years`) : null,
+            sub: focus && (goodPayback === null ? null : `8 in 10: ${years(goodPayback)} to ${paybackText(badPayback, horizon)}`) },
         ].map(stat => (
           <div key={stat.label} className="flex flex-col gap-1 bg-card px-5 py-4">
             <dt className="text-sm text-muted-foreground">{stat.label}</dt>
             <dd className="flex flex-wrap items-baseline gap-x-2 tabular-nums">
               <span className="whitespace-nowrap text-2xl font-semibold tracking-tight">{stat.now ?? '…'}</span>
-              {stat.before && <span className="whitespace-nowrap text-sm text-muted-foreground">today {stat.before}</span>}
+              {stat.sub && <span className="whitespace-nowrap text-sm text-muted-foreground">{stat.sub}</span>}
             </dd>
           </div>
         ))}
@@ -311,10 +377,8 @@ export default function ResultsPage() {
       <section aria-label="Money over time" className="flex flex-col gap-5 rounded-xl border bg-card p-4 shadow-[0_1px_2px_oklch(0_0_0/0.04),0_8px_24px_-12px_oklch(0.3_0.02_60/0.14)] md:p-6">
         <div className="flex flex-wrap items-center justify-between gap-x-8 gap-y-4">
           <div className="flex flex-col gap-1">
-            <h2 className="text-base font-semibold">{multi ? 'Money saved compared with doing nothing' : 'Money compared with doing nothing'}</h2>
-            <p className="text-sm text-muted-foreground">{multi
-              ? 'Each plan starts below the grey line by its price. Where it crosses the grey line, it has paid for itself.'
-              : 'Only the extra costs each choice causes, added up year by year. Costs both choices share are left out.'}</p>
+            <h2 className="text-base font-semibold">Money saved compared with doing nothing</h2>
+            <p className="text-sm text-muted-foreground">{multi ? 'Each plan starts' : 'The plan starts'} below the grey line by its price. Where it crosses the grey line, it has paid for itself.</p>
           </div>
           <div className="flex flex-wrap items-center gap-3">
             <ToggleGroup type="single" variant="outline" value={String(horizon)} aria-label="Years to show"
@@ -360,7 +424,7 @@ export default function ResultsPage() {
             </ToggleGroup>
           </div>
           <p className="min-h-5 text-sm text-muted-foreground" aria-live="polite">
-            {whatIf ? whatIfDetails[whatIf] : 'Pick one to replay both paths in that world. Click it again to go back.'}
+            {whatIf ? whatIfDetails[whatIf] : `Pick one to add it to all ${FUTURES_N} futures. Click it again to go back.`}
           </p>
         </div>
 
@@ -388,38 +452,62 @@ export default function ResultsPage() {
           </div>
         </div>
 
-        {runs ? (
+        {futures ? (
           <div className="relative">
-            <div className={cn('transition-opacity duration-200', (engine.runs.loading || planRuns.loading) && 'opacity-60')}>
-          {multi ? (
-            <PlansChart lines={lines} selected={selected} highlighted={hovered} horizon={horizon} staffEffects={staffEffects} onSelect={selectPlan}
-              playToken={playToken} playing={playState === 'playing'} msPerYear={MS_PER_YEAR} onYear={onYear} />
-          ) : <MoneyChart rows={rows} horizon={horizon} staffEffects={staffEffects} playToken={playToken} playing={playState === 'playing'} msPerYear={MS_PER_YEAR} onYear={onYear}
-            equipment={[...new Set(scenario.map(swap => (groupLabels[swap.group] ?? swap.group).toLowerCase()))].join(' and ') || 'equipment'} />}
+            <div className={cn('transition-opacity duration-200', busy && 'opacity-60')}>
+              <PlansChart lines={lines} selected={selected} highlighted={hovered} horizon={horizon} dashed={staffEffects} notes={notes}
+                onSelect={selectPlan} playToken={playToken} playing={playState === 'playing'} msPerYear={MS_PER_YEAR} onYear={onYear} />
             </div>
-            {(engine.runs.loading || planRuns.loading) && (
+            {busy && (
               <span className="absolute top-2 left-1/2 flex -translate-x-1/2 items-center gap-2 rounded-full border bg-card px-3 py-1.5 text-sm shadow-sm">
-                <Spinner /> Recalculating…
+                <Spinner /> Running {FUTURES_N} possible futures…
               </span>
             )}
           </div>
+        ) : engine.futures.error || outdated ? (
+          <Alert variant="destructive">
+            <TriangleAlert />
+            <AlertTitle>{outdated ? 'The engine is out of date.' : 'The possible futures could not be worked out.'}</AlertTitle>
+            <AlertDescription>Restart the engine with <code className="font-mono">make dev</code>, then reload this page.</AlertDescription>
+          </Alert>
         ) : <Skeleton className="h-[28rem] w-full" />}
 
-        <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-2 text-sm text-muted-foreground">
-          <p className="flex flex-wrap gap-x-6 gap-y-1">
-            <span className="flex items-center gap-2"><span className="h-3 w-5 rounded-sm bg-chart-3/25" />Green: {multi ? `${plans[selected]?.name} has saved money` : 'the upgrade has spent less'}</span>
-            <span className="flex items-center gap-2"><span className="h-3 w-5 rounded-sm bg-warning/15" />Red: {multi ? `${plans[selected]?.name} has not paid for itself yet` : 'the upgrade has spent more'}</span>
-            {staffEffects && <span className="flex items-center gap-2"><svg aria-hidden="true" width="20" height="4" className="text-chart-1"><line x1="0" y1="2" x2="20" y2="2" stroke="currentColor" strokeWidth="2" strokeDasharray="5 3" /></svg>Dashed: includes lost staff value, a guess</span>}
+        <p className="flex flex-wrap gap-x-6 gap-y-1 text-sm text-muted-foreground">
+          <span className="flex items-center gap-2">
+            <span className="h-3 w-5 rounded-sm" style={{ background: `color-mix(in oklch, ${PLAN_COLORS[selected % PLAN_COLORS.length]} 20%, transparent)` }} />
+            Pale band: 8 in 10 possible futures land here
+          </span>
+          <span className="flex items-center gap-2">
+            <span className="h-0.5 w-5 rounded-full" style={{ background: PLAN_COLORS[selected % PLAN_COLORS.length] }} />
+            {example ? 'Bold line: the one future shown' : 'Line: the middle future'}
+          </span>
+          {staffEffects && <span className="flex items-center gap-2"><svg aria-hidden="true" width="20" height="4" className="text-chart-1"><line x1="0" y1="2" x2="20" y2="2" stroke="currentColor" strokeWidth="2" strokeDasharray="5 3" /></svg>Dashed: includes staff effects, a guess</span>}
+        </p>
+
+        <div className="flex flex-col gap-3 border-t pt-4 md:flex-row md:items-start md:gap-6">
+          <div className="flex shrink-0 items-center gap-2">
+            <Button variant="outline" size="lg" disabled={!futures} className="w-60"
+              onClick={() => setExampleIndex(index => (index === null ? 0 : index + 1))}>
+              <Dices data-icon="inline-start" />
+              {example ? 'Show another future' : 'Show one possible future'}
+            </Button>
+            <Button variant="ghost" size="lg" onClick={() => setExampleIndex(null)} className={cn(!example && 'invisible')}>
+              Back to all futures
+            </Button>
+          </div>
+          <p className="h-16 overflow-hidden text-sm text-pretty" aria-live="polite">
+            {example && futures ? (
+              <>
+                <span className="font-semibold">Future {((exampleIndex ?? 0) % futures.samples.length) + 1} of {futures.samples.length}. </span>
+                {storyText(example, failures)}
+              </>
+            ) : (
+              <span className="text-muted-foreground">
+                The engine ran {FUTURES_N} possible futures. In each, prices move, heatwaves come, and old equipment fails earlier or later, the way real equipment wears out.
+                The line is the middle one. Click the button to see one future on its own.
+              </span>
+            )}
           </p>
-          {engine.futures.loading && !staffEffects && !whatIf && (
-            <p className="flex items-center gap-2"><Spinner /> Checking 200 possible futures…</p>
-          )}
-          {fan && !engine.futures.loading && !staffEffects && !whatIf && (
-            <p className="text-foreground">
-              {multi ? `${plans[selected]?.name}, across` : 'Across'} 200 possible futures: paid for itself by {goodPayback !== null ? `year ${goodPayback.toFixed(1)}` : `—`} in good ones,{' '}
-              {badPayback !== null ? `by year ${badPayback.toFixed(1)} in bad ones` : `not within ${horizon} years in bad ones`}.
-            </p>
-          )}
         </div>
       </section>
 
@@ -427,9 +515,9 @@ export default function ResultsPage() {
         <section aria-label="Where the money comes from" className="flex flex-col gap-4 rounded-xl border bg-card p-4 md:p-6">
           <div className="flex flex-col gap-1">
             <h2 className="text-base font-semibold">Where the money comes from</h2>
-            <p className="text-sm text-muted-foreground">Over 15 years, with future francs counted at today’s value.</p>
+            <p className="text-sm text-muted-foreground">Average of {FUTURES_N} possible futures over 15 years, with future francs counted at today’s value.</p>
           </div>
-          {finance ? <MoneyBreakdown breakdown={finance.npv_breakdown} staffEffects={staffEffects} /> : <Skeleton className="h-40 w-full" />}
+          {breakdown ? <MoneyBreakdown breakdown={breakdown} staffEffects={staffEffects} /> : <Skeleton className="h-40 w-full" />}
         </section>
 
         <section aria-label="Warnings" className="flex flex-col gap-3 rounded-xl border bg-card p-4 md:p-6">

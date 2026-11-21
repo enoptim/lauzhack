@@ -310,7 +310,38 @@ export interface FuturesSummary {
   payback_cash_p50: number | null;
   prob_no_cash_payback: number;
   flag_probability: Record<string, number>;
-  fan: { cash: FanPoint[]; economic: FanPoint[] };
+  /** Cumulative money vs doing nothing per year. `_running` leaves out the value of equipment left at the end. */
+  fan: { cash: FanPoint[]; economic: FanPoint[]; cash_running: FanPoint[]; economic_running: FanPoint[] };
+  /** Payback year in a good (p10), middle (p50) and bad (p90) future; null = not within the horizon. */
+  payback_range: { p10: number | null; p50: number | null; p90: number | null };
+  prob_paid_back_by_year: { year: number; share: number }[];
+  /** Average over all futures of each part of the discounted 15-year value. */
+  npv_breakdown_mean: NpvBreakdown;
+  npv_cash_mean: number;
+  /** Money vs doing nothing today, before year 1: minus the purchase price. */
+  start: number;
+  npv_economic_mean: number;
+}
+
+export type FuturePathView = 'cash' | 'economic' | 'cash_running' | 'economic_running';
+
+/** Old units that fail in one year of one future, for one equipment group. */
+export interface FutureFailure {
+  year: number;
+  group: string;
+  rows: number;
+  units: number;
+  cost: number;
+  floors: number[];
+}
+
+/** One example future, replayable: what happened, and each plan's cumulative money per year. */
+export interface FutureSample {
+  id: number;
+  what_happened: string;
+  failures: FutureFailure[];
+  events: { id: string; start_year: number; end_year: number | null }[];
+  paths: Record<string, Record<FuturePathView, number[]> & { start: number }>;
 }
 
 export interface FutureStory {
@@ -326,6 +357,8 @@ export interface FuturesResult {
   /** Keyed "A vs B": share of futures where A beats B. */
   compare: Record<string, { prob_better_cash: number; prob_better_economic: number }>;
   stories: { bad: FutureStory; typical: FutureStory; good: FutureStory };
+  /** About 20 futures from bad to good, in a fixed shuffled order. */
+  samples: FutureSample[];
   method: string;
 }
 

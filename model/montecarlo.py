@@ -98,7 +98,7 @@ def _pct(xs, q):
 
 def _slim(res):
     """What the summary needs from one run. Keeps pickling cheap when runs come from worker processes."""
-    return {"npv_cash": res["npv_cash"], "npv_economic": res["npv_economic"],
+    return {"npv_cash": res["npv_cash"], "npv_economic": res["npv_economic"], "start": -res["capex_year0"],
             "payback_cash": res["payback_cash"], "payback_economic": res["payback_economic"],
             "flag_types": sorted({f["type"] for f in res["flags"]}), "npv_breakdown": res["npv_breakdown"],
             "cash": [y["cumulative_cash_cf"] for y in res["years"]],
@@ -208,6 +208,7 @@ def run(data, scenarios, n=300, seed=2026, events=(), overrides=None, pool=None,
             "prob_paid_back_by_year": [{"year": y, "share": sum(x is not None and x <= y for x in pb) / n}
                                        for y in range(1, H + 1)],
             "npv_breakdown_mean": breakdown,
+            "start": _pct([r["start"] for r in runs], 0.5),     # money vs doing nothing today: minus the purchase
             "npv_cash_mean": sum(cash) / n,
             "npv_economic_mean": sum(econ) / n,
         }
@@ -235,7 +236,8 @@ def run(data, scenarios, n=300, seed=2026, events=(), overrides=None, pool=None,
     random.Random(seed + 1).shuffle(picks)
     sample_list = [{"id": k, "what_happened": describe(futures[k]), "failures": _failures(data, futures[k], H),
                     "events": sorted(futures[k]["events"], key=lambda e: e["start_year"]),
-                    "paths": {name: {v: results[name][k][v] for v in ("cash", "economic", "cash_running", "economic_running")}
+                    "paths": {name: {"start": results[name][k]["start"],
+                              **{v: results[name][k][v] for v in ("cash", "economic", "cash_running", "economic_running")}}
                               for name in names}} for k in picks]
     return {"n": n, "seed": seed, "summary": summary, "compare": compare, "stories": stories,
             "samples": sample_list, "futures": futures,
