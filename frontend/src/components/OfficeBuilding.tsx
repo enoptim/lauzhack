@@ -1,5 +1,4 @@
-import { useMemo } from 'react';
-import { DoubleSide, BufferGeometry, Float32BufferAttribute } from 'three';
+import Staircase from './Staircase';
 import { FLOOR_COUNT, FLOOR_HEIGHT, WIDTH, LENGTH } from '../data/building';
 import { Box, Desk, Plant } from './Furniture';
 
@@ -9,41 +8,6 @@ const red = '#c52d3f';
 
 function Glass({ size, position }: { size: [number, number, number]; position: [number, number, number] }) {
   return <mesh position={position}><boxGeometry args={size}/><meshStandardMaterial color="#a4c6ce" transparent opacity={.18} roughness={.22} metalness={.15} depthWrite={false}/></mesh>;
-}
-
-// Continuous helical ribbon alongside the treads, recalling the atrium staircase.
-function StairRibbon() {
-  const geometry = useMemo(() => {
-    const vertices: number[] = [];
-    const indices: number[] = [];
-    const segments = 240;
-    for (let i = 0; i <= segments; i++) {
-      const t = i / segments;
-      const a = t * Math.PI * 8;
-      vertices.push(Math.cos(a) * 3, t * 14, Math.sin(a) * 3);
-      vertices.push(Math.cos(a) * 3, t * 14 + 1.05, Math.sin(a) * 3);
-      if (i < segments) { const n = i * 2; indices.push(n, n + 2, n + 1, n + 1, n + 2, n + 3); }
-    }
-    const g = new BufferGeometry();
-    g.setAttribute('position', new Float32BufferAttribute(vertices, 3));
-    g.setIndex(indices); g.computeVertexNormals();
-    return g;
-  }, []);
-  return <mesh geometry={geometry}><meshStandardMaterial color={white} side={DoubleSide} roughness={.6}/></mesh>;
-}
-
-function Staircase() {
-  return <group position={[0, 0, -27]}>
-    <mesh position={[0, 7, 0]}><cylinderGeometry args={[.3, .3, 14, 16]}/><meshStandardMaterial color={red}/></mesh>
-    {Array.from({ length: 96 }, (_, i) => {
-      const a = i / 24 * Math.PI * 2;
-      return <group key={i} position={[0, (i + 1) * 14 / 96, 0]} rotation={[0, -a, 0]}>
-        <Box size={[2.7, .12, .65]} color="#b9bcb8" position={[1.6, 0, 0]}/>
-        <Box size={[.06, 1, .06]} color={red} position={[.65, .5, 0]}/>
-      </group>;
-    })}
-    <StairRibbon/>
-  </group>;
 }
 
 function Floor({ level }: { level: number }) {
@@ -72,13 +36,17 @@ function Floor({ level }: { level: number }) {
       </>}
       {[-32, -16, 0, 16, 32].map(z => <Box key={z} size={[.45, 3.5, .45]} color={white} position={[side * 8.3, 1.75, z]}/>)}
     </group>)}
-    {level > 0 && [-32, 32].map(z => <Glass key={z} size={[16, 1.05, .06]} position={[0, .55, z]}/>)}
+    {level > 0 && <>
+      <Glass size={[16, 1.05, .06]} position={[0, .55, -32]}/>
+      {/* Leave a clear opening where the staircase landing meets the corridor. */}
+      {[-4.5, 4.5].map(x => <Glass key={x} size={[7, 1.05, .06]} position={[x, .55, 32]}/>)}
+    </>}
     {[-40, 40].map(z => <group key={z}>
       <Box size={[5, 3, 5]} color="#bdc4c1" position={[12, 1.5, z]}/>
       <Box size={[1.8, 2.4, .06]} color="#7e9195" position={[12, 1.2, z + 2.55]}/>
       <Plant position={[-7, 0, z]}/>
     </group>)}
-    {level === 0 && [-15, -5, 5, 15, 25].map(z => <group key={z}>
+    {level === 0 && [-15, -5, 5, 15].map(z => <group key={z}>
       <Desk position={[-3, 0, z]}/><Desk position={[3, 0, z]}/>
       <Plant position={[6, 0, z]}/>
     </group>)}
