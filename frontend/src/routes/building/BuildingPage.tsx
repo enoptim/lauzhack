@@ -44,7 +44,7 @@ export default function BuildingPage() {
       <div className="min-h-0">
         <BuildingScene floor={floor} equipmentSelection={floor !== null ? {
           monitors: selectionFor('monitors'), computers: selectionFor('computers'), coffee: selectionFor('coffee'),
-          water_heater: selectionFor('water_heater'),
+          water_heater: selectionFor('water_heater'), servers: selectionFor('servers'),
         } : undefined}>
           {floor !== null && floorLights.map(item => (
             <mesh
@@ -105,7 +105,7 @@ export default function BuildingPage() {
         ) : (
           <p className="text-sm text-muted-foreground">
             {floor === null ? 'Choose a floor to see its equipment.'
-              : floor === -1 ? 'Click the outlined hot-water tank to configure the building’s water heating.'
+              : floor === -1 ? 'Click an outlined hot-water tank or server rack to configure that equipment.'
               : 'Click any outlined item to configure that equipment for the whole floor.'}
           </p>
         )}

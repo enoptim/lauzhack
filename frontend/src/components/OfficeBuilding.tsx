@@ -104,7 +104,7 @@ function Facade({ floors }: { floors: number }) {
 
 export default function OfficeBuilding({ floor, equipmentSelection }: { floor: number | null; equipmentSelection?: FloorEquipmentSelection }) {
   if (floor === -1) return <>
-    <Basement waterHeaterSelection={equipmentSelection?.water_heater} />
+    <Basement equipmentSelection={equipmentSelection} />
     <group scale={[WIDTH / LAYOUT_WIDTH, 1, LENGTH / LAYOUT_LENGTH]}>
       <Staircase floors={1} />
     </group>

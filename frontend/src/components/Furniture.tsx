@@ -4,7 +4,7 @@ import type { ThreeElements } from '@react-three/fiber';
 
 type DeviceSelection = { outline: string; onSelect: () => void };
 export type WorkstationSelection = { monitors: DeviceSelection; computers: DeviceSelection };
-export type FloorEquipmentSelection = WorkstationSelection & { coffee: DeviceSelection; water_heater: DeviceSelection };
+export type FloorEquipmentSelection = WorkstationSelection & { coffee: DeviceSelection; water_heater: DeviceSelection; servers: DeviceSelection };
 type DeviceProps = { position: [number, number, number]; selection?: DeviceSelection };
 
 function Device({ position, selection, size, color, children }: DeviceProps & {
