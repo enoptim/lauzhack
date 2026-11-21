@@ -312,3 +312,55 @@ export interface FuturesResult {
   stories: { bad: FutureStory; typical: FutureStory; good: FutureStory };
   method: string;
 }
+
+// ---------------------------------------------------------------- /api/chat (chat/README.md)
+export interface ChatMessage {
+  role: 'user' | 'assistant';
+  content: string;
+}
+
+export interface ChatRequest {
+  /** The whole conversation so far; the server keeps no state. */
+  messages: ChatMessage[];
+  /** The scenario the app shows right now, so the assistant can build on it. */
+  scenario?: Scenario;
+}
+
+/** What the assistant said about its scenario. Money in CHF, today vs the scenario in year 1. */
+export interface ChatScenarioSummary {
+  energy_bill_chf_month: { today: number; scenario: number };
+  energy_bill_saving_chf_year: number;
+  energy_bill_saving_pct: number;
+  electricity_kwh_year: { today: number; scenario: number };
+  electricity_saving_pct: number;
+  running_cost_saving_chf_year: number;
+  upfront_cost_chf: number;
+  extra_cost_vs_like_for_like_chf: number;
+  payback_years: number | null;
+  payback_years_with_people_effects: number | null;
+  simple_roi_pct_per_year: number | null;
+  horizon_years: number;
+  npv_chf: number;
+  people_effects_chf: number;
+  people_and_air_year_1: Record<string, { today: number; scenario: number }>;
+  flags: Flag[];
+  changed_items: number;
+  changed_floors: number[];
+}
+
+export interface ChatScenario {
+  title: string;
+  /** Ready for /api/simulate. */
+  scenario: Scenario;
+  events: string[];
+  /** Mesh names of the items that change, to highlight in 3D. */
+  item_ids: string[];
+  summary: ChatScenarioSummary;
+}
+
+export interface ChatResult {
+  /** Markdown. */
+  reply: string;
+  /** Set when the assistant picked a scenario to show. */
+  scenario: ChatScenario | null;
+}

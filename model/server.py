@@ -7,13 +7,19 @@ All bodies are JSON. A scenario is a list of swaps, e.g.
     [{"group": "lighting", "option": "lighting_mid", "floor": 2}, {"group": "monitors", "option": "monitors_mid", "year": 1}]
 Events are a list of event ids, e.g. ["new_lab", "heatwave_summer"].
 """
-from fastapi import FastAPI
+import sys
+from pathlib import Path
+
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 import engine
 import montecarlo
 import viz
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))  # repo root, for chat/
+from chat import agent  # noqa: E402
 
 DATA = engine.load()
 app = FastAPI(title="BC twin engine")
@@ -37,6 +43,11 @@ class Futures(BaseModel):
     scenarios: dict
     n: int = 200
     seed: int = 2026
+
+
+class Chat(BaseModel):
+    messages: list
+    scenario: list = []
 
 
 @app.get("/api/catalog")
@@ -74,3 +85,14 @@ def futures(body: Futures):
     res = montecarlo.run(DATA, body.scenarios, n=min(body.n, 500), seed=body.seed)
     res.pop("futures")
     return viz.clean(res)
+
+
+@app.post("/api/chat")
+def chat(body: Chat):
+    """The assistant (chat/agent.py). Needs OPENROUTER_API_KEY in chat/.env."""
+    if not body.messages or body.messages[-1].get("role") != "user":
+        raise HTTPException(400, "The last message must be from the user.")
+    try:
+        return viz.clean(agent.chat(body.messages, body.scenario))
+    except RuntimeError as e:  # missing key or OpenRouter error
+        raise HTTPException(502, str(e))

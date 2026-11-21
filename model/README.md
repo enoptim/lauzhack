@@ -93,6 +93,7 @@ cd model && uvicorn server:app --reload --port 8000
 | `POST /api/tornado` | `{scenario, events}` | top 10 assumptions by swing in economic NPV |
 | `POST /api/bands` | `{scenario, events}` | economic NPV with weak / central / strong people effects |
 | `POST /api/futures` | `{scenarios: {name: scenario}, n, seed}` | Monte Carlo: P10/P50/P90, probabilities, fan chart per year, A-vs-B, three futures in words |
+| `POST /api/chat` | `{messages, scenario}` | the assistant's answer and the scenario it recommends; see [chat/README.md](../chat/README.md) |
 
 A snapshot is keyed by the team's ids, which are also the mesh names:
 - `items[item_id]`: `option_id`, `kwh_year`, `kw_avg`, `kw_on` (drive wire thickness or glow from these)

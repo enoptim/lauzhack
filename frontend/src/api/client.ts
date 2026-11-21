@@ -3,7 +3,7 @@
 // In development Vite proxies /api to http://localhost:8000 (see vite.config.ts).
 // Set VITE_API_URL to call a different host.
 import type {
-  BandsResult, Catalog, FuturesRequest, FuturesResult, PreviewRequest, PreviewResult,
+  BandsResult, Catalog, ChatRequest, ChatResult, FuturesRequest, FuturesResult, PreviewRequest, PreviewResult,
   RunRequest, SimulateResult, StressTestResult, TornadoResult,
 } from './types';
 
@@ -27,4 +27,6 @@ export const api = {
   tornado: (body: RunRequest = {}) => request<TornadoResult>('/api/tornado', body),
   bands: (body: RunRequest = {}) => request<BandsResult>('/api/bands', body),
   futures: (body: FuturesRequest) => request<FuturesResult>('/api/futures', body),
+  /** The assistant. Takes 10-30 s: it runs the engine several times before answering. */
+  chat: (body: ChatRequest) => request<ChatResult>('/api/chat', body),
 };

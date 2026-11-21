@@ -8,4 +8,6 @@ export default defineConfig({
   resolve: {
     alias: { '@': fileURLToPath(new URL('./src', import.meta.url)) },
   },
+  // /api goes to the engine (cd model && uvicorn server:app --port 8000) in development.
+  server: { proxy: { '/api': 'http://localhost:8000' } },
 });
