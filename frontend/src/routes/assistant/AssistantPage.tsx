@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router';
 import { ArrowUpIcon, RotateCcwIcon } from 'lucide-react';
 import { api } from '@/api/client';
-import type { Catalog, ChatScenario, OptimizationProblem, Scenario } from '@/api/types';
+import type { Catalog, ChatOptimization, ChatProposal, ChatScenario, OptimizationProblem, Scenario } from '@/api/types';
 import { Bubble, BubbleContent } from '@/components/ui/bubble';
 import { Button } from '@/components/ui/button';
 import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupTextarea } from '@/components/ui/input-group';
@@ -19,14 +19,18 @@ import {
 } from '@/components/ui/message-scroller';
 import { Spinner } from '@/components/ui/spinner';
 import Markdown from './Markdown';
-import PlanCard from './PlanCard';
+import { PlanCard, ProposalCard, type ProposalState } from './PlanCard';
 
 type Turn = {
   id: string;
   role: 'user' | 'assistant';
   content: string;
   scenario?: ChatScenario | null;
-  problem?: OptimizationProblem | null;
+  /** An optimization the assistant set up, waiting for the user's OK. */
+  proposal?: ChatProposal | null;
+  /** Set once the user ran this turn's proposal. */
+  ran?: boolean;
+  optimization?: ChatOptimization | null;
   failed?: boolean;
 };
 
@@ -37,7 +41,7 @@ const suggestions = [
 ];
 
 // The conversation survives a trip to /results and back (this browser tab only).
-const storageKey = 'assistant-conversation';
+const storageKey = 'assistant-conversation-v2';
 
 function loadTurns(): Turn[] {
   try {
@@ -68,7 +72,7 @@ function latestPlan(turns: Turn[]): Scenario {
 export default function AssistantPage() {
   const [turns, setTurns] = useState<Turn[]>(loadTurns);
   const [draft, setDraft] = useState('');
-  const [pending, setPending] = useState(false);
+  const [pending, setPending] = useState<null | 'thinking' | 'optimizing'>(null);
   const [catalog, setCatalog] = useState<Catalog | null>(null);
   const navigate = useNavigate();
   const input = useRef<HTMLTextAreaElement>(null);
@@ -86,24 +90,40 @@ export default function AssistantPage() {
     }
   }, [turns]);
 
-  async function send(text: string) {
+  /** Send a message. With `confirm`, the server first runs the optimizer on exactly that problem. */
+  async function send(text: string, confirm?: { turnId: string; problem: OptimizationProblem }) {
     const content = text.trim();
     if (!content || pending) return;
-    const history: Turn[] = [...turns, { id: newId(), role: 'user', content }];
+    const marked = confirm ? turns.map(turn => turn.id === confirm.turnId ? { ...turn, ran: true } : turn) : turns;
+    const history: Turn[] = [...marked, { id: newId(), role: 'user', content }];
     setTurns(history);
     setDraft('');
-    setPending(true);
+    setPending(confirm ? 'optimizing' : 'thinking');
     try {
       const reply = await api.chat({
         messages: history.filter(turn => !turn.failed).map(({ role, content }) => ({ role, content })),
         scenario: latestPlan(turns),
+        confirm: confirm?.problem,
       });
-      setTurns(previous => [...previous, { id: newId(), role: 'assistant', content: reply.reply, scenario: reply.scenario, problem: reply.problem }]);
+      setTurns(previous => [...previous, {
+        id: newId(), role: 'assistant', content: reply.reply,
+        scenario: reply.scenario, proposal: reply.proposal, optimization: reply.optimization,
+      }]);
     } catch (error) {
-      setTurns(previous => [...previous, { id: newId(), role: 'assistant', content: errorText(error), failed: true }]);
+      setTurns(previous => [
+        ...previous.map(turn => turn.id === confirm?.turnId ? { ...turn, ran: false } : turn),
+        { id: newId(), role: 'assistant', content: errorText(error), failed: true },
+      ]);
     } finally {
-      setPending(false);
+      setPending(null);
     }
+  }
+
+  const latestProposalId = [...turns].reverse().find(turn => turn.proposal)?.id ?? null;
+
+  function proposalState(turn: Turn): ProposalState {
+    if (turn.ran) return pending === 'optimizing' && turn.id === latestProposalId ? 'running' : 'ran';
+    return turn.id === latestProposalId ? 'open' : 'replaced';
   }
 
   function showPlan(plan: ChatScenario) {
@@ -114,7 +134,7 @@ export default function AssistantPage() {
     <main className="mx-auto flex h-full w-full max-w-2xl flex-col">
       <div className="flex items-center gap-2 px-4 pt-4 pb-2">
         <h1 className="flex-1 text-lg font-semibold">Ask the building</h1>
-        <Button variant="ghost" size="sm" disabled={pending || turns.length === 0} onClick={() => setTurns([])}>
+        <Button variant="ghost" size="sm" disabled={pending !== null || turns.length === 0} onClick={() => setTurns([])}>
           <RotateCcwIcon data-icon="inline-start" />
           New chat
         </Button>
@@ -129,7 +149,8 @@ export default function AssistantPage() {
                   <div className="flex flex-col gap-3 text-sm">
                     <p className="text-muted-foreground">
                       Tell me what you want and what I can’t change: a budget, equipment to keep, a target.
-                      I’ll test plans in the building model and show you the best one.
+                      I’ll set it up as an optimization for you to check. When you run it, I test plans in the
+                      building model and show you the best one.
                     </p>
                     <div className="flex flex-col items-start gap-2">
                       {suggestions.map(text => (
@@ -152,7 +173,15 @@ export default function AssistantPage() {
                           <BubbleContent><Markdown text={turn.content} /></BubbleContent>
                         </Bubble>
                       )}
-                      <PlanCard scenario={turn.scenario} problem={turn.problem} catalog={catalog} onShow={showPlan} />
+                      {turn.proposal && (
+                        <ProposalCard
+                          proposal={turn.proposal}
+                          state={proposalState(turn)}
+                          catalog={catalog}
+                          onRun={() => send('Looks good. Run the optimization.', { turnId: turn.id, problem: turn.proposal!.problem })}
+                        />
+                      )}
+                      {turn.scenario && <PlanCard scenario={turn.scenario} optimization={turn.optimization} onShow={showPlan} />}
                     </MessageContent>
                   </Message>
                 </MessageScrollerItem>
@@ -164,7 +193,9 @@ export default function AssistantPage() {
                       <Bubble variant="muted">
                         <BubbleContent className="flex flex-row items-center gap-2">
                           <Spinner />
-                          Testing plans in the building model. This takes 10–30 seconds.
+                          {pending === 'optimizing'
+                            ? 'Running the optimization and explaining the result. This takes 10–30 seconds.'
+                            : 'Thinking about your request…'}
                         </BubbleContent>
                       </Bubble>
                     </MessageContent>
@@ -201,7 +232,7 @@ export default function AssistantPage() {
             className="max-h-40"
           />
           <InputGroupAddon align="block-end" className="justify-end">
-            <InputGroupButton type="submit" variant="default" size="icon-xs" aria-label="Send" disabled={pending || !draft.trim()}>
+            <InputGroupButton type="submit" variant="default" size="icon-xs" aria-label="Send" disabled={pending !== null || !draft.trim()}>
               <ArrowUpIcon />
             </InputGroupButton>
           </InputGroupAddon>

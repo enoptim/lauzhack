@@ -86,47 +86,58 @@ SCHEMAS = [
     }},
     {"type": "function", "function": {
         "name": "list_metrics",
-        "description": "The goals and limits optimize understands, with today's value of each (doing nothing). "
-                       "Call it before optimize when the user gives a target in their own words.",
+        "description": "The goals and limits an optimization problem can use, with today's value of each (doing "
+                       "nothing). Call it before propose_problem only if you need units or descriptions.",
         "parameters": {"type": "object", "properties": {}},
     }},
-    {"type": "function", "function": {
-        "name": "optimize",
-        "description": "Finds the best plan for one goal under the user's limits by running the building model "
-                       "many times. Use it whenever the user wants the best or cheapest plan under conditions "
-                       "(a budget, things that must not change, a target). Returns the problem as understood, the "
-                       "plan, and today vs the plan for every metric. The app shows the plan automatically.",
-        "parameters": {"type": "object", "properties": {
-            "objective": {"type": "object", "description": "What to make as small or as large as possible.",
-                          "properties": {"metric": {"type": "string", "enum": list(optimize.METRICS)},
-                                         "sense": {"type": "string", "enum": ["min", "max"],
-                                                   "description": "Leave out to use the metric's natural direction."}},
-                          "required": ["metric"]},
-            "constraints": {"type": "array", "description": "Limits the plan must meet. Use max/min for absolute "
-                            "values, max_change_pct/min_change_pct for changes vs today (e.g. -20 = at least 20% lower).",
-                            "items": {"type": "object", "properties": {
-                                "metric": {"type": "string", "enum": list(optimize.METRICS)},
-                                "max": {"type": "number"}, "min": {"type": "number"},
-                                "max_change_pct": {"type": "number"}, "min_change_pct": {"type": "number"}},
-                                "required": ["metric"]}},
-            "locked": {"type": "array", "description": "Things that must stay as they are today. Leave out floor "
-                       "to lock the whole group.",
-                       "items": {"type": "object", "properties": {
-                           "group": {"type": "string", "enum": _GROUPS},
-                           "floor": {"type": "integer", "minimum": -1, "maximum": 4}}, "required": ["group"]}},
-            "allowed": {"type": "object", "description": "Per group, the only options the plan may use, e.g. "
-                        '{"coffee": ["coffee_current", "coffee_mid"]}. List one option to force it. Include the '
-                        "group's current option to allow keeping it.",
-                        "additionalProperties": {"type": "array", "items": {"type": "string", "enum": sorted(_OPTIONS)}}},
-            "per_floor": {"type": "boolean", "description": "Decide floor by floor (default true, finer and "
-                          "cheaper plans). false: one choice per group for the whole building."},
-            "allow_warnings": {"type": "boolean", "description": "Allow plans that cause warnings such as over "
-                               "budget or a reserve below the minimum. Default false."},
-            "events": _EVENTS_PARAM,
-            "title": {"type": "string", "description": "Short name for the plan in the app, e.g. 'Save CHF 10k a year'."},
-        }, "required": ["objective"]},
-    }},
 ]
+
+# What propose_problem and optimize take: one goal, limits, things to keep, allowed options.
+_PROBLEM_PARAMS = {"type": "object", "properties": {
+    "objective": {"type": "object", "description": "What to make as small or as large as possible.",
+                  "properties": {"metric": {"type": "string", "enum": list(optimize.METRICS)},
+                                 "sense": {"type": "string", "enum": ["min", "max"],
+                                           "description": "Leave out to use the metric's natural direction."}},
+                  "required": ["metric"]},
+    "constraints": {"type": "array", "description": "Limits the plan must meet. Use max/min for absolute "
+                    "values, max_change_pct/min_change_pct for changes vs today (e.g. -20 = at least 20% lower).",
+                    "items": {"type": "object", "properties": {
+                        "metric": {"type": "string", "enum": list(optimize.METRICS)},
+                        "max": {"type": "number"}, "min": {"type": "number"},
+                        "max_change_pct": {"type": "number"}, "min_change_pct": {"type": "number"}},
+                        "required": ["metric"]}},
+    "locked": {"type": "array", "description": "Things that must stay as they are today. Leave out floor "
+               "to lock the whole group.",
+               "items": {"type": "object", "properties": {
+                   "group": {"type": "string", "enum": _GROUPS},
+                   "floor": {"type": "integer", "minimum": -1, "maximum": 4}}, "required": ["group"]}},
+    "allowed": {"type": "object", "description": "Per group, the only options the plan may use, e.g. "
+                '{"coffee": ["coffee_current", "coffee_mid"]}. List one option to force it. Include the '
+                "group's current option to allow keeping it.",
+                "additionalProperties": {"type": "array", "items": {"type": "string", "enum": sorted(_OPTIONS)}}},
+    "per_floor": {"type": "boolean", "description": "Decide floor by floor (default true, finer and "
+                  "cheaper plans). false: one choice per group for the whole building."},
+    "allow_warnings": {"type": "boolean", "description": "Allow plans that cause warnings such as over "
+                       "budget or a reserve below the minimum. Default false."},
+    "events": _EVENTS_PARAM,
+}, "required": ["objective"]}
+
+# Offered on every request. The model proposes; it never runs the optimizer itself.
+SCHEMAS.append({"type": "function", "function": {
+    "name": "propose_problem",
+    "description": "Checks an optimization problem written from the user's words (one goal, limits, things to keep, "
+                   "allowed options) and returns it with today's values, without running anything. The app shows it "
+                   "with a 'Run optimization' button. Call it whenever the user wants the best or cheapest plan under "
+                   "conditions, and again with a revised problem when they ask for a change.",
+    "parameters": _PROBLEM_PARAMS,
+}})
+
+# Only offered once the user has confirmed a problem: the server makes this call itself (see agent.chat).
+OPTIMIZE_SCHEMA = {"type": "function", "function": {
+    "name": "optimize",
+    "description": "Runs the optimizer on the problem the user confirmed. The server calls it; do not call it yourself.",
+    "parameters": _PROBLEM_PARAMS,
+}}
 
 
 def _r(x, nd=0):
@@ -280,8 +291,23 @@ def list_metrics():
              "today": _r(today[k], 2)} for k, (u, sense, kind, desc) in optimize.METRICS.items()]
 
 
+def propose_problem(objective, constraints=None, locked=None, allowed=None, per_floor=True, allow_warnings=False,
+                    events=None):
+    problem = optimize.normalize(DATA, {"objective": objective, "constraints": constraints or [], "locked": locked or [],
+                                        "allowed": allowed or {}, "per_floor": per_floor,
+                                        "allow_warnings": allow_warnings, "events": events or []})
+    today = optimize.metrics(DATA, optimize._simulate(DATA, [], problem["events"]))
+    used = [problem["objective"]["metric"]] + [c["metric"] for c in problem["constraints"]]
+    return {"problem": problem,
+            "today": {k: _r(today[k], 2) for k in dict.fromkeys(used)},
+            "decisions": len(optimize.slots(DATA, problem)),
+            "note": "Not run yet. The app shows this with a 'Run optimization' button. Relative limits are already "
+                    "turned into absolute ones (from_change_pct keeps the percentage). A 'new_warnings' limit of 0 "
+                    "(no warnings that doing nothing doesn't already have) is added unless allow_warnings is true."}
+
+
 def optimize_plan(objective, constraints=None, locked=None, allowed=None, per_floor=True, allow_warnings=False,
-                  events=None, title=None):
+                  events=None):
     problem = {"objective": objective, "constraints": constraints or [], "locked": locked or [],
                "allowed": allowed or {}, "per_floor": per_floor, "allow_warnings": allow_warnings,
                "events": events or []}
@@ -317,7 +343,7 @@ def app_scenario(title, scenario, events=None):
 
 
 HANDLERS = {f.__name__: f for f in (get_building_overview, list_options, rank_upgrades, simulate_scenario, show_scenario,
-                                     list_metrics)} | {"optimize": optimize_plan}
+                                     list_metrics, propose_problem)} | {"optimize": optimize_plan}
 
 
 def run(name, args):
@@ -349,7 +375,7 @@ SCHEMAS.append({"type": "function", "function": {
                        "group": {"type": "string", "enum": _GROUPS},
                        "floor": {"type": "integer", "minimum": -1, "maximum": 4}}, "required": ["group"]}},
         "allow_warnings": {"type": "boolean", "description": "Allow packages that cause warnings (over budget, "
-                           "reserve below the minimum, ...). Default false, as in optimize."},
+                           "reserve below the minimum, ...). Default false, as in propose_problem."},
         "events": _EVENTS_PARAM,
         "max_points": {"type": "integer", "minimum": 3, "maximum": 15, "description": "How many packages (default 8)."},
     }},
@@ -410,9 +436,9 @@ def knee_scenario(result, events=None):
 
 HANDLERS["upgrade_tradeoffs"] = upgrade_tradeoffs
 
-# Today's value of every metric in the optimize tool's description, so the model rarely needs list_metrics.
+# Today's value of every metric in the propose_problem description, so the model rarely needs list_metrics.
 _today = optimize.metrics(DATA, optimize._simulate(DATA, [], []))
 for _s in SCHEMAS:
-    if _s["function"]["name"] == "optimize":
+    if _s["function"]["name"] == "propose_problem":
         _s["function"]["description"] += " Today's values: " + ", ".join(
             f"{k} {_r(v, 2)}" for k, v in _today.items() if v is not None) + "."

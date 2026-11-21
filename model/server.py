@@ -108,6 +108,7 @@ class Pareto(BaseModel):
 class Chat(BaseModel):
     messages: list
     scenario: list = []
+    confirm: dict | None = None
 
 
 @app.get("/api/catalog")
@@ -159,7 +160,7 @@ def chat(body: Chat):
     if not body.messages or body.messages[-1].get("role") != "user":
         raise HTTPException(400, "The last message must be from the user.")
     try:
-        return viz.clean(agent.chat(body.messages, body.scenario))
+        return viz.clean(agent.chat(body.messages, body.scenario, body.confirm))
     except RuntimeError as e:  # missing key or OpenRouter error
         raise HTTPException(502, str(e))
 

@@ -165,7 +165,8 @@ def normalize(data, problem):
         for bound, rel in (("max", "max_change_pct"), ("min", "min_change_pct")):
             if rel in c:
                 today = today or metrics(data, _simulate(data, [], p["events"]))
-                c[bound] = today[c["metric"]] * (1 + c.pop(rel) / 100)
+                c["from_change_pct"] = c.pop(rel)  # kept so people see "10% below today", not just a number
+                c[bound] = today[c["metric"]] * (1 + c["from_change_pct"] / 100)
         if "max" not in c and "min" not in c:
             raise ValueError(f"constraint on {c['metric']} needs max, min, max_change_pct or min_change_pct")
     # By default a plan may not cause new warnings (over budget, reserve too low, ...): ones doing nothing
