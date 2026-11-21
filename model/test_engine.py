@@ -356,6 +356,48 @@ def test_futures_breakdown_and_samples_add_up():
     assert shares == sorted(shares) and 0 <= shares[-1] <= 1
 
 
+# --- manager policy: big systems replaced on a plan, or run until they fail
+def test_on_plan_big_system():
+    it = next(i for i in D["items"] if i["group"] == "heating_cooling")          # age 17, life 20: planned in year 3
+    assert engine.item_plan(D, it, None, 15, remaining=8, on_plan=True)[0] == (3, "heating_cooling_current", "planned")
+    assert engine.item_plan(D, it, None, 15, remaining=1.5, on_plan=True)[0] == (2, "heating_cooling_current", "failure")
+    assert engine.item_plan(D, it, None, 15, remaining=2.4, on_plan=True)[0] == (3, "heating_cooling_current", "planned")
+    assert engine.item_plan(D, it, None, 15, remaining=8, on_plan=False)[0] == (8, "heating_cooling_current", "failure")
+
+
+def test_on_plan_small_items_still_fail():
+    it = next(i for i in D["items"] if i["group"] == "lighting")
+    assert engine.item_plan(D, it, None, 15, remaining=5, on_plan=True)[0][2] == "failure"
+
+
+def test_on_plan_phased_unchanged():
+    it = next(i for i in D["items"] if i["group"] == "ventilation")
+    choice = ("ventilation_mid", 8)
+    for rem in (1.5, 6.0, 30.0):
+        assert engine.item_plan(D, it, choice, 15, rem, True) == engine.item_plan(D, it, choice, 15, rem, False)
+
+
+def test_policy_leaves_fixed_run_alone():
+    for policy in (0, 1):
+        a, b = engine.simulate(D, PLAN), engine.simulate(D, PLAN, overrides={"replace_on_plan": policy})
+        assert a["npv_cash"] == b["npv_cash"] and a["npv_economic"] == b["npv_economic"]
+        f = _quiet_future()
+        f["params"]["replace_on_plan"] = policy
+        assert abs(engine.simulate(D, PLAN, future=f)["npv_cash"] - a["npv_cash"]) < 1e-3
+
+
+def test_futures_policy():
+    vent = {"p": [{"group": "ventilation", "option": "ventilation_mid"}]}
+    y15 = lambda res: res["summary"]["p"]["fan"]["cash_running"][-1]["p50"]
+    planned = montecarlo.run(D, vent, n=40, seed=2026, overrides={"replace_on_plan": 1})
+    broken = montecarlo.run(D, vent, n=40, seed=2026, overrides={"replace_on_plan": 0})
+    assert y15(planned) > y15(broken)
+    for x in planned["samples"]:                   # on a plan, a big system only "fails" before its planned year
+        for f in x["failures"]:
+            if f["group"] == "ventilation":
+                assert f["year"] <= 10
+
+
 if __name__ == "__main__":
     tests =[v for k, v in dict(globals()).items() if k.startswith("test_")]
     failed = 0

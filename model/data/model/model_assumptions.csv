@@ -45,4 +45,5 @@ price_spike_prob_per_year,0.07,0.03,0.12,prob/yr,future,Chance that a given year
 new_lab_prob_never,0.3,0.1,0.5,prob,future,Chance the new lab never comes within the horizon,model estimate
 new_lab_latest_year,5,5,5,year,future,If it comes it arrives in year 1 to this year,model estimate
 lifetime_weibull_shape,3,2,4,shape,future,"How strongly the chance of failure rises with age (Weibull shape; 1 = no wear-out, 3 = clear wear-out). The mean life stays the nominal lifetime","Weibull wear-out model; shape 2-4 is typical for mechanical equipment (Acta IMEKO 2021, HVAC useful life)"
+replace_on_plan,1,0,1,0/1,future,"1 = big systems (ventilation, heating and cooling, water heater, servers) are replaced at the end of their normal life unless they fail first; 0 = all old equipment runs until it fails",design choice
 failure_premium,0.15,0.05,0.3,share,future,"Extra cost of an emergency replacement after a failure (rush order, downtime)",model estimate

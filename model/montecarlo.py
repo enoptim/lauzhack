@@ -132,7 +132,7 @@ def _failures(data, future, horizon):
     out = {}
     for i in data["items"]:
         rem = future["remaining_life"].get(i["id"])
-        if rem is None or rem >= horizon:
+        if rem is None or rem >= horizon or engine.planned_swap(data, i, rem, p.get("replace_on_plan")):
             continue
         year = int(math.ceil(rem))
         o = data["options"][i["option"]]

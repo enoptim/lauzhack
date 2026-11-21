@@ -198,7 +198,20 @@ def _life(o):
     return o["lifetime_years"] if o["lifetime_years"] else INF
 
 
-def item_plan(data, item, choice, horizon, remaining=None):
+# Big systems a manager replaces on a plan (policy `replace_on_plan` = 1); small items always run until they fail.
+PLANNED_GROUPS = {"ventilation", "heating_cooling", "water_heater", "servers"}
+
+
+def planned_swap(data, item, remaining, on_plan):
+    """Futures with the 'on a plan' policy: a big system still running in the year its normal life ends
+    is replaced then, at the normal price. True if that happens in this future."""
+    if not on_plan or remaining is None or item["group"] not in PLANNED_GROUPS:
+        return False
+    nominal = max(0.0, _life(data["options"][item["option"]]) - (item["age"] or 0))
+    return math.ceil(remaining) >= math.ceil(nominal)
+
+
+def item_plan(data, item, choice, horizon, remaining=None, on_plan=False):
     """Install timeline [(time, option, kind)].
 
     Current units are replaced like-for-like when they die; an upgrade goes in now or when the
@@ -207,6 +220,9 @@ def item_plan(data, item, choice, horizon, remaining=None):
     life); then the original unit's death is a surprise failure (kind "failure", which costs the
     emergency premium), while later replacements of new units are planned."""
     cur = data["options"][item["option"]]
+    phased = bool(choice) and isinstance(choice[1], int)
+    if not phased and planned_swap(data, item, remaining, on_plan):
+        remaining = None            # replaced on plan: the same timeline as the fixed run
     random_failure = remaining is not None
     if remaining is None:
         remaining = max(0.0, _life(cur) - (item["age"] or 0)) if _life(cur) != INF else INF
@@ -648,8 +664,9 @@ def simulate(data, scenario=None, events_on=(), overrides=None, detail_years=(1,
     r = p["discount_rate_real"]
     choices = resolve(data, scenario)
     rem = (future or {}).get("remaining_life") or {}
-    plans_b = {i["id"]: item_plan(data, i, None, H, rem.get(i["id"])) for i in data["items"]}
-    plans_s = {i["id"]: item_plan(data, i, choices.get(i["id"]), H, rem.get(i["id"])) for i in data["items"]}
+    on_plan = bool(p.get("replace_on_plan", 0))
+    plans_b = {i["id"]: item_plan(data, i, None, H, rem.get(i["id"]), on_plan) for i in data["items"]}
+    plans_s = {i["id"]: item_plan(data, i, choices.get(i["id"]), H, rem.get(i["id"]), on_plan) for i in data["items"]}
     final_s = {i["id"]: (plans_s[i["id"]][-1][1] if plans_s[i["id"]] else i["option"]) for i in data["items"]}
     final_s.update({iid: c[0] for iid, c in choices.items()})
     capex_b, assets_b = plan_money(data, plans_b, baseline(data), H, p)
