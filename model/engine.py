@@ -110,8 +110,7 @@ def load(team_dir=None, model_dir=None):
         events[r["event_id"]] = {
             "id": r["event_id"], "name": r["name"], "description": r.get("description", ""),
             "param": r["parameter"], "change": r["change"],
-            "value": float(r["value"]), "start_month": int(float(r["start_month"])),
-            "duration_days": _num(r["duration_days"]),
+            "value": float(r["value"]), "months": _event_months(r),
             "start_year": int(float(sy)), "end_year": int(float(ey)) if ey not in (None, "") else None,
             "kind": r.get("kind") or t.get("kind", "annual"),
         }
@@ -263,10 +262,18 @@ def year_context(data, year, events_on, overrides):
     return ctx
 
 
-def _months(e):
-    d = e["duration_days"] if e["duration_days"] else 365
+def _event_months(r):
+    """Months an event applies to. Team format: `months` like "6;7;8", empty = all year.
+    Older format: start_month + duration_days."""
+    if "months" in r:
+        return [int(float(m)) for m in r["months"].split(";") if m.strip()] or list(range(1, 13))
+    d = _num(r.get("duration_days")) or 365
     n = max(1, min(12, round(d / 30.4)))
-    return [((e["start_month"] - 1 + k) % 12) + 1 for k in range(n)]
+    return [((int(float(r["start_month"])) - 1 + k) % 12) + 1 for k in range(n)]
+
+
+def _months(e):
+    return e["months"]
 
 
 def room_people(data, ctx, room, hour, profile_override=None):

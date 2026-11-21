@@ -53,14 +53,26 @@ def test_purchase_is_asset_not_loss():
     assert abs(engine.book_value(assets, 0) - capex[0]) < 1e-3
 
 
+def _overdue(group):
+    """First item of a group that is past its lifetime in the team's inventory."""
+    return next(i for i in D["items"] if i["group"] == group
+                and i["age"] >= D["options"][i["option"]]["lifetime_years"])
+
+
+def _price(option_id):
+    o = D["options"][option_id]
+    return o["purchase_chf_per_unit"] + o["install_chf_per_unit"]
+
+
 def test_overdue_units_replaced_like_for_like_now():
-    item = next(i for i in D["items"] if i["group"] == "heating_cooling")       # 21 years old, 20-year life
-    assert engine.item_plan(D, item, None, 15)[0][:2] == (0, "heating_cooling_current")
+    item = _overdue("lighting")
+    assert engine.item_plan(D, item, None, 15)[0][:2] == (0, item["option"])
 
 
 def test_upgrade_cost_is_only_the_premium_when_overdue():
-    s = engine.simulate(D, [{"group": "heating_cooling", "option": "heating_cooling_mid"}])
-    assert abs(s["capex_year0"] - 440 * ((950 + 450) - (900 + 400))) < 1e-3
+    item = _overdue("lighting")
+    s = engine.simulate(D, [{"group": "lighting", "option": "lighting_mid", "item_id": item["id"]}])
+    assert abs(s["capex_year0"] - item["units"] * (_price("lighting_mid") - _price(item["option"]))) < 1e-3
 
 
 def test_timing_toggle_waits_for_end_of_life():
@@ -150,23 +162,33 @@ def test_lake_heat_pump_frees_roof_for_solar():
     assert both > pv + hp
 
 
+def _event_year(event_id):
+    """0-based index into years of the event's first year, from the team's events.csv."""
+    return D["events"][event_id]["start_year"] - 1
+
+
 def test_new_lab_raises_office_co2():
-    a = engine.simulate(D)["years"][2]["outcomes"]["office_co2_ppm"]
-    b = engine.simulate(D, events_on=["new_lab"])["years"][2]["outcomes"]["office_co2_ppm"]
+    t = _event_year("new_lab")
+    a = engine.simulate(D)["years"][t]["outcomes"]["office_co2_ppm"]
+    b = engine.simulate(D, events_on=["new_lab"])["years"][t]["outcomes"]["office_co2_ppm"]
     assert b > a
 
 
 def test_heatwave_raises_cooling_and_overheating():
-    s = engine.simulate(D, events_on=["heatwave_summer"])
-    assert s["years"][2]["kwh"] > s["years"][1]["kwh"]
-    assert s["years"][2]["outcomes"]["summer_overheating_degc"] > s["years"][1]["outcomes"]["summer_overheating_degc"]
+    t = _event_year("heatwave_summer")
+    a = engine.simulate(D)["years"][t]
+    b = engine.simulate(D, events_on=["heatwave_summer"])["years"][t]
+    assert b["kwh"] > a["kwh"]
+    assert b["outcomes"]["summer_overheating_degc"] > a["outcomes"]["summer_overheating_degc"]
 
 
 def test_price_spike_only_in_its_year():
+    t = _event_year("energy_price_spike")
+    assert D["events"]["energy_price_spike"]["end_year"] == t + 1          # a one-year event
     s = engine.simulate(D, LIGHT_MID, ["energy_price_spike"])
     base = engine.simulate(D, LIGHT_MID)
-    assert s["years"][0]["savings"]["energy"] > base["years"][0]["savings"]["energy"]
-    assert abs(s["years"][1]["savings"]["energy"] - base["years"][1]["savings"]["energy"]) < TOL
+    assert s["years"][t]["savings"]["energy"] > base["years"][t]["savings"]["energy"]
+    assert abs(s["years"][t + 1]["savings"]["energy"] - base["years"][t + 1]["savings"]["energy"]) < TOL
 
 
 # --- constraints and stress test
