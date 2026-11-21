@@ -1,3 +1,5 @@
+import TopCantina from './TopCantina';
+import TopLanding from './TopLanding';
 import GroundFloor from './GroundFloor';
 import Staircase from './Staircase';
 import { FLOOR_COUNT, FLOOR_HEIGHT, WIDTH, LENGTH, LAYOUT_WIDTH, LAYOUT_LENGTH } from '../data/building';
@@ -23,11 +25,17 @@ function Floor({ level }: { level: number }) {
       {/* Offices, interior glazing, and corridor balustrades. */}
       {level > 0 && Array.from({ length: 12 }, (_, i) => {
         const z = -44 + i * 8;
+        if (level === 4 && ((side === 1 && z >= -4) || (side === -1 && z < 36))) return null;
+        // The top floor steps back to x=±18 and z=±47. End each bay
+        // just inside the glazing, including the last partial bay.
+        const outer = level === 4 ? 17.8 : 19.85;
+        const inner = 12.35;
+        const depth = level === 4 ? Math.min(8, 46.8-z) : 8;
         return <group key={i}>
-          <Box size={[7.5, 2.7, .12]} color={white} position={[side * 16.1, 1.35, z]}/>
-          <Glass size={[.05, 2.8, 7.8]} position={[side * 12.3, 1.4, z + 4]}/>
+          <Box size={[outer-inner, 2.7, .12]} color={white} position={[side*(outer+inner)/2, 1.35, z]}/>
+          <Glass size={[.05, 2.8, depth-.2]} position={[side * 12.3, 1.4, z + depth/2]}/>
           <Box size={[.1, 3.3, .1]} color={metal} position={[side * 12.3, 1.65, z]}/>
-          <Desk position={[side * 16, 0, z + 3]}/>
+          {depth >= 4 && <Desk position={[side * 16, 0, z + 3]}/>}
         </group>;
       })}
       {level > 0 && <>
@@ -41,7 +49,8 @@ function Floor({ level }: { level: number }) {
       {/* Leave a clear opening where the staircase landing meets the corridor. */}
       {[-4.5, 4.5].map(x => <Glass key={x} size={[7, 1.05, .06]} position={[x, .55, 32]}/>)}
     </>}
-    {[-40, 40].map(z => <group key={z}>
+    {level === 4 && <><TopLanding/><TopCantina/></>}
+    {(level === 4 ? [-40] : [-40, 40]).map(z => <group key={z}>
       <Box size={[5, 3, 5]} color="#bdc4c1" position={[12, 1.5, z]}/>
       <Box size={[1.8, 2.4, .06]} color="#7e9195" position={[12, 1.2, z + 2.55]}/>
       <Plant position={[-7, 0, z]}/>
