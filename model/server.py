@@ -17,6 +17,7 @@ from pydantic import BaseModel
 
 import engine
 import montecarlo
+import optimize
 import viz
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))  # repo root, for chat/
@@ -54,6 +55,15 @@ class Breakeven(BaseModel):
     events: list = []
     overrides: dict = {}
     param: str = "electricity_price_chf_kwh"
+
+
+class Optimize(BaseModel):
+    problem: dict
+
+
+class Evaluate(BaseModel):
+    problem: dict
+    scenario: list = []
 
 
 class Chat(BaseModel):
@@ -120,6 +130,32 @@ def breakeven(body: Breakeven):
     if body.param not in DATA["params"]:
         raise HTTPException(status_code=400, detail=f"Unknown assumption: {body.param}")
     return viz.clean(engine.breakeven(DATA, body.scenario, body.events, body.overrides, body.param))
+
+
+@app.get("/api/metrics")
+def metrics():
+    """Goals and limits an optimization problem can use (model/optimize.py)."""
+    return [{"metric": k, "unit": u, "sense": sense, "kind": kind, "description": d}
+            for k, (u, sense, kind, d) in optimize.METRICS.items()]
+
+
+@app.post("/api/optimize")
+def optimize_plan(body: Optimize):
+    """Best plan for a goal under limits. The problem format is in model/optimize.py."""
+    try:
+        return viz.clean(optimize.solve(DATA, body.problem))
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.post("/api/evaluate")
+def evaluate(body: Evaluate):
+    """Score one scenario against a problem: metrics, limits missed, objective. For optimizers outside Python."""
+    try:
+        res = optimize.evaluate_scenario(DATA, optimize.normalize(DATA, body.problem), body.scenario)
+    except (ValueError, KeyError) as e:
+        raise HTTPException(400, str(e))
+    return viz.clean({k: v for k, v in res.items() if not k.startswith("_")})
 
 
 @app.get("/playground", include_in_schema=False)

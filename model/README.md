@@ -80,6 +80,38 @@ Every future is an ordinary `simulate()` run, so all accounting identities hold 
 
 Note: in the deterministic run, overdue units are replaced as planned at year 0. In the futures they keep running until they fail, so upgrading now costs the full price rather than only the premium over a like-for-like replacement.
 
+## Optimizer (`optimize.py`)
+
+Finds the best plan for one goal under limits. The chat assistant writes the problem from the user's words; the search itself is a black box we can swap.
+
+A problem:
+```json
+{
+  "objective":   {"metric": "running_cost_chf_year"},
+  "constraints": [{"metric": "upfront_cost_chf", "max": 200000},
+                  {"metric": "electricity_kwh_year", "max_change_pct": -20}],
+  "locked":      [{"group": "ventilation"}, {"group": "lighting", "floor": 2}],
+  "allowed":     {"coffee": ["coffee_current", "coffee_mid"]},
+  "per_floor":   false
+}
+```
+- `objective`: one metric to make as small or large as possible. Each metric has a natural direction; `sense` overrides it.
+- `constraints`: limits. `max_change_pct` and `min_change_pct` are relative to doing nothing (-20 = at least 20% lower).
+- `locked`: things that stay as they are. `allowed`: the only options a group may use; one option forces it.
+- `per_floor`: choose floor by floor instead of once per group for the whole building.
+- By default a plan may not cause warnings (over budget, reserve too low, and so on). `allow_warnings: true` turns this off.
+- The metrics are listed in `METRICS` and at `GET /api/metrics`. Money and energy are yearly averages over the horizon; air quality and comfort are year 1. Every metric comes from `engine.simulate`.
+- Upgrades are bought now. "When it breaks" is not part of the search yet.
+
+To plug in another search, write a function `solve(problem, slots, evaluate) -> plan`:
+- `slots`: the decisions, e.g. `{"key": "lighting@2", "group": "lighting", "floor": 2, "options": [null, "lighting_budget", ...]}`. `null` means keep what is there.
+- `plan`: `{slot key: option id or null}`.
+- `evaluate(plan)` runs the engine and returns the metrics, the limits missed, `feasible`, `objective` (lower is better) and `score` (objective plus a large penalty for missed limits, for solvers that want one number).
+- Then start the API with `OPTIMIZER=package.module:function`. Without it, a simple greedy search runs: it changes one decision at a time while that helps.
+- An optimizer outside Python can call `POST /api/evaluate` instead.
+
+Tests: `python3 test_optimize.py` (also run by `make test`).
+
 ## API for the 3D frontend (`server.py`, `viz.py`)
 ```sh
 cd model && uvicorn server:app --reload --port 8000
@@ -97,7 +129,10 @@ Try it by hand at http://localhost:8000/playground (`playground/index.html`, pla
 | `POST /api/bands` | `{scenario, events, overrides}` | economic NPV with weak / central / strong people effects |
 | `POST /api/futures` | `{scenarios: {name: scenario}, n, seed, events, overrides}` | Monte Carlo: P10/P50/P90, probabilities, fan chart per year, A-vs-B, three futures in words. `events` are on in every future; `overrides` are fixed in every future |
 | `POST /api/breakeven` | `{scenario, events, overrides, param}` | the value of `param` (default electricity price) where cash and economic NPV are zero, and whether the plan pays off above or below it |
-| `POST /api/chat` | `{messages, scenario}` | the assistant's answer and the scenario it recommends; see [chat/README.md](../chat/README.md) |
+| `POST /api/chat` | `{messages, scenario}` | the assistant's answer and the scenario it recommends, and the goal and limits it optimized for (`problem`); see [chat/README.md](../chat/README.md) |
+| `GET /api/metrics` | | goals and limits an optimization problem can use |
+| `POST /api/optimize` | `{problem}` | the best plan for a goal under limits, next to doing nothing; see Optimizer below |
+| `POST /api/evaluate` | `{problem, scenario}` | one scenario scored against a problem: metrics, limits missed, objective, score |
 
 A snapshot is keyed by the team's ids, which are also the mesh names:
 - `items[item_id]`: `option_id`, `kwh_year`, `kw_avg`, `kw_on` (drive wire thickness or glow from these)

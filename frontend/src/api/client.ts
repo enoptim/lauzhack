@@ -4,7 +4,7 @@
 // Set VITE_API_URL to call a different host.
 import type {
   Assumption, BandsResult, BreakevenRequest, BreakevenResult, Catalog, ChatRequest, ChatResult, FuturesRequest, FuturesResult,
-  PreviewRequest, PreviewResult,
+  Evaluation, Metric, OptimizationProblem, OptimizeResult, PreviewRequest, PreviewResult, Scenario,
   RunRequest, SimulateResult, StressTestResult, TornadoResult,
 } from './types';
 
@@ -30,6 +30,10 @@ export const api = {
   futures: (body: FuturesRequest) => request<FuturesResult>('/api/futures', body),
   assumptions: () => request<Assumption[]>('/api/assumptions'),
   breakeven: (body: BreakevenRequest = {}) => request<BreakevenResult>('/api/breakeven', body),
+  metrics: () => request<Metric[]>('/api/metrics'),
+  /** Best plan for a goal under limits. About 1 s, or a few seconds with per_floor. */
+  optimize: (problem: OptimizationProblem) => request<OptimizeResult>('/api/optimize', { problem }),
+  evaluate: (problem: OptimizationProblem, scenario: Scenario) => request<Evaluation>('/api/evaluate', { problem, scenario }),
   /** The assistant. Takes 10-30 s: it runs the engine several times before answering. */
   chat: (body: ChatRequest) => request<ChatResult>('/api/chat', body),
 };

@@ -409,4 +409,70 @@ export interface ChatResult {
   reply: string;
   /** Set when the assistant picked a scenario to show. */
   scenario: ChatScenario | null;
+  /** The goal and limits the assistant optimized for, to show (and let the user correct). */
+  problem: OptimizationProblem | null;
+}
+
+// ---------------------------------------------------------------- /api/metrics, /api/optimize, /api/evaluate
+// The problem format and the solver interface are documented in model/optimize.py.
+export type MetricName =
+  | 'upfront_cost_chf' | 'extra_cost_vs_like_for_like_chf' | 'running_cost_chf_year' | 'energy_bill_chf_year'
+  | 'electricity_kwh_year' | 'npv_cash_chf' | 'npv_economic_chf' | 'payback_years' | 'lowest_reserve_chf'
+  | 'office_co2_ppm' | 'meeting_co2_ppm' | 'classroom_co2_ppm' | 'summer_overheating_degc' | 'sick_days'
+  | 'comfort_score' | 'warnings';
+
+export interface Metric {
+  metric: MetricName;
+  unit: string;
+  /** The natural direction: 'min' means lower is better. */
+  sense: 'min' | 'max';
+  kind: NumberKind;
+  description: string;
+}
+
+export interface ProblemConstraint {
+  metric: MetricName;
+  max?: number;
+  min?: number;
+  /** Relative to doing nothing, e.g. -20 = at least 20% lower. Turned into max/min by the server. */
+  max_change_pct?: number;
+  min_change_pct?: number;
+}
+
+export interface OptimizationProblem {
+  objective: { metric: MetricName; sense?: 'min' | 'max' };
+  constraints?: ProblemConstraint[];
+  /** Keep as today. Leave out floor to lock the whole group. */
+  locked?: { group: string; floor?: number }[];
+  /** Per group, the only options the plan may use. */
+  allowed?: Record<string, string[]>;
+  per_floor?: boolean;
+  /** By default a plan may not cause warnings. */
+  allow_warnings?: boolean;
+  events?: string[];
+}
+
+export interface Evaluation {
+  scenario: Scenario;
+  /** Money and energy are yearly averages over the horizon; air and comfort are year 1. payback_years is null if never. */
+  metrics: Record<MetricName, number | null>;
+  violations: ({ metric: MetricName; value: number | null; max?: number; min?: number })[];
+  feasible: boolean;
+  /** Lower is better (max metrics are negated). */
+  objective: number;
+  /** objective plus a large penalty for missed limits. */
+  score: number;
+  flags: Flag[];
+}
+
+export interface OptimizeResult {
+  /** The problem after defaults and relative limits were filled in. */
+  problem: OptimizationProblem;
+  best: Evaluation;
+  /** Doing nothing, for comparison. */
+  today: Evaluation;
+  solver: string;
+  evaluations: number;
+  decisions: number;
+  seconds: number;
 }
