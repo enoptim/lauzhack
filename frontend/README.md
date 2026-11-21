@@ -10,7 +10,7 @@ pnpm install
 pnpm dev
 ```
 
-Open the URL printed by Vite. Change the path in your browser's address bar to switch pages; there is no in-app navigation yet.
+Open the URL printed by Vite. Use the page picker in the header or enter a route directly in the address bar.
 
 - `/` — 3D building viewer. It requires WebGL. Left-drag to orbit, scroll to zoom, and right-drag to pan.
 - `/assistant` — Assistant placeholder.
