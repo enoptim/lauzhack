@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '@/api/client';
 import type {
-  Assumption, BreakevenResult, Catalog, FuturesResult, Scenario, SimulateResult,
+  Assumption, Catalog, FuturesResult, Scenario, SimulateResult,
 } from '@/api/types';
 
 export type Load<T> = { data: T | null; error: string | null; loading: boolean };
@@ -40,11 +40,7 @@ export type WhatIf = (typeof WHAT_IFS)[number];
 export function useEngine(scenario: Scenario, overrides: Record<string, number>, settled: Record<string, number>, whatIfs: WhatIf[]) {
   const base = useMemo(() => JSON.stringify({ scenario, overrides }), [scenario, overrides]);
   const settledBase = useMemo(() => JSON.stringify({ scenario, settled }), [scenario, settled]);
-  // Break-even solves for the electricity price, so the chosen price does not matter to it.
-  const withoutPrice = useMemo(() => {
-    const { electricity_price_chf_kwh: _price, ...rest } = settled;
-    return rest;
-  }, [settled]);
+
 
   const catalog = useCall<Catalog>('catalog', () => api.catalog());
   const assumptions = useCall<Assumption[]>('assumptions', () => api.assumptions());
@@ -58,9 +54,8 @@ export function useEngine(scenario: Scenario, overrides: Record<string, number>,
     return Object.fromEntries(ids.map((id, index) => [id, results[index]]));
   }, 80);
 
-  const breakeven = useCall<BreakevenResult>(JSON.stringify({ scenario, withoutPrice }), () => api.breakeven({ scenario, overrides: withoutPrice }));
   // The futures run takes about 4.5 s, so it waits until the slider is released.
   const futures = useCall<FuturesResult>(settledBase, () => api.futures({ scenarios: { plan: scenario }, n: 200, seed: 2026, overrides: settled }), 300);
 
-  return { catalog, assumptions, runs, breakeven, futures };
+  return { catalog, assumptions, runs, futures };
 }

@@ -1,5 +1,5 @@
 import { ArrowLeft, ArrowRight, Pause, Play, TriangleAlert } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router';
 import type { Catalog, Swap } from '@/api/types';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -79,27 +79,25 @@ export default function ResultsPage() {
   const [horizon, setHorizon] = useState<number>(15);
   const [playToken, setPlayToken] = useState(0);
   const [playYear, setPlayYear] = useState<number | null>(null);
+  const [playState, setPlayState] = useState<'idle' | 'playing' | 'paused'>('idle');
 
   const overrides = useMemo(() => ({ ...(read?.config.overrides ?? {}), [PRICE_KEY]: price }), [price, params]); // eslint-disable-line react-hooks/exhaustive-deps
   const settled = useMemo(() => ({ ...(read?.config.overrides ?? {}), [PRICE_KEY]: settledPrice }), [settledPrice, params]); // eslint-disable-line react-hooks/exhaustive-deps
   const engine = useEngine(scenario, overrides, settled, useMemo(() => (whatIf ? [whatIf] : []), [whatIf]));
   const runs = engine.runs.data;
   const plan = runs?.plan;
-  const playMs = horizon * MS_PER_YEAR;
 
-  // The year counter runs alongside the chart's own drawing animation.
-  useEffect(() => {
-    if (playYear === null) return;
-    if (playYear >= horizon) { const done = setTimeout(() => setPlayYear(null), 1200); return () => clearTimeout(done); }
-    const next = setTimeout(() => setPlayYear(playYear + 1), MS_PER_YEAR);
-    return () => clearTimeout(next);
-  }, [playYear, horizon]);
-
+  /** Play starts from today; while playing it pauses; while paused it resumes. */
   function play() {
-    if (playYear !== null) { setPlayYear(null); return; }
-    setPlayToken(token => token + 1);
-    setPlayYear(0);
+    if (playState === 'playing') { setPlayState('paused'); return; }
+    if (playState === 'idle') { setPlayToken(token => token + 1); setPlayYear(0); }
+    setPlayState('playing');
   }
+
+  const onYear = useCallback((year: number | null) => {
+    setPlayYear(year);
+    if (year === null) setPlayState('idle');
+  }, []);
 
   const world = (whatIf && runs?.[whatIf]) || plan;
   const rows = useMemo(() => (world ? totals(world, horizon, staffEffects) : []), [world, horizon, staffEffects]);
@@ -148,12 +146,10 @@ export default function ResultsPage() {
   const fan = engine.futures.data?.summary.plan?.fan.cash.filter(p => p.year <= horizon) ?? null;
   const goodPayback = fan ? fanPayback(fan.map(p => ({ year: p.year, value: p.p90 }))) : null;
   const badPayback = fan ? fanPayback(fan.map(p => ({ year: p.year, value: p.p10 }))) : null;
-  const breakeven = engine.breakeven.data?.npv_cash;
   const flags = (finance?.flags ?? []).filter(flag => !isContextFlag(flag) && (flag.year === undefined || flag.year <= horizon));
   const contextFlags = (finance?.flags ?? []).filter(flag => isContextFlag(flag) && (flag.year === undefined || flag.year <= horizon));
   const today = plan?.snapshot_baseline.building;
   const after = plan?.snapshot.building;
-  const breakevenPct = breakeven?.value != null ? ((breakeven.value - PRICE_MIN) / (PRICE_MAX - PRICE_MIN)) * 100 : null;
 
   return (
     <main className="mx-auto flex w-full max-w-7xl flex-col gap-8 px-4 py-8 md:px-8">
@@ -226,8 +222,9 @@ export default function ResultsPage() {
               {HORIZONS.map(h => <ToggleGroupItem key={h} value={String(h)} className="px-3 tabular-nums">{h} years</ToggleGroupItem>)}
             </ToggleGroup>
             <Button size="lg" onClick={play} disabled={!plan} className="min-w-36 tabular-nums">
-              {playYear === null ? <Play data-icon="inline-start" /> : <Pause data-icon="inline-start" />}
-              {playYear === null ? `Play ${horizon} years` : playYear === 0 ? 'Today' : `Year ${playYear}`}
+              {playState === 'playing' ? <Pause data-icon="inline-start" /> : <Play data-icon="inline-start" />}
+              {playState === 'idle' ? `Play ${horizon} years`
+                : `${playState === 'playing' ? 'Pause' : 'Resume'} · ${playYear ? `year ${playYear}` : 'today'}`}
             </Button>
           </div>
         </div>
@@ -274,11 +271,6 @@ export default function ResultsPage() {
               <Slider min={PRICE_MIN} max={PRICE_MAX} step={0.01} value={[price]} aria-labelledby="price-label"
                 onValueChange={([value]) => setPrice(Math.round(value * 100) / 100)}
                 onValueCommit={([value]) => setSettledPrice(Math.round(value * 100) / 100)} />
-              {breakevenPct !== null && breakevenPct >= 0 && breakevenPct <= 100 && !staffEffects && (
-                <span className="pointer-events-none absolute top-full -mt-1 -translate-x-1/2 text-xs whitespace-nowrap text-muted-foreground" style={{ left: `${breakevenPct}%` }}>
-                  ▲ pays off above {breakeven?.value?.toFixed(2)}
-                </span>
-              )}
             </div>
             <span className="w-28 whitespace-nowrap font-medium tabular-nums">{pricePerKwh(price)}</span>
             {yearlySaving !== null && (
@@ -299,7 +291,7 @@ export default function ResultsPage() {
         {runs ? (
           <div className="relative">
             <div className={cn('transition-opacity duration-200', engine.runs.loading && 'opacity-60')}>
-          <MoneyChart rows={rows} horizon={horizon} staffEffects={staffEffects} playToken={playToken} playMs={playMs}
+          <MoneyChart rows={rows} horizon={horizon} staffEffects={staffEffects} playToken={playToken} playing={playState === 'playing'} msPerYear={MS_PER_YEAR} onYear={onYear}
             equipment={[...new Set(scenario.map(swap => (groupLabels[swap.group] ?? swap.group).toLowerCase()))].join(' and ') || 'equipment'} />
             </div>
             {engine.runs.loading && (

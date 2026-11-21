@@ -73,40 +73,51 @@ function interpolate(rows: Totals[], year: number): number {
   return a.nothing + ((year - a.year) / (b.year - a.year)) * (b.nothing - a.nothing);
 }
 
+/** Rows up to year `p`, with an in-between row at `p` so a line can stop part-way through a year. */
+function cut(rows: Totals[], p: number): Totals[] {
+  const shown = rows.filter(r => r.year <= p);
+  const next = rows.find(r => r.year > p);
+  const prev = shown[shown.length - 1];
+  if (next && prev && p > prev.year) {
+    const f = (p - prev.year) / (next.year - prev.year);
+    shown.push({ ...prev, year: p, nothing: prev.nothing + f * (next.nothing - prev.nothing), upgrade: prev.upgrade + f * (next.upgrade - prev.upgrade), nothingReplaces: 0 });
+  }
+  return shown;
+}
+
 type Props = {
   rows: Totals[];
   horizon: number;
   staffEffects: boolean;
   /** What the plan replaces, in plain words, e.g. "ventilation". */
   equipment: string;
-  /** Changes on every press of Play; the chart then redraws from today over `playMs`. */
+  /** Changes on every press of Play: the chart starts again from today. */
   playToken: number;
-  playMs: number;
+  /** While true, the lines grow; false pauses them where they are. */
+  playing: boolean;
+  msPerYear: number;
+  /** Called when the drawing reaches a new whole year, and with null when it has finished. */
+  onYear: (year: number | null) => void;
 };
 
 type TooltipItem = { dataIndex: number };
 
-export default function MoneyChart({ rows, horizon, staffEffects, equipment, playToken, playMs }: Props) {
+export default function MoneyChart({ rows, horizon, staffEffects, equipment, playToken, playing, msPerYear, onYear }: Props) {
   const host = useRef<HTMLDivElement>(null);
   const chart = useRef<echarts.ECharts | null>(null);
-  const lastToken = useRef(playToken);
   // The vertical axis only grows, so moving the price slider moves the lines instead of rescaling the axis.
   const axis = useRef({ key: '', max: 0 });
+  /** How far the lines are drawn, in years; null means the whole chart. */
+  const progress = useRef<number | null>(null);
+  const latest = useRef({ rows, horizon, staffEffects, equipment, msPerYear, onYear });
+  latest.current = { rows, horizon, staffEffects, equipment, msPerYear, onYear };
 
-  useEffect(() => {
-    if (!host.current) return;
-    const instance = echarts.init(host.current, undefined, { renderer: 'canvas' });
-    chart.current = instance;
-    const resize = new ResizeObserver(() => instance.resize());
-    resize.observe(host.current);
-    return () => { resize.disconnect(); instance.dispose(); chart.current = null; };
-  }, []);
-
-  useEffect(() => {
+  function draw(animate: boolean) {
     const instance = chart.current;
+    const { rows, horizon, staffEffects, equipment } = latest.current;
     if (!instance || rows.length < 2) return;
-    const replay = playToken !== lastToken.current;
-    lastToken.current = playToken;
+    const p = progress.current;
+    const shown = p === null ? rows : cut(rows, p);
     const payback = crossing(rows);
     const last = rows[rows.length - 1];
     const step = 200_000;
@@ -116,15 +127,17 @@ export default function MoneyChart({ rows, horizon, staffEffects, equipment, pla
     else axis.current.max = Math.max(axis.current.max, top);
 
     // Shade the gap: green where the upgrade has spent less, red where it has spent more.
-    const lower = rows.map(r => [r.year, Math.min(r.nothing, r.upgrade)]);
-    const behind = rows.map(r => [r.year, Math.max(r.upgrade - r.nothing, 0)]);
-    const ahead = rows.map(r => [r.year, Math.max(r.nothing - r.upgrade, 0)]);
+    const lower = shown.map(r => [r.year, Math.min(r.nothing, r.upgrade)]);
+    const behind = shown.map(r => [r.year, Math.max(r.upgrade - r.nothing, 0)]);
+    const ahead = shown.map(r => [r.year, Math.max(r.nothing - r.upgrade, 0)]);
     const quiet = { type: 'line' as const, silent: true, symbol: 'none', lineStyle: { opacity: 0 }, stackStrategy: 'all' as const };
+    const showPayback = payback !== null && (p === null || p >= payback);
 
     const option: echarts.EChartsOption = {
-      animationDuration: replay ? playMs : 800,
+      animation: animate,
+      animationDuration: 800,
       animationDurationUpdate: 650,
-      animationEasing: replay ? 'linear' : 'cubicOut',
+      animationEasing: 'cubicOut',
       animationEasingUpdate: 'cubicInOut',
       grid: { left: 8, right: 150, top: 24, bottom: 8, containLabel: true },
       textStyle: { fontFamily: 'Geist, ui-sans-serif, system-ui, sans-serif' },
@@ -146,7 +159,7 @@ export default function MoneyChart({ rows, horizon, staffEffects, equipment, pla
         extraCssText: 'border-radius:10px;box-shadow:0 8px 24px -12px rgba(40,30,20,.25);',
         axisPointer: { type: 'line', lineStyle: { color: C.muted, opacity: 0.4 } },
         formatter: (raw: unknown) => {
-          const r = rows[(raw as TooltipItem[])[0]?.dataIndex];
+          const r = shown[(raw as TooltipItem[])[0]?.dataIndex];
           if (!r) return '';
           const gap = r.nothing - r.upgrade;
           const small = (text: string) => `<div style="color:${C.muted};font-size:12px;margin:1px 0 6px 14px">${text}</div>`;
@@ -174,21 +187,21 @@ export default function MoneyChart({ rows, horizon, staffEffects, equipment, pla
         { ...quiet, id: 'gap-base-2', stack: 'ahead', data: lower },
         { ...quiet, id: 'gap-ahead', stack: 'ahead', areaStyle: { color: C.ahead }, data: ahead },
         {
-          id: 'nothing', type: 'line', name: 'Doing nothing', data: rows.map(r => [r.year, r.nothing]),
+          id: 'nothing', type: 'line', name: 'Doing nothing', data: shown.map(r => [r.year, r.nothing]),
           symbol: 'none', lineStyle: { width: 2.5, color: C.nothing, cap: 'round', join: 'round', type: staffEffects ? [8, 6] : 'solid' }, itemStyle: { color: C.nothing },
-          endLabel: { show: true, color: C.muted, fontSize: 13, distance: 10, lineHeight: 18, valueAnimation: true,
+          endLabel: { show: true, color: C.muted, fontSize: 13, distance: 10, lineHeight: 18, valueAnimation: animate,
             formatter: (p: { value: unknown }) => `Doing nothing\n${chfShort((p.value as [number, number])[1])}` },
           labelLayout: { moveOverlap: 'shiftY' },
         },
         {
-          id: 'upgrade', type: 'line', name: 'With the upgrade', data: rows.map(r => [r.year, r.upgrade]),
+          id: 'upgrade', type: 'line', name: 'With the upgrade', data: shown.map(r => [r.year, r.upgrade]),
           symbol: 'none', z: 5,
           lineStyle: { width: 3, color: C.upgrade, cap: 'round', join: 'round', type: 'solid' },
           itemStyle: { color: C.upgrade },
-          endLabel: { show: true, color: C.upgrade, fontSize: 13, fontWeight: 600, distance: 10, lineHeight: 18, valueAnimation: true,
+          endLabel: { show: true, color: C.upgrade, fontSize: 13, fontWeight: 600, distance: 10, lineHeight: 18, valueAnimation: animate,
             formatter: (p: { value: unknown }) => `With the upgrade\n${chfShort((p.value as [number, number])[1])}${last.upgrade - rows[0].upgrade < 1000 ? ', paid once' : ''}` },
           labelLayout: { moveOverlap: 'shiftY' },
-          markPoint: payback === null ? undefined : {
+          markPoint: !showPayback || payback === null ? { data: [] } : {
             symbol: 'circle', symbolSize: 12,
             itemStyle: { color: C.upgrade, borderColor: C.card, borderWidth: 3 },
             label: {
@@ -197,20 +210,59 @@ export default function MoneyChart({ rows, horizon, staffEffects, equipment, pla
               shadowColor: 'rgba(40,30,20,0.12)', shadowBlur: 12, shadowOffsetY: 4,
               formatter: `Paid for itself · year ${payback.toFixed(1)}`,
             },
-            animationDelay: replay ? (payback / horizon) * playMs : 400,
             data: [{ name: 'payback', coord: [payback, interpolate(rows, payback)] }],
           },
         },
       ],
     };
-    if (replay) {
-      // Clearing first makes ECharts run its first-draw animation: each line grows from today to the last year.
-      instance.clear();
-      instance.setOption(option);
-    } else {
-      instance.setOption(option, { replaceMerge: ['series'] });
-    }
-  }, [rows, horizon, staffEffects, equipment, playToken, playMs]);
+    instance.setOption(option, { replaceMerge: ['series'] });
+  }
+
+  useEffect(() => {
+    if (!host.current) return;
+    const instance = echarts.init(host.current, undefined, { renderer: 'canvas' });
+    chart.current = instance;
+    const resize = new ResizeObserver(() => instance.resize());
+    resize.observe(host.current);
+    return () => { resize.disconnect(); instance.dispose(); chart.current = null; };
+  }, []);
+
+  // New data or settings: redraw (animated when showing the whole chart).
+  useEffect(() => { draw(progress.current === null); }, [rows, horizon, staffEffects, equipment]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Play pressed: start again from today.
+  const firstToken = useRef(playToken);
+  useEffect(() => {
+    if (playToken === firstToken.current) return;
+    progress.current = 0;
+    draw(false);
+  }, [playToken]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // While playing, grow the lines a little every frame. Pausing stops the loop and keeps the position.
+  useEffect(() => {
+    if (!playing) return;
+    let frame = 0;
+    let before = performance.now();
+    let lastYear = -1;
+    const tick = (now: number) => {
+      const { horizon, msPerYear, onYear } = latest.current;
+      if (progress.current === null) return;
+      progress.current = Math.min(horizon, progress.current + (now - before) / msPerYear);
+      before = now;
+      const year = Math.floor(progress.current);
+      if (year !== lastYear) { lastYear = year; onYear(year); }
+      if (progress.current >= horizon) {
+        progress.current = null;
+        draw(false);
+        onYear(null);
+        return;
+      }
+      draw(false);
+      frame = requestAnimationFrame(tick);
+    };
+    frame = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(frame);
+  }, [playing]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return <div ref={host} role="img" aria-label="Money that depends on the choice: doing nothing compared with the upgrade" className="h-[24rem] w-full md:h-[28rem]" />;
 }
