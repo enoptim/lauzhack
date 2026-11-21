@@ -6,11 +6,11 @@ import { FLOOR_COUNT, FLOOR_HEIGHT, LAYOUT_LENGTH, LAYOUT_WIDTH, LENGTH, WIDTH }
 import { sideRooms } from '@/data/sideRooms';
 import type { Swap } from '@/api/types';
 
-export const equipmentLabels = { lighting: 'Lighting', monitors: 'Monitors', computers: 'Computers', coffee: 'Coffee machines' };
+export const equipmentLabels = { lighting: 'Lighting', monitors: 'Monitors', computers: 'Computers', coffee: 'Coffee machines', water_heater: 'Water heater' };
 export type EquipmentGroup = keyof typeof equipmentLabels;
-export type FloorSwap = Swap & { floor: number; group: EquipmentGroup };
+export type EquipmentSwap = Swap & { group: EquipmentGroup };
 
-export const draftKey = (floor: number, group: EquipmentGroup) => `${floor}:${group}`;
+export const draftKey = (floor: number, group: EquipmentGroup) => group === 'water_heater' ? group : `${floor}:${group}`;
 
 function csvRecords(csv: string) {
   // Quoted fields can contain commas, line breaks and escaped quotes.
