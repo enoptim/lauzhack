@@ -21,6 +21,13 @@ const TODAY_PRICE = 0.2;
 const PRICE_MIN = 0.1;
 const PRICE_MAX = 0.45;
 const HORIZONS = [5, 10, 15] as const;
+type Timing = 'now' | 'end_of_life' | number;
+const TIMINGS: { value: Timing; label: string }[] = [
+  { value: 'now', label: 'Now' },
+  { value: 'end_of_life', label: 'When the old units wear out' },
+  { value: 5, label: 'In year 5' },
+  { value: 8, label: 'In year 8' },
+];
 const MS_PER_YEAR = 450;
 
 function optionName(catalog: Catalog | null, group: string, optionId: string | undefined) {
@@ -55,7 +62,14 @@ function fanPayback(points: { year: number; value: number }[]): number | null {
 export default function ResultsPage() {
   const [params] = useSearchParams();
   const read = readConfig(params);
-  const scenario = useMemo(() => read?.config.scenario ?? [], [params]); // eslint-disable-line react-hooks/exhaustive-deps
+  const [timing, setTiming] = useState<Timing>('now');
+  const chosen = useMemo(() => read?.config.scenario ?? [], [params]); // eslint-disable-line react-hooks/exhaustive-deps
+  // The same plan, bought at the chosen time. The engine keeps the old units running until then.
+  const scenario = useMemo(() => chosen.map(swap => {
+    const { timing: _t, year: _y, ...rest } = swap;
+    if (timing === 'now') return rest;
+    return timing === 'end_of_life' ? { ...rest, timing: 'end_of_life' as const } : { ...rest, year: timing };
+  }), [chosen, timing]);
 
   const [price, setPrice] = useState(read?.config.overrides[PRICE_KEY] ?? TODAY_PRICE);
   const [whatIf, setWhatIf] = useState<WhatIf | null>(null);
@@ -113,6 +127,16 @@ export default function ResultsPage() {
   }
 
   const finance = plan?.finance;
+  // The year the upgrade is paid for: today, or the first year its equipment spending differs from doing nothing.
+  const boughtIn = !finance ? null : finance.capex_year0 > 0 ? 0
+    : finance.years.find(y => Math.abs(y.capex - y.capex_baseline) > 1000)?.year ?? null;
+  // Price of the new equipment (same in any year: all prices are in today's francs).
+  const purchase = chosen.reduce((sum, swap) => {
+    const price = engine.catalog.data?.groups[swap.group]?.find(o => o.option_id === swap.option)?.price_chf_per_unit ?? 0;
+    const units = (engine.catalog.data?.items ?? []).filter(item => item.group === swap.group
+      && (swap.floor === undefined || item.serves_floor === swap.floor)).reduce((n, item) => n + item.units, 0);
+    return sum + price * units;
+  }, 0);
   const last = rows.at(-1);
   const endValue = last ? last.nothing - last.upgrade : 0;
   const payback = crossing(rows);
@@ -149,10 +173,25 @@ export default function ResultsPage() {
           </ul>
         </div>
         <div className="flex flex-col gap-0.5 md:items-end">
-          <span className="text-sm text-muted-foreground">Up-front cost{read.isDemo && ' · demo plan'}</span>
-          <span className="text-2xl font-semibold tracking-tight tabular-nums">{finance ? chf(finance.capex_year0) : '…'}</span>
+          <span className="text-sm text-muted-foreground">{boughtIn === 0 ? 'Paid today' : boughtIn ? `Bought in year ${boughtIn}` : 'Cost'}{read.isDemo && ' · demo plan'}</span>
+          <span className="text-2xl font-semibold tracking-tight tabular-nums">{finance ? chf(purchase) : '…'}</span>
         </div>
       </section>
+
+      {chosen.length > 0 && (
+        <section aria-label="When to buy" className="-mt-4 flex flex-wrap items-center gap-x-4 gap-y-2">
+          <span id="timing-label" className="text-sm font-medium">When to buy?</span>
+          <ToggleGroup type="single" variant="outline" value={String(timing)} aria-labelledby="timing-label"
+            onValueChange={(value: string) => value && setTiming(value === 'now' || value === 'end_of_life' ? value : Number(value))}>
+            {TIMINGS.map(option => <ToggleGroupItem key={String(option.value)} value={String(option.value)} className="px-3">{option.label}</ToggleGroupItem>)}
+          </ToggleGroup>
+          <span className="text-sm text-muted-foreground">
+            {timing === 'now' ? 'You pay the full price today.'
+              : timing === 'end_of_life' ? 'Keep the old units until they fail, then buy the upgrade instead of the same old kind.'
+              : `Keep the old units until year ${timing}, replacing them like-for-like if they fail first.`}
+          </span>
+        </section>
+      )}
 
       <section aria-label="Verdict" className="flex flex-col gap-2">
         {finance ? (
