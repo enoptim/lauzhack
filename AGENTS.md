@@ -1,8 +1,29 @@
-We are building a digital twin for buildings for the Luazhack hackathon 2026. We have a total of 24 hours. It will end the 22nd November at 12pm. 
+# Building Digital Twin — LauzHack 2026
 
-The general idea. Build a Sims like interface where one can kind of intereact with the digital twin of the building. DIfferent componetns of the building can be interacted with, things that have an impact on power consumption. It could be a heat pump, aircondition, computer screens, insulation, etc. Then a user can change what type of heat pump is used, what is its energy rating, what monitors are used and how much power does these monitors use. In this way the model can be used to simulate different scenarios. If you change this heat pump, how much power will you save, when will the money spent on the heat pump have paid itself in saved energy? 
+## Context
+- Challenge: UBS "AI Financial Twin" ("Don't predict the future. Make it explorable."). Instead of a personal finance twin, we build a digital twin of a building. UBS has approved this approach, and creativity earns bonus points.
+- Deadline: 22 November 2026, 12:00 (24-hour hackathon).
+- The challenge repo (rubric, FAQ, synthetic data) is private: github.com/sschallenges2026/ai-financial-twin-lauzhack-2026. It needs an invited GitHub account.
 
-# The Frontend Part for the Demo
-Build a sims like interface where users can see the digital twin of the building, interact with related elements, and change the constraints of these elements. 
+## Team
+- Casper: frontend, 3D building UI
+- Oscar: simulation and mathematical modelling
+- Theodor: datasets feeding the model and the UI
+- Linus: pitch and project management
 
-The only interactive part of the simulation is to be able to move around the camera looking at the building, and change what devices is used / their metrics such as power consumption, heat efficiency, etc. One does not need to be able to change how building actually looks.
+## Product
+A Sims-like 3D digital twin of a building. It helps building managers and other stakeholders decide on investments before making them: e.g. a new air filter, an HVAC upgrade, a heat pump, insulation, new monitors, or a different coffee machine.
+
+Demo flow:
+1. The user moves the camera around a 3D building.
+2. Click the building → a floor → a component (e.g. the 2nd-floor HVAC).
+3. A panel offers ~5 alternative upgrades for that component.
+4. Picking one reruns the simulation and shows the results next to the current setup.
+
+Outputs per scenario:
+- Energy use and energy cost
+- Indoor air quality (e.g. CO₂) and temperature
+- Number of occupants the building supports (for planned expansion)
+- Financials: investment cost, monthly/yearly savings, payback time, ROI
+
+Scope: the only interactions are moving the camera and changing the components (type, power draw, efficiency, etc.). The building's geometry itself is not editable.
