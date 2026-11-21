@@ -1,28 +1,29 @@
+import { Edges } from '@react-three/drei';
 import { useState } from 'react';
 import BuildingScene from '@/components/BuildingScene';
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { FLOOR_COUNT } from '@/data/building';
-import { lightingItems, lightingOptions, lightingScenario } from './lighting';
+import { draftKey, equipmentForFloor, equipmentLabels, lightingItems, type EquipmentGroup, type FloorSwap } from './equipment';
 
 const keepCurrent = 'keep-current';
+const selectableOutline = '#f5ad20';
+const selectedOutline = '#007eab';
 const floorLabel = (floor: number) => floor === 0 ? 'Ground floor' : `Floor ${floor}`;
 
 export default function BuildingPage() {
   const [floor, setFloor] = useState<number | null>(null);
-  const [lightingSelected, setLightingSelected] = useState(false);
-  const [draft, setDraft] = useState(() => new Map<number, string>());
+  const [selectedGroup, setSelectedGroup] = useState<EquipmentGroup | null>(null);
+  const [draft, setDraft] = useState(() => new Map<string, FloorSwap>());
   const floorLights = lightingItems.filter(item => item.floor === floor);
-  const installedIds = new Set(floorLights.map(item => item.installed));
-  const installed = installedIds.size === 1
-    ? lightingOptions.find(option => installedIds.has(option.option_id))
-    : undefined;
+  const equipment = floor !== null && selectedGroup ? equipmentForFloor(floor, selectedGroup) : null;
 
   function chooseOption(option: string) {
-    if (floor === null) return;
+    if (floor === null || !selectedGroup) return;
+    const key = draftKey(floor, selectedGroup);
     setDraft(previous => {
       const next = new Map(previous);
-      if (option === keepCurrent) next.delete(floor);
-      else next.set(floor, option);
+      if (option === keepCurrent) next.delete(key);
+      else next.set(key, { group: selectedGroup, floor, option });
       return next;
     });
   }
@@ -30,7 +31,10 @@ export default function BuildingPage() {
   return (
     <main aria-label="Building viewer" className="grid min-h-full grid-rows-[minmax(20rem,55dvh)_auto] md:h-full md:grid-cols-[minmax(0,1fr)_20rem] md:grid-rows-[minmax(0,1fr)]">
       <div className="min-h-0">
-        <BuildingScene floor={floor}>
+        <BuildingScene floor={floor} monitorSelection={floor === 0 ? {
+          outline: selectedGroup === 'monitors' ? selectedOutline : selectableOutline,
+          onSelect: () => setSelectedGroup('monitors'),
+        } : undefined}>
           {floor !== null && floorLights.map(item => (
             <mesh
               key={item.id}
@@ -38,11 +42,12 @@ export default function BuildingPage() {
               position={item.position}
               onClick={event => {
                 event.stopPropagation();
-                if (event.delta <= 4) setLightingSelected(true);
+                if (event.delta <= 4) setSelectedGroup('lighting');
               }}
             >
               <boxGeometry args={[.9, .25, .65]} />
-              <meshBasicMaterial color={draft.has(floor) ? '#16a075' : lightingSelected ? '#007eab' : '#f5ad20'} />
+              <meshBasicMaterial color="#e6e8e6" />
+              <Edges lineWidth={2} color={selectedGroup === 'lighting' ? selectedOutline : selectableOutline} />
             </mesh>
           ))}
         </BuildingScene>
@@ -53,7 +58,7 @@ export default function BuildingPage() {
           <label htmlFor="building-floor" className="text-sm font-medium">Floor</label>
           <Select value={floor === null ? 'all' : String(floor)} onValueChange={value => {
             setFloor(value === 'all' ? null : Number(value));
-            setLightingSelected(false);
+            setSelectedGroup(null);
           }}>
             <SelectTrigger id="building-floor" className="w-full"><SelectValue /></SelectTrigger>
             <SelectContent>
@@ -66,17 +71,17 @@ export default function BuildingPage() {
             </SelectContent>
           </Select>
         </div>
-        {lightingSelected && floor !== null ? (
+        {equipment && selectedGroup && floor !== null ? (
           <section className="flex flex-col gap-2">
-            <h2 className="font-medium">Lighting · {floorLabel(floor)}</h2>
-            <p className="text-sm text-muted-foreground">Installed: {installed?.name ?? 'Mixed lighting'}</p>
-            <label htmlFor="lighting-option" className="text-sm font-medium">Configuration for the whole floor</label>
-            <Select value={draft.get(floor) ?? keepCurrent} onValueChange={chooseOption}>
-              <SelectTrigger id="lighting-option" className="w-full"><SelectValue /></SelectTrigger>
+            <h2 className="font-medium">{equipmentLabels[selectedGroup]} · {floorLabel(floor)}</h2>
+            <p className="text-sm text-muted-foreground">Installed: {equipment.installed?.name ?? 'Mixed equipment'}</p>
+            <label htmlFor="equipment-option" className="text-sm font-medium">Configuration for the whole floor</label>
+            <Select value={draft.get(draftKey(floor, selectedGroup))?.option ?? keepCurrent} onValueChange={chooseOption}>
+              <SelectTrigger id="equipment-option" className="w-full"><SelectValue /></SelectTrigger>
               <SelectContent position="popper" className="w-(--radix-select-trigger-width)">
                 <SelectGroup>
                   <SelectItem value={keepCurrent}>Keep current setup</SelectItem>
-                  {lightingOptions.filter(option => option.option_id !== installed?.option_id).map(option => (
+                  {equipment.choices.filter(option => option.option_id !== equipment.installed?.option_id).map(option => (
                     <SelectItem key={option.option_id} value={option.option_id}>{option.name}</SelectItem>
                   ))}
                 </SelectGroup>
@@ -85,7 +90,9 @@ export default function BuildingPage() {
           </section>
         ) : (
           <p className="text-sm text-muted-foreground">
-            {floor === null ? 'Choose a floor to see its lights.' : 'Click any light marker to configure lighting for the whole floor.'}
+            {floor === null ? 'Choose a floor to see its equipment.' : floor === 0
+              ? 'Click an outlined light or computer screen to configure it for the whole floor.'
+              : 'Click any outlined light to configure lighting for the whole floor.'}
           </p>
         )}
         <div className="mt-auto flex flex-col gap-2 border-t border-border pt-4">
@@ -95,7 +102,7 @@ export default function BuildingPage() {
           <button
             type="button"
             className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
-            onClick={() => console.log({ scenario: lightingScenario(draft) })}
+            onClick={() => console.log({ scenario: Array.from(draft.values()) })}
           >
             Simulate
           </button>

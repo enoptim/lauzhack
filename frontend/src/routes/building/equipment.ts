@@ -4,7 +4,13 @@ import optionsCsv from '../../../../data/options.csv?raw';
 import roomsCsv from '../../../../data/rooms.csv?raw';
 import { FLOOR_COUNT, FLOOR_HEIGHT, LAYOUT_LENGTH, LAYOUT_WIDTH, LENGTH, WIDTH } from '@/data/building';
 import { sideRooms } from '@/data/sideRooms';
-import type { Scenario } from '@/api/types';
+import type { Swap } from '@/api/types';
+
+export const equipmentLabels = { lighting: 'Lighting', monitors: 'Monitors' };
+export type EquipmentGroup = keyof typeof equipmentLabels;
+export type FloorSwap = Swap & { floor: number; group: EquipmentGroup };
+
+export const draftKey = (floor: number, group: EquipmentGroup) => `${floor}:${group}`;
 
 function csvRecords(csv: string) {
   // Quoted fields can contain commas, line breaks and escaped quotes.
@@ -21,7 +27,19 @@ function csvRecords(csv: string) {
   return records.map(fields => Object.fromEntries(header.map((key, index) => [key, fields[index]])));
 }
 
-export const lightingOptions = csvRecords(optionsCsv).filter(row => row.group === 'lighting');
+const options = csvRecords(optionsCsv);
+const inventory = csvRecords(inventoryCsv);
+
+export function equipmentForFloor(floor: number, group: EquipmentGroup) {
+  const choices = options.filter(option => option.group === group);
+  const installedIds = new Set(inventory.filter(item => Number(item.floor) === floor && item.group === group)
+    .map(item => item.option_id));
+  const installed = installedIds.size === 1
+    ? choices.find(option => installedIds.has(option.option_id))
+    : undefined;
+  return { choices, installed };
+}
+
 const rooms = new Map(csvRecords(roomsCsv).map(room => [room.room_id, room]));
 
 function markerPosition(roomId: string, floor: number, east: number, north: number): [number, number, number] {
@@ -37,18 +55,14 @@ function markerPosition(roomId: string, floor: number, east: number, north: numb
   return [(east / 46.71 - .5) * WIDTH * .9, y, (.5 - north / 65.1) * LENGTH * .9];
 }
 
-export const lightingItems = csvRecords(inventoryCsv).flatMap(item => {
+export const lightingItems = inventory.flatMap(item => {
   const room = rooms.get(item.room_id);
   const floor = Number(item.floor);
   if (item.group !== 'lighting' || !room || floor < 0 || floor >= FLOOR_COUNT) return [];
   return [{
     id: item.item_id,
     floor,
-    installed: item.option_id,
     position: markerPosition(item.room_id, floor, Number(room.centroid_x_m), Number(room.centroid_y_m)),
   }];
 });
 
-export function lightingScenario(draft: ReadonlyMap<number, string>): Scenario {
-  return Array.from(draft, ([floor, option]) => ({ group: 'lighting', floor, option }));
-}

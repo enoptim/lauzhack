@@ -1,6 +1,6 @@
 import TopCantina from './TopCantina';
 import TopLanding from './TopLanding';
-import GroundFloor from './GroundFloor';
+import GroundFloor, { type MonitorSelection } from './GroundFloor';
 import Staircase from './Staircase';
 import { FLOOR_COUNT, FLOOR_HEIGHT, WIDTH, LENGTH, LAYOUT_WIDTH, LAYOUT_LENGTH } from '../data/building';
 import { Box, Desk, Plant } from './Furniture';
@@ -13,7 +13,7 @@ function Glass({ size, position }: { size: [number, number, number]; position: [
   return <mesh position={position}><boxGeometry args={size}/><meshStandardMaterial color="#a4c6ce" transparent opacity={.18} roughness={.22} metalness={.15} depthWrite={false}/></mesh>;
 }
 
-function Floor({ level }: { level: number }) {
+function Floor({ level, monitorSelection }: { level: number; monitorSelection?: MonitorSelection }) {
   const y = level * FLOOR_HEIGHT;
   return <group position={[0, y, 0]}>
     {/* Ring slabs leave a genuine open atrium through all upper floors. */}
@@ -56,7 +56,7 @@ function Floor({ level }: { level: number }) {
       <Plant position={[-7, 0, z]}/>
     </group>)}
     {level === 0 && <>
-      <GroundFloor/>
+      <GroundFloor monitorSelection={monitorSelection}/>
     </>}
   </group>;
 }
@@ -86,11 +86,11 @@ function Facade({ floors }: { floors: number }) {
   </group>;
 }
 
-export default function OfficeBuilding({ floor }: { floor: number | null }) {
+export default function OfficeBuilding({ floor, monitorSelection }: { floor: number | null; monitorSelection?: MonitorSelection }) {
   const visibleFloors = floor === null ? FLOOR_COUNT : floor + 1;
   return <group scale={[WIDTH / LAYOUT_WIDTH, 1, LENGTH / LAYOUT_LENGTH]}>
     <Box size={[48, .4, 108]} color="#bfc5bc" position={[0, -.5, 0]}/>
-    {Array.from({ length: visibleFloors }, (_, level) => <Floor key={level} level={level}/>)}
+    {Array.from({ length: visibleFloors }, (_, level) => <Floor key={level} level={level} monitorSelection={monitorSelection}/>)}
     <Staircase floors={visibleFloors}/>
     {floor !== 0 && <Facade floors={floor ?? FLOOR_COUNT}/>}
     {/* Broad canopy frames the long transparent atrium skylight. */}
