@@ -1,5 +1,6 @@
 import { Edges } from '@react-three/drei';
 import { useState } from 'react';
+import { useNavigate } from 'react-router';
 import BuildingScene from '@/components/BuildingScene';
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { FLOOR_COUNT } from '@/data/building';
@@ -14,6 +15,7 @@ export default function BuildingPage() {
   const [floor, setFloor] = useState<number | null>(null);
   const [selectedGroup, setSelectedGroup] = useState<EquipmentGroup | null>(null);
   const [draft, setDraft] = useState(() => new Map<string, FloorSwap>());
+  const navigate = useNavigate();
   const floorLights = lightingItems.filter(item => item.floor === floor);
   const equipment = floor !== null && selectedGroup ? equipmentForFloor(floor, selectedGroup) : null;
 
@@ -107,11 +109,11 @@ export default function BuildingPage() {
           <button
             type="button"
             className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
-            onClick={() => console.log({ scenario: Array.from(draft.values()) })}
+            onClick={() => navigate(`/results?config=${encodeURIComponent(JSON.stringify({ scenario: Array.from(draft.values()) }))}`)}
           >
             Simulate
           </button>
-          <p className="text-xs text-muted-foreground">Logs the draft to the browser console. No simulation runs yet.</p>
+          <p className="text-xs text-muted-foreground">Opens the results for these changes.</p>
         </div>
       </aside>
     </main>
