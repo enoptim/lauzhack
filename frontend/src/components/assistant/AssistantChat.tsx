@@ -32,7 +32,7 @@ type Turn = {
 };
 
 const suggestions = [
-  'Cut our electricity use by 15% as cheaply as possible.',
+  'Cut our electricity use by 10% as cheaply as possible.',
   'Lowest running costs for at most CHF 200,000, but don’t touch the ventilation.',
   'Which single upgrades pay back fastest?',
 ];
