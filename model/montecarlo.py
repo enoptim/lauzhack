@@ -76,7 +76,7 @@ def describe(future):
     ev = sorted(future["events"], key=lambda e: e["start_year"])
     parts = []
     for e in ev:
-        name = {"heatwave_summer": "heatwave", "energy_price_spike": "price spike", "new_lab": "new lab"}[e["id"]]
+        name = {"heatwave_summer": "heatwave", "energy_price_spike": "price spike", "new_lab": "new lab"}.get(e["id"], e["id"])
         parts.append(f"{name} in year {e['start_year']}")
     parts.append(f"price ends at {future['price_path'][-1]:.2f}x today")
     return ", ".join(parts) if parts else "a quiet future"
@@ -100,7 +100,9 @@ def run(data, scenarios, n=300, seed=2026, events=(), overrides=None):
     rng = random.Random(seed)
     futures = [draw_future(data, rng) for _ in range(n)]
     if events or overrides:
-        futures = [{**f, "events": f["events"] + list(events), "params": {**f["params"], **(overrides or {})}}
+        fixed = [{"id": e, "start_year": data["events"][e]["start_year"], "end_year": data["events"][e]["end_year"]}
+                 for e in events if data["events"][e]["kind"] == "annual"]
+        futures = [{**f, "events": f["events"] + fixed, "params": {**f["params"], **(overrides or {})}}
                    for f in futures]
     H = int(data["params"]["horizon_years"])
     results = {}

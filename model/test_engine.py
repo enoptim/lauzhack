@@ -305,6 +305,8 @@ def test_futures_accept_events_and_overrides():
     a = montecarlo.run(D, {"p": LIGHT_MID}, n=20, seed=1)["summary"]["p"]["npv_cash"]["p50"]
     b = montecarlo.run(D, {"p": LIGHT_MID}, n=20, seed=1, overrides={"electricity_price_chf_kwh": 0.4})["summary"]["p"]["npv_cash"]["p50"]
     assert b > a
+    res = montecarlo.run(D, {"p": LIGHT_MID}, n=10, seed=1, events=["new_lab", "hackathon_weekend"])
+    assert "new lab in year" in res["stories"]["typical"]["what_happened"]
 
 
 def test_assumptions_list_is_complete():
