@@ -175,31 +175,45 @@ def served_floor(item):
 
 
 class FirmYear(int):
-    """A swap year that is not pulled forward when the old unit fails first (play mode: the past is fixed).
-    It is still an int, so code that reads choices as (option, timing) works unchanged."""
+    """Play mode: a schedule of changes for one item, each in exactly its year (never pulled into the past).
+    `steps` is [(time, option_id)], sorted. The int value is the first step's time, so code that reads
+    choices as (option, timing) keeps working; the option in that pair is the last step's."""
+
+    def __new__(cls, value, steps=None):
+        obj = int.__new__(cls, value)
+        obj.steps = steps if steps is not None else []
+        return obj
+
+
+def swap_items(data, sw):
+    """The items a swap applies to: its option's group, narrowed by floor (the floor served), room or item."""
+    group = data["options"][sw["option"]]["group"]
+    return [i for i in data["items"] if i["group"] == group
+            and ("floor" not in sw or served_floor(i) == sw["floor"])
+            and ("room_id" not in sw or i["room"] == sw["room_id"])
+            and ("item_id" not in sw or i["id"] == sw["item_id"])]
 
 
 def resolve(data, scenario):
-    """Scenario swaps -> {item_id: (option_id, timing)} for items that change."""
+    """Scenario swaps -> {item_id: (option_id, timing)} for items that change.
+
+    Planning swaps: one change per item, the later swap wins. Firm swaps (play mode, "firm": true with a
+    year) build a schedule per item instead: a firm swap in year k keeps the item's earlier steps and
+    replaces any step from year k on, so a later decision changes the plan without touching the past."""
     out = {}
     for sw in scenario or []:
-        opt = data["options"][sw["option"]]
-        for i in data["items"]:
-            if i["group"] != opt["group"]:
-                continue
-            if "floor" in sw and served_floor(i) != sw["floor"]:
-                continue
-            if "room_id" in sw and i["room"] != sw["room_id"]:
-                continue
-            if "item_id" in sw and i["id"] != sw["item_id"]:
-                continue
-            if sw["option"] == i["option"]:
+        timing = sw.get("year", sw.get("timing", "now"))
+        firm = bool(sw.get("firm")) and isinstance(timing, (int, float))
+        for i in swap_items(data, sw):
+            prev = out.get(i["id"])
+            if firm:
+                steps = [st for st in (prev[1].steps if prev and isinstance(prev[1], FirmYear) else [])
+                         if st[0] < int(timing)] + [(int(timing), sw["option"])]
+                out[i["id"]] = (sw["option"], FirmYear(steps[0][0], steps))
+            elif sw["option"] == i["option"]:
                 out.pop(i["id"], None)
             else:
-                timing = sw.get("year", sw.get("timing", "now"))
-                if isinstance(timing, (int, float)):
-                    timing = FirmYear(timing) if sw.get("firm") else int(timing)
-                out[i["id"]] = (sw["option"], timing)
+                out[i["id"]] = (sw["option"], int(timing) if isinstance(timing, (int, float)) else timing)
     return out
 
 
@@ -254,8 +268,8 @@ def item_plan(data, item, choice, horizon, remaining=None, future=None):
     if remaining is None:
         remaining = max(0.0, _life(cur) - (item["age"] or 0)) if _life(cur) != INF else INF
     up_t, pulled, firm = None, False, False
-    if choice and isinstance(choice[1], FirmYear):     # firm: exactly at time up_t; earlier failures are
-        up_t, firm = int(choice[1]), True              # replaced like-for-like as usual
+    if choice and isinstance(choice[1], FirmYear):     # firm schedule: each step exactly in its year; failures
+        firm = True                                    # in between are replaced like-for-like as usual
     elif choice and isinstance(choice[1], int):        # phased: upgrade at time up_t (end of year up_t)
         up_t = choice[1]
         if random_failure and remaining != INF and math.ceil(remaining) <= up_t:
@@ -268,17 +282,21 @@ def item_plan(data, item, choice, horizon, remaining=None, future=None):
         up_t = 0 if choice[1] == "now" else (remaining if remaining != INF else 0)
         up_t = int(math.ceil(up_t)) if up_t != INF else None
         pulled = random_failure and choice[1] == "end_of_life"
-    # end: when the active unit dies; random_end: whether that is a surprise (a drawn life)
+    # Changes still to come, [(time, option)], and when the active unit dies (random_end: as a surprise).
+    queue = list(choice[1].steps) if firm else ([(up_t, choice[0])] if up_t is not None else [])
     installs, active, end, original, random_end = [], item["option"], remaining, True, random_failure
     while True:
-        cand_up = up_t if (up_t is not None and up_t < horizon) else None
+        cand_up = queue[0][0] if queue and queue[0][0] < horizon else None
         cand_eol = int(math.ceil(end)) if end < horizon else None
         if cand_up is None and cand_eol is None:
             return installs
         if cand_up is not None and (cand_eol is None or cand_up <= cand_eol):
-            # an emergency if it replaces a unit that broke: pulled forward, or a firm year when the unit in place dies
+            option = queue.pop(0)[1]
+            if firm and option == active and cand_eol != cand_up:
+                continue                               # "the same again" while it still works: nothing to do
+            # an emergency if it replaces a unit that broke: pulled forward, or a firm step when the unit in place dies
             kind = "failure" if (pulled and original) or (firm and random_end and cand_eol == cand_up) else "planned"
-            active, up_t, original, t_new = choice[0], None, False, cand_up
+            active, original, t_new = option, False, cand_up
         else:
             kind = "failure" if random_end else "planned"
             original, t_new = False, cand_eol
