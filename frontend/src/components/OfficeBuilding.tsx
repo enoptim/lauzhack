@@ -1,10 +1,10 @@
 import { devices, FLOOR_COUNT, FLOOR_HEIGHT } from '../data/building';
 import { Box, Desk, Plant } from './Furniture';
 import Equipment from './Equipment';
-export default function OfficeBuilding({ floor, selected, onSelect }: { floor: number; selected: string | null; onSelect: (id: string) => void }) {
+export default function OfficeBuilding() {
   return <group>
     <Box size={[17, .4, 12]} color="#c8d0c5" position={[0, -.35, 0]}/>
-    {Array.from({ length: FLOOR_COUNT }, (_, f) => f <= floor && <group key={f} position={[0, f * FLOOR_HEIGHT, 0]}>
+    {Array.from({ length: FLOOR_COUNT }, (_, f) => <group key={f} position={[0, f * FLOOR_HEIGHT, 0]}>
       <Box size={[15, .2, 10]} color={f % 2 ? '#e5dfd1' : '#eee7d9'} position={[0, -.1, 0]}/>
       {/* Rear facade only: permanent cutaway keeps the interior readable. */}
       <Box size={[15, .65, .15]} color="#c2cdc4" position={[0, .325, -5]}/>
@@ -20,7 +20,7 @@ export default function OfficeBuilding({ floor, selected, onSelect }: { floor: n
       <Box size={[2, .12, .6]} color="#caa97a" position={[-3, 1.45, -4.4]}/>
       {[[-7.2, -4.7], [7.2, -4.7], [-7.2, 4.7], [7.2, 4.7]].map(([x, z], i) => <Box key={i} size={[.22, 3.6, .22]} color="#91a69a" position={[x, 1.8, z]}/>)}
     </group>)}
-    {floor === FLOOR_COUNT && <Box size={[15.3, .25, 10.3]} color="#aebcaf" position={[0, FLOOR_COUNT * FLOOR_HEIGHT, 0]}/>}
-    {devices.filter(d => d.floor <= floor).map(d => <Equipment key={d.id} device={d} selected={selected === d.id} onSelect={onSelect}/>)}
+    <Box size={[15.3, .25, 10.3]} color="#aebcaf" position={[0, FLOOR_COUNT * FLOOR_HEIGHT, 0]}/>
+    {devices.map(d => <Equipment key={d.id} device={d}/>)}
   </group>;
 }

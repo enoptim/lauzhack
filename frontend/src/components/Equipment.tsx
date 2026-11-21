@@ -1,11 +1,8 @@
-import { useState } from 'react';
-import { Html, Edges } from '@react-three/drei';
 import { Box } from './Furniture';
 import type { Device } from '../data/building';
-export default function Equipment({ device, selected, onSelect }: { device: Device; selected: boolean; onSelect: (id: string) => void }) {
-  const [hovered, setHovered] = useState(false);
-  const accent = selected ? '#e9ad43' : hovered ? '#91c9a9' : '#637a73';
-  return <group position={device.position} onClick={e => { e.stopPropagation(); onSelect(device.id); }} onPointerOver={e => { e.stopPropagation(); setHovered(true); }} onPointerOut={() => setHovered(false)}>
+export default function Equipment({ device }: { device: Device }) {
+  const accent = '#637a73';
+  return <group position={device.position}>
     {device.kind === 'monitor' && <>
       <Box size={[.12, .25, .12]} color="#4d5958" position={[0, -.08, 0]}/>
       <Box size={[.45, .04, .25]} color="#4d5958" position={[0, -.18, 0]}/>
@@ -21,7 +18,7 @@ export default function Equipment({ device, selected, onSelect }: { device: Devi
       <mesh position={[0, -.06, 0]}><boxGeometry args={[1.75, .025, .35]}/><meshStandardMaterial color="#fff8d6" emissive="#fff0bd" emissiveIntensity={1.2}/></mesh>
     </>}
     {device.kind === 'toilet' && <>
-      <Box size={[.65, .8, .28]} color={selected || hovered ? accent : '#e4ebe8'} position={[0, .4, -.3]}/>
+      <Box size={[.65, .8, .28]} color="#e4ebe8" position={[0, .4, -.3]}/>
       <mesh position={[0, .25, .15]} castShadow><cylinderGeometry args={[.32, .22, .5, 20]}/><meshStandardMaterial color="#eff3ed"/></mesh>
       <mesh position={[0, .52, .15]} rotation={[Math.PI / 2, 0, 0]}><torusGeometry args={[.25, .07, 8, 24]}/><meshStandardMaterial color={accent}/></mesh>
     </>}
@@ -33,7 +30,5 @@ export default function Equipment({ device, selected, onSelect }: { device: Devi
       </group>)}
       <Box size={[.3, .25, 2]} color="#c4cbc3" position={[1.2, .15, 1.5]}/>
     </>}
-    {selected && <mesh position={[0, device.kind === 'heatPump' ? .75 : .2, 0]}><boxGeometry args={device.kind === 'heatPump' ? [3.15, 1.65, 1.95] : [1.1, 1, .85]}/><meshBasicMaterial transparent opacity={0} depthWrite={false}/><Edges color="#e9ad43"/></mesh>}
-    {(hovered || selected) && <Html position={[0, device.kind === 'heatPump' ? 2 : 1, 0]} center style={{ pointerEvents: 'none' }}><div className="scene-label">{device.name}</div></Html>}
   </group>;
 }
