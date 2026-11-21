@@ -7,7 +7,7 @@ setup:            ## install the API venv and frontend packages
 	cd frontend && npx -y pnpm@10 install   # the workspace file needs pnpm 10
 
 api:              ## engine API on http://localhost:8000
-	cd model && .venv/bin/uvicorn server:app --reload --port 8000
+	cd model && .venv/bin/uvicorn server:app --reload --reload-dir . --reload-dir ../chat --port 8000
 
 frontend:         ## Vite dev server (proxies /api to the engine)
 	cd frontend && pnpm dev
@@ -15,5 +15,6 @@ frontend:         ## Vite dev server (proxies /api to the engine)
 dev:              ## API and frontend together; Ctrl+C stops both
 	@trap 'kill 0' INT TERM EXIT; $(MAKE) api & $(MAKE) frontend & wait
 
-test:             ## engine validation tests
-	cd model && python3 test_engine.py && python3 test_session.py
+test:             ## engine, play mode, optimizer, search and assistant tests
+	cd model && python3 test_engine.py && python3 test_session.py && python3 test_optimize.py && python3 test_search.py
+	python3 -m chat.test_agent

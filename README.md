@@ -40,3 +40,5 @@ Other commands:
 - Press the ` key in the app (or open http://localhost:5173/?debug) to see the raw simulation result. It shows that the app and the simulation are connected.
 
 How the simulation works and what the API returns: [model/README.md](model/README.md).
+
+The assistant needs an OpenRouter key in `chat/.env`. Ask Theodor for it. See [chat/README.md](chat/README.md).

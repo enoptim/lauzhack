@@ -129,7 +129,7 @@ def finance(result):
     years = [{k: y[k] for k in ("year", "cash_cf", "economic_cf", "cumulative_cash_cf", "cumulative_economic_cf",
                                   "cash_closing", "cash_closing_baseline", "capex", "capex_baseline",
                                   "operating_cost", "operating_cost_baseline", "kwh", "kwh_baseline",
-                                  "price_chf_kwh", "staff", "desk_capacity")}
+                                  "price_chf_kwh", "staff", "desk_capacity", "residual_value")}
              | {"people_value": y["people_value"], "savings": y["savings"],
                 "comfort_score": y["outcomes"]["comfort_score"], "comfort_score_baseline": y["outcomes_baseline"]["comfort_score"],
                 "meeting_co2_ppm": y["outcomes"]["meeting_co2_ppm"], "meeting_co2_ppm_baseline": y["outcomes_baseline"]["meeting_co2_ppm"]}
