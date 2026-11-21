@@ -6,6 +6,7 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Slider } from '@/components/ui/slider';
+import { Spinner } from '@/components/ui/spinner';
 import { Switch } from '@/components/ui/switch';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { cn } from '@/lib/utils';
@@ -72,6 +73,7 @@ export default function ResultsPage() {
   }), [chosen, timing]);
 
   const [price, setPrice] = useState(read?.config.overrides[PRICE_KEY] ?? TODAY_PRICE);
+  const [settledPrice, setSettledPrice] = useState(price);
   const [whatIf, setWhatIf] = useState<WhatIf | null>(null);
   const [staffEffects, setStaffEffects] = useState(false);
   const [horizon, setHorizon] = useState<number>(15);
@@ -79,7 +81,8 @@ export default function ResultsPage() {
   const [playYear, setPlayYear] = useState<number | null>(null);
 
   const overrides = useMemo(() => ({ ...(read?.config.overrides ?? {}), [PRICE_KEY]: price }), [price, params]); // eslint-disable-line react-hooks/exhaustive-deps
-  const engine = useEngine(scenario, overrides, useMemo(() => (whatIf ? [whatIf] : []), [whatIf]));
+  const settled = useMemo(() => ({ ...(read?.config.overrides ?? {}), [PRICE_KEY]: settledPrice }), [settledPrice, params]); // eslint-disable-line react-hooks/exhaustive-deps
+  const engine = useEngine(scenario, overrides, settled, useMemo(() => (whatIf ? [whatIf] : []), [whatIf]));
   const runs = engine.runs.data;
   const plan = runs?.plan;
   const playMs = horizon * MS_PER_YEAR;
@@ -269,7 +272,8 @@ export default function ResultsPage() {
             <span id="price-label" className="shrink-0 text-muted-foreground">Electricity price</span>
             <div className="relative w-72 shrink-0 py-3">
               <Slider min={PRICE_MIN} max={PRICE_MAX} step={0.01} value={[price]} aria-labelledby="price-label"
-                onValueChange={([value]) => setPrice(Math.round(value * 100) / 100)} />
+                onValueChange={([value]) => setPrice(Math.round(value * 100) / 100)}
+                onValueCommit={([value]) => setSettledPrice(Math.round(value * 100) / 100)} />
               {breakevenPct !== null && breakevenPct >= 0 && breakevenPct <= 100 && !staffEffects && (
                 <span className="pointer-events-none absolute top-full -mt-1 -translate-x-1/2 text-xs whitespace-nowrap text-muted-foreground" style={{ left: `${breakevenPct}%` }}>
                   ▲ pays off above {breakeven?.value?.toFixed(2)}
@@ -283,7 +287,7 @@ export default function ResultsPage() {
                   : <>the upgrade costs <b className="font-semibold text-foreground">{chfShort(-yearlySaving)} a year</b> more in bills</>}
               </span>
             )}
-            <Button variant="ghost" size="sm" onClick={() => setPrice(TODAY_PRICE)}
+            <Button variant="ghost" size="sm" onClick={() => { setPrice(TODAY_PRICE); setSettledPrice(TODAY_PRICE); }}
               className={cn('shrink-0', Math.abs(price - TODAY_PRICE) < 0.001 && 'invisible')}>Back to today</Button>
           </div>
           <div className="flex items-center gap-3 text-sm">
@@ -293,8 +297,17 @@ export default function ResultsPage() {
         </div>
 
         {runs ? (
+          <div className="relative">
+            <div className={cn('transition-opacity duration-200', engine.runs.loading && 'opacity-60')}>
           <MoneyChart rows={rows} horizon={horizon} staffEffects={staffEffects} playToken={playToken} playMs={playMs}
             equipment={[...new Set(scenario.map(swap => (groupLabels[swap.group] ?? swap.group).toLowerCase()))].join(' and ') || 'equipment'} />
+            </div>
+            {engine.runs.loading && (
+              <span className="absolute top-2 left-1/2 flex -translate-x-1/2 items-center gap-2 rounded-full border bg-card px-3 py-1.5 text-sm shadow-sm">
+                <Spinner /> Recalculating…
+              </span>
+            )}
+          </div>
         ) : <Skeleton className="h-[28rem] w-full" />}
 
         <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-2 text-sm text-muted-foreground">
@@ -303,7 +316,10 @@ export default function ResultsPage() {
             <span className="flex items-center gap-2"><span className="h-3 w-5 rounded-sm bg-warning/15" />Red: the upgrade has spent more</span>
             {staffEffects && <span className="flex items-center gap-2"><svg aria-hidden="true" width="20" height="4" className="text-chart-1"><line x1="0" y1="2" x2="20" y2="2" stroke="currentColor" strokeWidth="2" strokeDasharray="5 3" /></svg>Dashed: includes lost staff value, a guess</span>}
           </p>
-          {fan && !staffEffects && !whatIf && (
+          {engine.futures.loading && !staffEffects && !whatIf && (
+            <p className="flex items-center gap-2"><Spinner /> Checking 200 possible futures…</p>
+          )}
+          {fan && !engine.futures.loading && !staffEffects && !whatIf && (
             <p className="text-foreground">
               Across 200 possible futures: paid for itself by {goodPayback !== null ? `year ${goodPayback.toFixed(1)}` : `—`} in good ones,{' '}
               {badPayback !== null ? `by year ${badPayback.toFixed(1)} in bad ones` : `not within ${horizon} years in bad ones`}.

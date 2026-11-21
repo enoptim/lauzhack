@@ -33,8 +33,18 @@ export const WHAT_IFS = ['energy_price_spike', 'heatwave_summer', 'new_lab'] as 
 export type WhatIf = (typeof WHAT_IFS)[number];
 
 /** Everything the Results page reads from the engine for one configuration. */
-export function useEngine(scenario: Scenario, overrides: Record<string, number>, whatIfs: WhatIf[]) {
+/**
+ * `overrides` drive the fast runs and update while the slider moves.
+ * `settled` are the overrides after the slider is released; the slow runs wait for them.
+ */
+export function useEngine(scenario: Scenario, overrides: Record<string, number>, settled: Record<string, number>, whatIfs: WhatIf[]) {
   const base = useMemo(() => JSON.stringify({ scenario, overrides }), [scenario, overrides]);
+  const settledBase = useMemo(() => JSON.stringify({ scenario, settled }), [scenario, settled]);
+  // Break-even solves for the electricity price, so the chosen price does not matter to it.
+  const withoutPrice = useMemo(() => {
+    const { electricity_price_chf_kwh: _price, ...rest } = settled;
+    return rest;
+  }, [settled]);
 
   const catalog = useCall<Catalog>('catalog', () => api.catalog());
   const assumptions = useCall<Assumption[]>('assumptions', () => api.assumptions());
@@ -46,11 +56,11 @@ export function useEngine(scenario: Scenario, overrides: Record<string, number>,
       scenario, overrides, events: id === 'plan' ? [] : [id],
     })));
     return Object.fromEntries(ids.map((id, index) => [id, results[index]]));
-  });
+  }, 80);
 
-  const breakeven = useCall<BreakevenResult>(base, () => api.breakeven({ scenario, overrides }));
-  // The futures run takes about 4.5 s, so it waits until the slider has settled.
-  const futures = useCall<FuturesResult>(base, () => api.futures({ scenarios: { plan: scenario }, n: 200, seed: 2026, overrides }), 400);
+  const breakeven = useCall<BreakevenResult>(JSON.stringify({ scenario, withoutPrice }), () => api.breakeven({ scenario, overrides: withoutPrice }));
+  // The futures run takes about 4.5 s, so it waits until the slider is released.
+  const futures = useCall<FuturesResult>(settledBase, () => api.futures({ scenarios: { plan: scenario }, n: 200, seed: 2026, overrides: settled }), 300);
 
   return { catalog, assumptions, runs, breakeven, futures };
 }
