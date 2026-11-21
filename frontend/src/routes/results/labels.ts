@@ -34,6 +34,7 @@ export const groupLabels: Record<string, string> = {
   coffee: 'Coffee machines',
   water_heater: 'Water heaters',
   solar_pv: 'Solar panels',
+  lauzhack_banner: 'LauzHack banner',
 };
 
 /** Where the money comes from. Items marked `guess` rest on people effects and are not cash. */
