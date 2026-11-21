@@ -169,10 +169,10 @@ export default function ResultsPage() {
         </div>
 
         <div className="flex flex-wrap items-center gap-x-10 gap-y-4 border-y py-4">
-          <label className="flex min-w-72 flex-1 items-center gap-4 text-sm">
+          <label className="flex min-w-0 flex-1 flex-wrap items-center gap-x-4 gap-y-2 text-sm sm:flex-nowrap">
             <span className="shrink-0 text-muted-foreground">Electricity price</span>
             <Slider min={0.1} max={0.45} step={0.01} value={[price]} onValueChange={([value]) => setPrice(value)} className="max-w-80" aria-label="Electricity price" />
-            <span className="w-32 font-medium tabular-nums">{pricePerKwh(price)}</span>
+            <span className="whitespace-nowrap font-medium tabular-nums">{pricePerKwh(price)}</span>
             {Math.abs(price - TODAY_PRICE) > 0.001 && (
               <button type="button" className="text-muted-foreground underline underline-offset-4 hover:text-foreground" onClick={() => setPrice(TODAY_PRICE)}>Reset</button>
             )}
