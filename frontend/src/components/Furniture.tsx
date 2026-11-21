@@ -4,7 +4,7 @@ import type { ThreeElements } from '@react-three/fiber';
 
 type DeviceSelection = { outline: string; onSelect: () => void };
 export type WorkstationSelection = { monitors: DeviceSelection; computers: DeviceSelection };
-export type FloorEquipmentSelection = WorkstationSelection & { coffee: DeviceSelection; water_heater: DeviceSelection };
+export type FloorEquipmentSelection = WorkstationSelection & { coffee: DeviceSelection; water_heater: DeviceSelection; servers: DeviceSelection };
 type DeviceProps = { position: [number, number, number]; selection?: DeviceSelection };
 
 function Device({ position, selection, size, color, children }: DeviceProps & {
@@ -40,8 +40,12 @@ export function CoffeeMachine(props: DeviceProps) {
     </mesh>
   </Device>;
 }
-export function Box({ size, color, ...props }: Omit<ThreeElements['mesh'], 'args'> & { size: [number, number, number]; color: string }) {
-  return <mesh castShadow receiveShadow {...props}><boxGeometry args={size}/><meshStandardMaterial color={color} roughness={.75}/></mesh>;
+export function Box({ size, color, children, ...props }: Omit<ThreeElements['mesh'], 'args'> & { size: [number, number, number]; color: string }) {
+  return <mesh castShadow receiveShadow {...props}>
+    <boxGeometry args={size} />
+    <meshStandardMaterial color={color} roughness={.75} />
+    {children}
+  </mesh>;
 }
 export function Desk({ position, workstationSelection }: { position: [number, number, number]; workstationSelection?: WorkstationSelection }) {
   return <group position={position}>

@@ -6,11 +6,13 @@ import { FLOOR_COUNT, FLOOR_HEIGHT, LAYOUT_LENGTH, LAYOUT_WIDTH, LENGTH, WIDTH }
 import { sideRooms } from '@/data/sideRooms';
 import type { Swap } from '@/api/types';
 
-export const equipmentLabels = { lighting: 'Lighting', monitors: 'Monitors', computers: 'Computers', coffee: 'Coffee machines', water_heater: 'Water heater' };
+export const equipmentLabels = { lighting: 'Lighting', monitors: 'Monitors', computers: 'Computers', coffee: 'Coffee machines', water_heater: 'Water heaters', servers: 'Server racks', ventilation: 'Ventilation', solar_pv: 'Solar panels', blinds: 'Blinds', lauzhack_banner: 'LauzHack banner' };
 export type EquipmentGroup = keyof typeof equipmentLabels;
 export type EquipmentSwap = Swap & { group: EquipmentGroup };
 
-export const draftKey = (floor: number, group: EquipmentGroup) => group === 'water_heater' ? group : `${floor}:${group}`;
+export const isBuildingWide = (group: EquipmentGroup) =>
+  group === 'water_heater' || group === 'ventilation' || group === 'solar_pv' || group === 'blinds';
+export const draftKey = (floor: number | null, group: EquipmentGroup) => isBuildingWide(group) ? group : `${floor}:${group}`;
 
 function csvRecords(csv: string) {
   // Quoted fields can contain commas, line breaks and escaped quotes.
@@ -30,9 +32,9 @@ function csvRecords(csv: string) {
 const options = csvRecords(optionsCsv);
 const inventory = csvRecords(inventoryCsv);
 
-export function equipmentForFloor(floor: number, group: EquipmentGroup) {
+export function equipmentForFloor(floor: number | null, group: EquipmentGroup) {
   const choices = options.filter(option => option.group === group);
-  const installedIds = new Set(inventory.filter(item => Number(item.floor) === floor && item.group === group)
+  const installedIds = new Set(inventory.filter(item => item.group === group && (isBuildingWide(group) || Number(item.floor) === floor))
     .map(item => item.option_id));
   const installed = installedIds.size === 1
     ? choices.find(option => installedIds.has(option.option_id))

@@ -345,6 +345,13 @@ OPTIONS = [
         "surplus sold to the grid.",
         purchase_chf_per_unit=700, install_chf_per_unit=400, lifetime_years=25, maintenance_chf_per_unit_year=15,
         generation_kwh_per_unit_year=None),  # set from PVGIS in main()
+    # Decorative only. Neither choice affects energy use or cost.
+    opt("lauzhack_banner_none", "current", "No banner", "banner",
+        "The ground-floor atrium has no banner.", source=MADE,
+        purchase_chf_per_unit=0, install_chf_per_unit=0, maintenance_chf_per_unit_year=0),
+    opt("lauzhack_banner_add", "upgrade", "Hang the LauzHack banner", "banner",
+        "Hang a decorative LauzHack banner in the ground-floor atrium.", source=MADE,
+        purchase_chf_per_unit=0, install_chf_per_unit=0, maintenance_chf_per_unit_year=0),
 ]
 
 for _o in OPTIONS:
@@ -353,7 +360,7 @@ for _o in OPTIONS:
 # Ages in years (made up). Building from 2004; heat pumps replaced 2009, water heater 2010, roof AHUs
 # (floors 2-4) 2012, floor 4 renovated 2017; IT and coffee machines bought over several years.
 AGES = {"lighting": 21, "blinds": 21, "ventilation": 21, "heating_cooling": 17, "water_heater": 16,
-        "monitors": 8, "computers": 6, "coffee": 11, "printers_3d": 6, "servers": 4, "solar_pv": ""}
+        "monitors": 8, "computers": 6, "coffee": 11, "printers_3d": 6, "servers": 4, "solar_pv": "", "lauzhack_banner": ""}
 AGE_BY_FLOOR = {
     "monitors": {0: 2, 1: 8, 2: 5, 3: 3, 4: 1},
     "computers": {0: 2, 1: 6, 2: 4, 3: 3, 4: 1},
@@ -472,7 +479,7 @@ def main():
     def add(room_id, group, units, serves=""):
         if units <= 0:
             return
-        option = f"{group}_none" if group == "solar_pv" else f"{group}_current"
+        option = f"{group}_none" if group in {"solar_pv", "lauzhack_banner"} else f"{group}_current"
         suffix = f":{serves.replace(' ', '')}" if serves else ""
         r = by_id[room_id]
         served = int(serves.split()[1]) if serves.startswith("floor ") else None
@@ -512,6 +519,7 @@ def main():
     add("BC_ROOF", "heating_cooling", int(round(heated_total * 0.04, -1)), serves="building")  # ~40 W/m2
     add("BC_991.0", "water_heater", 1, serves="building")
     add("BC_ROOF", "solar_pv", PV_MAX_KWP_ROOF_HP, serves="building")
+    add("BC_094.6", "lauzhack_banner", 1)  # ground-floor atrium café
 
     # ---- write CSVs
     def write(name, cols, rows):
