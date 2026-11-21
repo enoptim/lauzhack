@@ -100,6 +100,7 @@ export interface Catalog {
   items: CatalogItem[];
   events: CatalogEvent[];
   horizon_years: number;
+  limits: { capex_budget_chf: number; opening_reserve_chf: number; min_reserve_chf: number };
 }
 
 // ---------------------------------------------------------------- /api/simulate

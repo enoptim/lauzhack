@@ -7,7 +7,10 @@ All bodies are JSON. A scenario is a list of swaps, e.g.
     [{"group": "lighting", "option": "lighting_mid", "floor": 2}, {"group": "monitors", "option": "monitors_mid", "year": 1}]
 Events are a list of event ids, e.g. ["new_lab", "heatwave_summer"].
 """
+from pathlib import Path
+
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
@@ -97,3 +100,9 @@ def breakeven(body: Breakeven):
     if body.param not in DATA["params"]:
         raise HTTPException(status_code=400, detail=f"Unknown assumption: {body.param}")
     return viz.clean(engine.breakeven(DATA, body.scenario, body.events, body.overrides, body.param))
+
+
+@app.get("/playground", include_in_schema=False)
+def playground():
+    """A page for trying the engine by hand: http://localhost:8000/playground"""
+    return FileResponse(Path(__file__).parent / "playground" / "index.html")

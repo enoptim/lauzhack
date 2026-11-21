@@ -84,6 +84,8 @@ Note: in the deterministic run, overdue units are replaced as planned at year 0.
 ```sh
 cd model && uvicorn server:app --reload --port 8000
 ```
+Try it by hand at http://localhost:8000/playground (`playground/index.html`, plain HTML with no build step). It only displays API responses and calculates nothing. Every endpoint is also listed and callable at http://localhost:8000/docs.
+
 | Endpoint | Body | Returns |
 |---|---|---|
 | `GET /api/assumptions` | | every assumption: value, low, high, unit, source, and a label (`fact`, `research`, `guess`, `result`) |

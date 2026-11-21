@@ -35,6 +35,8 @@ make dev
 Other commands:
 - `make api` or `make frontend` starts only one part.
 - `make test` runs the simulation's checks.
+- Open http://localhost:8000/playground (needs `make api` or `make dev`) to try the simulation by hand, with charts: build a plan, run it once or across many possible futures, see which assumptions matter most, and run the hackathon stress test.
+- http://localhost:8000/docs lists every API endpoint and lets you call each one from the browser.
 - Press the ` key in the app (or open http://localhost:5173/?debug) to see the raw simulation result. It shows that the app and the simulation are connected.
 
 How the simulation works and what the API returns: [model/README.md](model/README.md).

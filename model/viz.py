@@ -53,6 +53,7 @@ def catalog(data):
         "events": [{"event_id": e["id"], "name": e["name"], "description": e["description"], "kind": e["kind"],
                     "start_year": e["start_year"], "end_year": e["end_year"]} for e in data["events"].values()],
         "horizon_years": data["params"]["horizon_years"],
+        "limits": {k: data["params"][k] for k in ("capex_budget_chf", "opening_reserve_chf", "min_reserve_chf")},
     })
 
 

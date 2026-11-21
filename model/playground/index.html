@@ -1,0 +1,902 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Engine playground</title>
+<style>
+/* Every number on this page comes from the engine API. Nothing is calculated here. */
+:root {
+  color-scheme: light;
+  --page: #f9f9f7;
+  --surface-1: #fcfcfb;
+  --text-primary: #0b0b0b;
+  --text-secondary: #52514e;
+  --text-muted: #898781;
+  --grid: #e1e0d9;
+  --axis: #c3c2b7;
+  --border: rgba(11, 11, 11, 0.10);
+  --wash: rgba(11, 11, 11, 0.04);
+  --series-1: #2a78d6;
+  --series-2: #eb6834;
+  --series-3: #1baf7a;
+  --gain: #2a78d6;
+  --cost: #e34948;
+  --serious: #ec835a;
+  --critical: #d03b3b;
+  --good: #0ca30c;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --page: #0d0d0d;
+    --surface-1: #1a1a19;
+    --text-primary: #f0efec;
+    --text-secondary: #c3c2b7;
+    --grid: #2c2c2a;
+    --axis: #383835;
+    --border: rgba(255, 255, 255, 0.10);
+    --wash: rgba(255, 255, 255, 0.05);
+    --series-1: #3987e5;
+    --series-2: #d95926;
+    --series-3: #199e70;
+    --gain: #3987e5;
+    --cost: #e66767;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --page: #0d0d0d;
+  --surface-1: #1a1a19;
+  --text-primary: #f0efec;
+  --text-secondary: #c3c2b7;
+  --grid: #2c2c2a;
+  --axis: #383835;
+  --border: rgba(255, 255, 255, 0.10);
+  --wash: rgba(255, 255, 255, 0.05);
+  --series-1: #3987e5;
+  --series-2: #d95926;
+  --series-3: #199e70;
+  --gain: #3987e5;
+  --cost: #e66767;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--page);
+  color: var(--text-primary);
+  font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+main { max-width: 1120px; margin: 0 auto; padding: 20px 16px 60px; }
+h1 { font-size: 20px; margin: 0 0 2px; }
+h2 { font-size: 15px; margin: 0 0 2px; }
+p.sub, .sub { color: var(--text-secondary); margin: 0 0 12px; }
+.card {
+  position: relative;
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 14px 16px;
+  margin-bottom: 14px;
+}
+.row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+label { color: var(--text-secondary); }
+select, input, button {
+  font: inherit;
+  color: var(--text-primary);
+  background: var(--surface-1);
+  border: 1px solid var(--axis);
+  border-radius: 6px;
+  padding: 5px 8px;
+}
+input[type="number"] { width: 70px; }
+select { max-width: 100%; }
+button { cursor: pointer; }
+button:hover { background: var(--wash); }
+button.primary { background: var(--text-primary); color: var(--surface-1); border-color: var(--text-primary); }
+button.link { border: none; background: none; color: var(--text-secondary); padding: 2px 6px; }
+.swaps { list-style: none; padding: 0; margin: 8px 0; }
+.swaps li { display: flex; gap: 8px; align-items: center; padding: 4px 0; border-bottom: 1px solid var(--grid); }
+.swaps li:last-child { border-bottom: none; }
+.muted { color: var(--text-muted); }
+.events { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 8px; }
+.events label { color: var(--text-primary); }
+.tabs { display: flex; gap: 4px; margin: 18px 0 12px; border-bottom: 1px solid var(--grid); flex-wrap: wrap; }
+.tabs button { border: none; border-bottom: 2px solid transparent; border-radius: 0; background: none; padding: 8px 12px; color: var(--text-secondary); }
+.tabs button[aria-selected="true"] { color: var(--text-primary); border-bottom-color: var(--text-primary); font-weight: 600; }
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px; margin-bottom: 14px; }
+.tile { background: var(--surface-1); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; }
+.tile .label { color: var(--text-secondary); font-size: 13px; }
+.tile .value { font-size: 22px; font-weight: 600; margin: 2px 0; }
+.tile .note { color: var(--text-muted); font-size: 12px; }
+.pill { display: inline-block; font-size: 11px; font-weight: 500; padding: 0 6px; border-radius: 10px; border: 1px solid var(--axis); color: var(--text-secondary); margin-left: 4px; vertical-align: 1px; }
+.pill.estimate { border-style: dashed; }
+.grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(440px, 1fr)); gap: 14px; }
+@media (max-width: 520px) { .grid2 { grid-template-columns: 1fr; } .tiles { grid-template-columns: 1fr 1fr; } }
+.grid2 .card { margin-bottom: 0; }
+.stack > * + * { margin-top: 14px; }
+svg.chart { width: 100%; height: auto; display: block; overflow: visible; }
+.card { min-width: 0; }
+svg.chart text { font: 11px system-ui, -apple-system, "Segoe UI", sans-serif; fill: var(--text-muted); font-variant-numeric: tabular-nums; }
+svg.chart text.ink { fill: var(--text-secondary); }
+svg.chart text.strong { fill: var(--text-primary); font-weight: 600; }
+svg.chart:focus { outline: 2px solid var(--axis); outline-offset: 2px; }
+.legend { display: flex; flex-wrap: wrap; gap: 14px; margin: 6px 0 4px; color: var(--text-secondary); font-size: 12px; }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.key-line { width: 14px; height: 2px; border-radius: 1px; display: inline-block; }
+.key-box { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
+.key-band { width: 14px; height: 10px; border-radius: 2px; display: inline-block; opacity: .25; }
+.tooltip {
+  position: absolute; pointer-events: none; z-index: 5; min-width: 140px;
+  background: var(--surface-1); border: 1px solid var(--border); border-radius: 6px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, .12); padding: 6px 9px; font-size: 12px; display: none;
+}
+.tooltip .t { color: var(--text-muted); margin-bottom: 2px; }
+.tooltip .r { display: flex; align-items: center; gap: 6px; }
+.tooltip .r b { color: var(--text-primary); }
+.tooltip .r span { color: var(--text-secondary); }
+details { margin-top: 8px; }
+details summary { cursor: pointer; color: var(--text-secondary); font-size: 12px; }
+table { border-collapse: collapse; width: 100%; font-size: 13px; }
+th, td { text-align: left; padding: 5px 8px; border-bottom: 1px solid var(--grid); }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+th { color: var(--text-secondary); font-weight: 500; }
+.flags { list-style: none; padding: 0; margin: 0; }
+.flags li { display: flex; gap: 8px; padding: 5px 0; align-items: baseline; }
+.flag-icon { flex: none; width: 18px; height: 18px; border-radius: 50%; display: inline-grid; place-items: center; font-size: 11px; font-weight: 700; color: #fff; }
+.flag-kind { font-size: 12px; color: var(--text-secondary); min-width: 64px; }
+.stories { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 10px; }
+.story { border: 1px solid var(--grid); border-radius: 8px; padding: 10px 12px; }
+.story .h { font-weight: 600; }
+pre { font-size: 11px; max-height: 360px; overflow: auto; background: var(--wash); padding: 8px; border-radius: 6px; }
+.error { color: var(--critical); }
+.loading { opacity: .5; transition: opacity .2s; }
+[hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Engine playground</h1>
+  <p class="sub">Build a plan, switch events on, and see what the engine says. Every number comes from the engine API; this page calculates nothing.</p>
+
+  <section class="card" aria-labelledby="plan-h">
+    <h2 id="plan-h">Your plan</h2>
+    <p class="sub">A list of equipment swaps. Later swaps win. Everything is compared with doing nothing (old units replaced like for like when they wear out).</p>
+    <div class="row">
+      <label>Examples</label>
+      <button data-preset="energy">Lights and air</button>
+      <button data-preset="wait">Same, but when they break</button>
+      <button data-preset="heat">Lake heat pump + solar</button>
+      <button data-preset="none">Clear</button>
+    </div>
+    <ul class="swaps" id="swaps"></ul>
+    <div class="row" id="add-swap">
+      <select id="f-group" aria-label="Equipment group"></select>
+      <select id="f-option" aria-label="Option"></select>
+      <select id="f-scope" aria-label="Where"></select>
+      <select id="f-timing" aria-label="When">
+        <option value="now">now</option>
+        <option value="end_of_life">when the old one breaks</option>
+        <option value="year">in year…</option>
+      </select>
+      <input id="f-year" type="number" min="1" value="2" aria-label="Year" hidden>
+      <button id="f-add">Add swap</button>
+    </div>
+    <p class="muted" id="f-desc" style="margin:6px 0 0"></p>
+    <div class="events" id="events"></div>
+  </section>
+
+  <div class="tabs" role="tablist">
+    <button role="tab" data-tab="single" aria-selected="true">Single run</button>
+    <button role="tab" data-tab="futures" aria-selected="false">Many futures</button>
+    <button role="tab" data-tab="sens" aria-selected="false">What matters most</button>
+    <button role="tab" data-tab="stress" aria-selected="false">Hackathon stress test</button>
+  </div>
+  <p class="error" id="error" hidden></p>
+
+  <!-- Single run -->
+  <section data-panel="single">
+    <div class="tiles" id="single-tiles"></div>
+    <div class="grid2">
+      <div class="card" id="c-cum"></div>
+      <div class="card" id="c-npv"></div>
+      <div class="card" id="c-reserve"></div>
+      <div class="card" id="c-energy"></div>
+    </div>
+    <div class="card" style="margin-top:14px">
+      <div class="row" style="justify-content:space-between">
+        <h2>Building in year <select id="snap-year" aria-label="Year to show"></select></h2>
+      </div>
+      <p class="sub">Do nothing vs your plan, in the chosen year.</p>
+      <div id="outcomes"></div>
+    </div>
+    <div class="card">
+      <h2>Warnings</h2>
+      <ul class="flags" id="flags"></ul>
+      <details><summary>Raw /api/simulate result (finance and building)</summary><pre id="raw-single"></pre></details>
+    </div>
+  </section>
+
+  <!-- Many futures -->
+  <section data-panel="futures" hidden>
+    <div class="card">
+      <h2>Many possible futures</h2>
+      <p class="sub">The engine replays your plan in many futures: different electricity prices, heatwaves, price spikes, whether the new lab comes, when old units fail, and how strong the people effects are. The events you ticked above don't apply here; each future draws its own.</p>
+      <div class="row">
+        <label for="mc-vs">Compare with</label>
+        <select id="mc-vs"><option value="none">doing nothing</option></select>
+        <button id="mc-save">Save current plan as “Plan B”</button>
+        <label for="mc-n">Futures</label>
+        <select id="mc-n"><option>100</option><option selected>200</option><option>300</option><option>500</option></select>
+        <label for="mc-seed">Seed</label>
+        <input id="mc-seed" type="number" value="2026">
+        <button class="primary" id="mc-run">Run futures</button>
+        <span class="muted" id="mc-status"></span>
+      </div>
+    </div>
+    <div id="mc-out" hidden>
+      <div class="tiles" id="mc-tiles"></div>
+      <div class="card" id="c-fan"></div>
+      <div class="grid2">
+        <div class="card" id="c-mcflags"></div>
+        <div class="card">
+          <h2>Three futures in words</h2>
+          <p class="sub">A bad, a typical and a good future for your plan (economic view).</p>
+          <div class="stories" id="stories"></div>
+        </div>
+      </div>
+      <div class="card" style="margin-top:14px">
+        <p class="sub" id="mc-method"></p>
+        <details><summary>Raw /api/futures result</summary><pre id="raw-mc"></pre></details>
+      </div>
+    </div>
+  </section>
+
+  <!-- Sensitivity -->
+  <section data-panel="sens" hidden>
+    <div class="card">
+      <h2>What matters most</h2>
+      <p class="sub">Each assumption is moved to its low and high value, one at a time, with the events ticked above. The longest bars are the assumptions your plan's economic value depends on most.</p>
+      <button class="primary" id="sens-run">Run</button> <span class="muted" id="sens-status"></span>
+    </div>
+    <div id="sens-out" hidden>
+      <div class="tiles" id="bands"></div>
+      <div class="card" id="c-tornado"></div>
+    </div>
+  </section>
+
+  <!-- Stress test -->
+  <section data-panel="stress" hidden>
+    <div class="tiles" id="stress-tiles"></div>
+    <div class="grid2">
+      <div class="card" id="c-stress-co2"></div>
+      <div class="card" id="c-stress-people"></div>
+    </div>
+  </section>
+</main>
+
+<script>
+'use strict';
+// ------------------------------------------------------------------ API
+async function api(path, body) {
+  const res = await fetch(path, body === undefined ? undefined : {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(`${path}: ${res.status} ${await res.text()}`);
+  return res.json();
+}
+
+// ------------------------------------------------------------------ DOM helpers (text always via textContent)
+const $ = (sel, root = document) => root.querySelector(sel);
+function h(tag, props = {}, ...kids) {
+  const e = document.createElement(tag);
+  for (const [k, v] of Object.entries(props)) {
+    if (v == null || v === false) continue;
+    if (k === 'class') e.className = v;
+    else if (k === 'text') e.textContent = v;
+    else if (k === 'style') e.style.cssText = v;
+    else if (k.startsWith('on')) e.addEventListener(k.slice(2), v);
+    else e.setAttribute(k, v === true ? '' : v);
+  }
+  for (const kid of kids.flat()) if (kid != null) e.append(kid instanceof Node ? kid : document.createTextNode(String(kid)));
+  return e;
+}
+const NS = 'http://www.w3.org/2000/svg';
+function s(tag, attrs = {}, parent) {
+  const e = document.createElementNS(NS, tag);
+  for (const [k, v] of Object.entries(attrs)) if (v != null) e.setAttribute(k, v);
+  if (parent) parent.append(e);
+  return e;
+}
+function stext(parent, x, y, str, attrs = {}) {
+  const t = s('text', { x, y, ...attrs }, parent);
+  t.textContent = str;
+  return t;
+}
+
+// ------------------------------------------------------------------ formatting (display only)
+const MINUS = '−';
+function compact(v) {
+  const a = Math.abs(v);
+  const sign = v < 0 ? MINUS : '';
+  if (a >= 1e6) return sign + (a / 1e6).toFixed(a >= 1e7 ? 1 : 2).replace(/\.?0+$/, '') + 'M';
+  if (a >= 1e4) return sign + Math.round(a / 1e3) + 'k';
+  if (a >= 1e3) return sign + (a / 1e3).toFixed(1).replace(/\.0$/, '') + 'k';
+  if (a >= 10 || a === 0) return sign + Math.round(a);
+  return sign + a.toFixed(a >= 1 ? 1 : 2);
+}
+const chf = v => v == null ? '—' : (v < 0 ? MINUS : '') + 'CHF ' + compact(Math.abs(v));
+const kwh = v => v == null ? '—' : compact(v) + ' kWh';
+const pct = v => v == null ? '—' : Math.round(v * 100) + '%';
+const years = v => v == null ? 'never' : v.toFixed(1) + ' years';
+const fixed = (d, unit = '') => v => v == null ? '—' : v.toFixed(d) + unit;
+
+// ------------------------------------------------------------------ charts
+function niceTicks(lo, hi, n = 5) {
+  if (lo === hi) { lo -= 1; hi += 1; }
+  const raw = (hi - lo) / n;
+  const mag = 10 ** Math.floor(Math.log10(raw));
+  const err = raw / mag;
+  const step = (err >= 7.5 ? 10 : err >= 3.5 ? 5 : err >= 1.5 ? 2 : 1) * mag;
+  const out = [];
+  for (let v = Math.floor(lo / step) * step; v <= Math.ceil(hi / step) * step + step / 2; v += step) out.push(+v.toFixed(10));
+  return out;
+}
+/** Charts are drawn at the card's real width so text is the same size in every chart. */
+function chartWidth(card) {
+  const cs = getComputedStyle(card);
+  const w = card.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+  return Math.max(260, Math.round(w) || 640);
+}
+function chartCard(card, title, sub) {
+  card.replaceChildren(h('h2', { text: title }), sub ? h('p', { class: 'sub', text: sub }) : null);
+  const tip = h('div', { class: 'tooltip', role: 'status' });
+  card.append(tip);
+  return tip;
+}
+function legend(items) {
+  return h('div', { class: 'legend' }, items.map(it => h('span', {},
+    h('i', { class: it.kind === 'box' ? 'key-box' : it.kind === 'band' ? 'key-band' : 'key-line', style: `background:${it.color}` }),
+    it.name)));
+}
+function showTip(tip, card, evt, title, rows) {
+  tip.replaceChildren(h('div', { class: 't', text: title }),
+    rows.map(r => h('div', { class: 'r' }, h('i', { class: 'key-line', style: `background:${r.color}` }), h('b', { text: r.value }), h('span', { text: r.name }))));
+  tip.style.display = 'block';
+  const box = card.getBoundingClientRect();
+  let x = evt.clientX - box.left + 14, y = evt.clientY - box.top + 14;
+  if (x + tip.offsetWidth > box.width - 4) x = evt.clientX - box.left - tip.offsetWidth - 14;
+  tip.style.left = x + 'px';
+  tip.style.top = y + 'px';
+}
+function dataTable(cols, rows) {
+  return h('details', {}, h('summary', { text: 'Table' }),
+    h('table', {}, h('thead', {}, h('tr', {}, cols.map((c, i) => h('th', { class: i ? 'num' : '', text: c })))),
+      h('tbody', {}, rows.map(r => h('tr', {}, r.map((c, i) => h('td', { class: i ? 'num' : '', text: c })))))));
+}
+
+/** Line chart with crosshair tooltip. series: [{name, values, color}], band: {name, lo, hi, color}. */
+function lineChart(card, { title, sub, xs, xFmt = String, series, band, refs = [], yFmt, zero = true, xLabel }) {
+  const tip = chartCard(card, title, sub);
+  const items = series.map(sr => ({ name: sr.name, color: sr.color }));
+  if (band) items.unshift({ name: band.name, color: band.color, kind: 'band' });
+  if (items.length >= 2) card.append(legend(items));
+  const W = chartWidth(card), H = 250, m = { l: 62, r: 96, t: 12, b: 24 };
+  const vals = [...series.flatMap(sr => sr.values), ...(band ? [...band.lo, ...band.hi] : []), ...refs.map(r => r.y)].filter(v => v != null);
+  if (zero) vals.push(0);
+  const t = niceTicks(Math.min(...vals), Math.max(...vals));
+  const y0 = t[0], y1 = t[t.length - 1];
+  const xmin = xs[0], xmax = xs[xs.length - 1];
+  const X = x => m.l + (x - xmin) / (xmax - xmin || 1) * (W - m.l - m.r);
+  const Y = v => m.t + (1 - (v - y0) / (y1 - y0)) * (H - m.t - m.b);
+  const svg = s('svg', { class: 'chart', viewBox: `0 0 ${W} ${H}`, tabindex: 0, role: 'img', 'aria-label': title });
+  for (const v of t) {
+    s('line', { x1: m.l, x2: W - m.r, y1: Y(v), y2: Y(v), style: `stroke:${v === 0 ? 'var(--axis)' : 'var(--grid)'};stroke-width:1` }, svg);
+    stext(svg, m.l - 6, Y(v) + 4, yFmt(v), { 'text-anchor': 'end' });
+  }
+  const every = Math.ceil(xs.length / Math.max(2, Math.floor((W - m.l - m.r) / 64)));
+  const last = xs.length - 1;
+  xs.forEach((x, i) => {
+    if ((i % every === 0 && last - i >= every) || i === last) stext(svg, X(x), H - m.b + 16, xFmt(x), { 'text-anchor': 'middle' });
+  });
+  for (const r of refs) {
+    s('line', { x1: m.l, x2: W - m.r, y1: Y(r.y), y2: Y(r.y), style: 'stroke:var(--text-muted);stroke-width:1' }, svg);
+    stext(svg, W - m.r + 6, Y(r.y) + 4, r.label, { class: 'ink' });
+  }
+  if (band) {
+    const top = xs.map((x, i) => `${X(x)},${Y(band.hi[i])}`);
+    const bot = xs.map((x, i) => `${X(x)},${Y(band.lo[i])}`).reverse();
+    s('polygon', { points: [...top, ...bot].join(' '), style: `fill:${band.color};opacity:.14` }, svg);
+  }
+  for (const sr of series) {
+    const d = sr.values.map((v, i) => (i ? 'L' : 'M') + X(xs[i]) + ',' + Y(v)).join('');
+    s('path', { d, style: `fill:none;stroke:${sr.color};stroke-width:2;stroke-linejoin:round;stroke-linecap:round` }, svg);
+  }
+  // end labels: only when they don't collide (the legend and tooltip carry identity otherwise)
+  const ends = series.map(sr => ({ sr, y: Y(sr.values[sr.values.length - 1]) })).sort((a, b) => a.y - b.y);
+  const clear = ends.every((e, i) => i === 0 || e.y - ends[i - 1].y >= 14) && !refs.some(r => ends.some(e => Math.abs(Y(r.y) - e.y) < 14));
+  for (const e of ends) {
+    const x = X(xs[xs.length - 1]), last = e.sr.values[e.sr.values.length - 1];
+    s('circle', { cx: x, cy: e.y, r: 4, style: `fill:${e.sr.color};stroke:var(--surface-1);stroke-width:2` }, svg);
+    if (clear) stext(svg, x + 8, e.y + 4, yFmt(last), { class: 'ink' });
+  }
+  // crosshair
+  const cross = s('line', { y1: m.t, y2: H - m.b, style: 'stroke:var(--text-muted);stroke-width:1;display:none' }, svg);
+  const dots = series.map(sr => s('circle', { r: 4, style: `fill:${sr.color};stroke:var(--surface-1);stroke-width:2;display:none` }, svg));
+  const hit = s('rect', { x: m.l, y: m.t, width: W - m.l - m.r, height: H - m.t - m.b, style: 'fill:transparent' }, svg);
+  let idx = xs.length - 1;
+  function show(i, evt) {
+    idx = Math.max(0, Math.min(xs.length - 1, i));
+    const x = X(xs[idx]);
+    cross.setAttribute('x1', x); cross.setAttribute('x2', x); cross.style.display = '';
+    series.forEach((sr, k) => { dots[k].setAttribute('cx', x); dots[k].setAttribute('cy', Y(sr.values[idx])); dots[k].style.display = ''; });
+    const rows = series.map(sr => ({ name: sr.name, color: sr.color, value: yFmt(sr.values[idx]) }));
+    if (band) rows.push({ name: band.name, color: band.color, value: `${yFmt(band.lo[idx])} to ${yFmt(band.hi[idx])}` });
+    const r = svg.getBoundingClientRect();
+    const e = evt || { clientX: r.left + x / W * r.width, clientY: r.top + r.height * .3 };
+    showTip(tip, card, e, xFmt(xs[idx]), rows);
+  }
+  function hide() { cross.style.display = 'none'; dots.forEach(d => d.style.display = 'none'); tip.style.display = 'none'; }
+  hit.addEventListener('pointermove', evt => {
+    const r = svg.getBoundingClientRect();
+    const px = (evt.clientX - r.left) / r.width * W;
+    let best = 0;
+    xs.forEach((x, i) => { if (Math.abs(X(x) - px) < Math.abs(X(xs[best]) - px)) best = i; });
+    show(best, evt);
+  });
+  hit.addEventListener('pointerleave', hide);
+  svg.addEventListener('focus', () => show(idx));
+  svg.addEventListener('blur', hide);
+  svg.addEventListener('keydown', e => {
+    if (e.key === 'ArrowLeft') { show(idx - 1); e.preventDefault(); }
+    if (e.key === 'ArrowRight') { show(idx + 1); e.preventDefault(); }
+  });
+  card.append(svg);
+  const cols = [xLabel || 'x', ...series.map(sr => sr.name), ...(band ? [band.name + ' low', band.name + ' high'] : [])];
+  card.append(dataTable(cols, xs.map((x, i) => [xFmt(x), ...series.map(sr => yFmt(sr.values[i])), ...(band ? [yFmt(band.lo[i]), yFmt(band.hi[i])] : [])])));
+}
+
+function barPath(x0, x1, y, hgt, r = 4) {
+  const w = Math.abs(x1 - x0);
+  if (w < 0.5) return '';
+  r = Math.min(r, w, hgt / 2);
+  const d = x1 >= x0 ? 1 : -1;
+  return `M${x0},${y}H${x1 - d * r}Q${x1},${y} ${x1},${y + r}V${y + hgt - r}Q${x1},${y + hgt} ${x1 - d * r},${y + hgt}H${x0}Z`;
+}
+
+/** Horizontal bars. rows: [{label, bars: [{x0, x1, color, name, text}]}]. Each bar grows from x0 (its baseline). */
+function barChart(card, { title, sub, rows, legendItems, fmt, refs = [], labelWidth = 190 }) {
+  const tip = chartCard(card, title, sub);
+  if (legendItems && legendItems.length >= 2) card.append(legend(legendItems.map(l => ({ ...l, kind: 'box' }))));
+  const barH = 14, gap = 2, pad = 10;
+  const W = chartWidth(card), m = { l: Math.min(labelWidth, Math.round(W * 0.36)), r: 16, t: refs.some(r => r.label) ? 20 : 6, b: 24 };
+  const bandH = r => r.bars.length * (barH + gap) - gap + pad;
+  const H = m.t + m.b + rows.reduce((a, r) => a + bandH(r), 0);
+  const xsAll = rows.flatMap(r => r.bars.flatMap(b => [b.x0, b.x1])).concat(refs.map(r => r.x));
+  let lo = Math.min(...xsAll), hi = Math.max(...xsAll);
+  const span = (hi - lo) || 1;
+  if (lo < 0 || lo === Math.min(...rows.flatMap(r => r.bars.map(b => b.x1)))) lo -= span * 0.2;
+  hi += span * 0.2;
+  const t = niceTicks(lo, hi, Math.max(2, Math.floor((W - m.l - m.r) / 90)));
+  const x0d = t[0], x1d = t[t.length - 1];
+  const X = v => m.l + (v - x0d) / (x1d - x0d) * (W - m.l - m.r);
+  const svg = s('svg', { class: 'chart', viewBox: `0 0 ${W} ${H}`, role: 'img', 'aria-label': title });
+  for (const v of t) {
+    s('line', { x1: X(v), x2: X(v), y1: m.t, y2: H - m.b, style: `stroke:${v === 0 ? 'var(--axis)' : 'var(--grid)'};stroke-width:1` }, svg);
+    stext(svg, X(v), H - m.b + 15, fmt(v), { 'text-anchor': 'middle' });
+  }
+  for (const r of refs) {
+    s('line', { x1: X(r.x), x2: X(r.x), y1: m.t, y2: H - m.b, style: 'stroke:var(--text-muted);stroke-width:1' }, svg);
+    if (r.label) stext(svg, X(r.x), m.t - 6, r.label, { 'text-anchor': 'middle', class: 'ink' });
+  }
+  let y = m.t;
+  for (const row of rows) {
+    const bh = bandH(row);
+    stext(svg, m.l - 8, y + (bh - pad) / 2 + 4, row.label, { 'text-anchor': 'end', class: 'ink' });
+    row.bars.forEach((b, k) => {
+      const by = y + k * (barH + gap);
+      const path = s('path', { d: barPath(X(b.x0), X(b.x1), by, barH), style: `fill:${b.color}` }, svg);
+      const label = b.text ?? fmt(b.x1 - b.x0);
+      // value at the bar's tip; a leftward bar too close to the row labels puts it beside its baseline instead
+      const left = b.x1 < b.x0 && X(b.x1) - 5 - label.length * 6.5 > m.l;
+      const tx = b.x1 >= b.x0 ? X(b.x1) + 5 : left ? X(b.x1) - 5 : X(b.x0) + 5;
+      stext(svg, tx, by + barH - 3, label, { 'text-anchor': left ? 'end' : 'start', class: 'ink' });
+      const hit = s('rect', { x: m.l, y: by - gap, width: W - m.l - m.r, height: barH + 2 * gap, style: 'fill:transparent' }, svg);
+      hit.addEventListener('pointermove', e => { path.style.opacity = .8; showTip(tip, card, e, row.label, [{ name: b.name, color: b.color, value: b.text ?? fmt(b.x1 - b.x0) }]); });
+      hit.addEventListener('pointerleave', () => { path.style.opacity = 1; tip.style.display = 'none'; });
+    });
+    y += bh;
+  }
+  card.append(svg);
+  card.append(dataTable(['', ...(legendItems || [{ name: 'Value' }]).map(l => l.name)],
+    rows.map(r => [r.label, ...r.bars.map(b => b.text ?? fmt(b.x1 - b.x0))])));
+}
+
+function tile(label, value, note, kind) {
+  return h('div', { class: 'tile' },
+    h('div', { class: 'label' }, label, kind === 'estimate' ? h('span', { class: 'pill estimate', text: 'estimate' }) : kind === 'index' ? h('span', { class: 'pill', text: 'score' }) : null),
+    h('div', { class: 'value', text: value }),
+    note ? h('div', { class: 'note', text: note }) : null);
+}
+
+// ------------------------------------------------------------------ state
+const state = { catalog: null, swaps: [], events: [], year: 1, planB: null, tab: 'single' };
+const css = v => `var(--${v})`;
+const GROUP_NAMES = {
+  monitors: 'Monitors', computers: 'Computers', lighting: 'Lighting', blinds: 'Blinds', ventilation: 'Ventilation',
+  heating_cooling: 'Heating and cooling', servers: 'Servers', printers_3d: '3D printers', coffee: 'Coffee machines',
+  water_heater: 'Hot water', solar_pv: 'Solar panels', other: 'Other (lifts, fridges, lab)',
+};
+const gname = g => GROUP_NAMES[g] || g;
+const optionName = id => {
+  for (const opts of Object.values(state.catalog.groups)) for (const o of opts) if (o.option_id === id) return o.name;
+  return id;
+};
+const PRESETS = {
+  energy: [{ group: 'lighting', option: 'lighting_mid' }, { group: 'ventilation', option: 'ventilation_budget' }],
+  wait: [{ group: 'lighting', option: 'lighting_mid', timing: 'end_of_life' }, { group: 'ventilation', option: 'ventilation_budget', timing: 'end_of_life' }],
+  heat: [{ group: 'heating_cooling', option: 'heating_cooling_premium' }, { group: 'solar_pv', option: 'solar_pv_upgrade' }],
+  none: [],
+};
+function describeSwap(sw) {
+  const where = sw.floor != null ? `floor ${sw.floor}` : sw.room_id || sw.item_id || 'whole building';
+  const when = sw.year != null ? `in year ${sw.year}` : sw.timing === 'end_of_life' ? 'when the old one breaks' : 'now';
+  return `${gname(sw.group)} → ${optionName(sw.option)} · ${where} · ${when}`;
+}
+
+// ------------------------------------------------------------------ plan builder
+function renderSwaps() {
+  const ul = $('#swaps');
+  ul.replaceChildren(...(state.swaps.length ? state.swaps.map((sw, i) => h('li', {},
+    h('span', { text: describeSwap(sw), style: 'flex:1' }),
+    h('button', { class: 'link', 'aria-label': 'Remove swap', text: 'Remove', onclick: () => { state.swaps.splice(i, 1); planChanged(); } }))) :
+    [h('li', { class: 'muted', text: 'No swaps yet: this is the “do nothing” plan.' })]));
+}
+function fillOptions() {
+  const g = $('#f-group').value;
+  const opts = state.catalog.groups[g];
+  $('#f-option').replaceChildren(...opts.map(o => h('option', { value: o.option_id, text: `${o.name} · ${chf(o.price_chf_per_unit)} per ${o.unit}` })));
+  const current = opts.find(o => o.tier !== 'current') || opts[0];
+  $('#f-option').value = current.option_id;
+  const floors = [...new Set(state.catalog.items.filter(i => i.group === g).map(i => i.serves_floor))].sort((a, b) => a - b);
+  $('#f-scope').replaceChildren(h('option', { value: '', text: 'whole building' }), ...floors.map(f => h('option', { value: f, text: g === 'ventilation' ? `serving floor ${f}` : `floor ${f}` })));
+  describeOption();
+}
+function describeOption() {
+  const o = state.catalog.groups[$('#f-group').value].find(x => x.option_id === $('#f-option').value);
+  $('#f-desc').textContent = o ? `${o.description}${o.lifetime_years ? ` Lifetime ${o.lifetime_years} years.` : ''}` : '';
+}
+function buildForm() {
+  const groups = Object.keys(state.catalog.groups).filter(g => state.catalog.groups[g].length > 1);
+  $('#f-group').replaceChildren(...groups.map(g => h('option', { value: g, text: gname(g) })));
+  $('#f-group').value = 'lighting';
+  $('#f-group').addEventListener('change', fillOptions);
+  $('#f-option').addEventListener('change', describeOption);
+  $('#f-timing').addEventListener('change', () => { $('#f-year').hidden = $('#f-timing').value !== 'year'; });
+  $('#f-year').max = state.catalog.horizon_years;
+  fillOptions();
+  $('#f-add').addEventListener('click', () => {
+    const sw = { group: $('#f-group').value, option: $('#f-option').value };
+    if ($('#f-scope').value !== '') sw.floor = Number($('#f-scope').value);
+    const tm = $('#f-timing').value;
+    if (tm === 'year') sw.year = Number($('#f-year').value);
+    else if (tm === 'end_of_life') sw.timing = 'end_of_life';
+    state.swaps.push(sw);
+    planChanged();
+  });
+  document.querySelectorAll('[data-preset]').forEach(b => b.addEventListener('click', () => {
+    state.swaps = PRESETS[b.dataset.preset].map(x => ({ ...x }));
+    planChanged();
+  }));
+  const ev = state.catalog.events.filter(e => e.kind === 'annual');
+  $('#events').replaceChildren(h('span', { class: 'muted', text: 'Events:' }), ...ev.map(e => {
+    const when = e.end_year == null ? `from year ${e.start_year}` : e.start_year === e.end_year ? `year ${e.start_year}` : `years ${e.start_year}–${e.end_year}`;
+    const cb = h('input', { type: 'checkbox', value: e.event_id });
+    cb.addEventListener('change', () => { state.events = [...document.querySelectorAll('#events input:checked')].map(x => x.value); planChanged(); });
+    return h('label', { title: e.description }, cb, ` ${e.name} (${when})`);
+  }));
+  const ys = $('#snap-year');
+  for (let y = 1; y <= state.catalog.horizon_years; y++) ys.append(h('option', { value: y, text: y }));
+  ys.addEventListener('change', () => { state.year = Number(ys.value); runSingle(); });
+}
+
+// ------------------------------------------------------------------ single run
+let singleSeq = 0;
+async function runSingle() {
+  const seq = ++singleSeq;
+  const panel = $('[data-panel="single"]');
+  panel.classList.add('loading');
+  try {
+    const r = await api('/api/simulate', { scenario: state.swaps, events: state.events, year: state.year });
+    if (seq !== singleSeq) return;
+    renderSingle(r);
+    $('#error').hidden = true;
+  } catch (e) { showError(e); }
+  finally { if (seq === singleSeq) panel.classList.remove('loading'); }
+}
+const BREAKDOWN = [
+  ['capex_and_residual', 'Equipment, net of value left'], ['energy', 'Energy'], ['pv_export', 'Solar sold to the grid'],
+  ['maintenance', 'Maintenance'], ['consumables', 'Consumables'], ['rent', 'Rent for extra space'],
+  ['productivity', 'Productivity'], ['sick_days', 'Fewer sick days'], ['time_saved', 'Time saved'],
+];
+const ESTIMATE_PARTS = new Set(['productivity', 'sick_days', 'time_saved']);
+function renderSingle(r) {
+  const f = r.finance, K = f.kind, y1 = f.years[0];
+  $('#single-tiles').replaceChildren(
+    tile('Up-front cost', chf(f.capex_year0), 'extra vs doing nothing, year 0', K.capex_chf),
+    tile('Cash value over 15 years', chf(f.npv_cash), `NPV · pays back in ${years(f.payback_cash)}`, K.npv_cash),
+    tile('Economic value over 15 years', chf(f.npv_economic), `cash + productivity, sick days, time · pays back in ${years(f.payback_economic)}`, K.npv_economic),
+    tile('Energy use, year 1', kwh(y1.kwh), `doing nothing: ${kwh(y1.kwh_baseline)}`, K.kwh),
+    tile('Comfort, year 1', fixed(0, ' / 100')(y1.comfort_score), `doing nothing: ${fixed(0, ' / 100')(y1.comfort_score_baseline)}`, K.comfort_score),
+  );
+  const xs = [0, ...f.years.map(y => y.year)];
+  lineChart($('#c-cum'), {
+    title: 'Money gained vs doing nothing',
+    sub: 'Cumulative, per year. Year 0 is the up-front cost. Cash counts only money that moves; economic adds the value of staff effects (an estimate).',
+    xs, xFmt: x => `Year ${x}`, xLabel: 'Year', yFmt: chf,
+    series: [
+      { name: 'Cash', color: css('series-1'), values: [-f.capex_year0, ...f.years.map(y => y.cumulative_cash_cf)] },
+      { name: 'Economic (estimate)', color: css('series-2'), values: [-f.capex_year0, ...f.years.map(y => y.cumulative_economic_cf)] },
+    ],
+  });
+  barChart($('#c-npv'), {
+    title: 'Where the 15-year value comes from',
+    sub: 'Each part of the economic value (NPV) vs doing nothing. Productivity, sick days and time saved are estimates.',
+    legendItems: [{ name: 'Gain', color: css('gain') }, { name: 'Cost', color: css('cost') }],
+    fmt: chf,
+    rows: BREAKDOWN.filter(([k]) => Math.abs(f.npv_breakdown[k]) >= 1).map(([k, label]) => ({
+      label: ESTIMATE_PARTS.has(k) ? `${label} (estimate)` : label,
+      bars: [{ x0: 0, x1: f.npv_breakdown[k], color: f.npv_breakdown[k] >= 0 ? css('gain') : css('cost'), name: f.npv_breakdown[k] >= 0 ? 'Gain' : 'Cost', text: chf(f.npv_breakdown[k]) }],
+    })),
+  });
+  const L = state.catalog.limits;
+  lineChart($('#c-reserve'), {
+    title: 'Building reserve',
+    sub: 'Money left in the building’s reserve at the end of each year. Old units are replaced from it when they wear out.',
+    xs: f.years.map(y => y.year), xFmt: x => `Year ${x}`, xLabel: 'Year', yFmt: chf,
+    refs: [{ y: L.min_reserve_chf, label: `Minimum ${chf(L.min_reserve_chf)}` }],
+    series: [
+      { name: 'Your plan', color: css('series-1'), values: f.years.map(y => y.cash_closing) },
+      { name: 'Doing nothing', color: css('series-2'), values: f.years.map(y => y.cash_closing_baseline) },
+    ],
+  });
+  const kb = r.snapshot_baseline.building.kwh_by_group, ks = r.snapshot.building.kwh_by_group;
+  const groups = Object.keys(kb).sort((a, b) => kb[b] - kb[a]).filter(g => kb[g] > 0 || ks[g] > 0);
+  barChart($('#c-energy'), {
+    title: `Energy use by system, year ${state.year}`,
+    sub: 'kWh per year. Heating and cooling includes the heat pumps’ electricity.',
+    legendItems: [{ name: 'Doing nothing', color: css('series-2') }, { name: 'Your plan', color: css('series-1') }],
+    fmt: kwh, labelWidth: 170,
+    rows: groups.map(g => ({
+      label: gname(g),
+      bars: [
+        { x0: 0, x1: kb[g], color: css('series-2'), name: 'Doing nothing', text: kwh(kb[g]) },
+        { x0: 0, x1: ks[g], color: css('series-1'), name: 'Your plan', text: kwh(ks[g]) },
+      ],
+    })),
+  });
+  renderOutcomes(r);
+  renderFlags($('#flags'), f.flags);
+  $('#raw-single').textContent = JSON.stringify({ finance: f, building: r.snapshot.building, building_baseline: r.snapshot_baseline.building }, null, 2);
+}
+function renderOutcomes(r) {
+  const b = r.snapshot_baseline.building, s_ = r.snapshot.building, K = r.finance.kind;
+  const ob = b.outcomes, os = s_.outcomes;
+  const rows = [
+    ['Energy use', kwh, b.kwh_year, s_.kwh_year, K.kwh],
+    ['Electricity bought from the grid', kwh, b.grid_kwh_year, s_.grid_kwh_year, K.kwh],
+    ['Solar generated', kwh, b.pv_kwh_year, s_.pv_kwh_year, K.kwh],
+    ['Energy cost per year', chf, b.costs_chf.energy, s_.costs_chf.energy, K.energy_chf],
+    ['Maintenance per year', chf, b.costs_chf.maintenance, s_.costs_chf.maintenance, 'calculated'],
+    ['CO₂ in offices, busiest hour', fixed(0, ' ppm'), ob.office_co2_ppm, os.office_co2_ppm, K.co2_ppm],
+    ['CO₂ in meeting rooms, busiest hour', fixed(0, ' ppm'), ob.meeting_co2_ppm, os.meeting_co2_ppm, K.co2_ppm],
+    ['CO₂ in classrooms, busiest hour', fixed(0, ' ppm'), ob.classroom_co2_ppm, os.classroom_co2_ppm, K.co2_ppm],
+    ['Outdoor air per person in offices', fixed(1, ' L/s'), ob.office_lps_per_person, os.office_lps_per_person, 'calculated'],
+    ['Summer overheating in offices', fixed(2, ' °C'), ob.summer_overheating_degc, os.summer_overheating_degc, 'calculated'],
+    ['Comfort score', fixed(1, ' / 100'), ob.comfort_score, os.comfort_score, K.comfort_score],
+    ['Staff performance', v => fixed(1, '%')(v * 100), ob.perf_index, os.perf_index, K.perf_change],
+    ['Sick days per person', fixed(2, ' days/yr'), ob.sick_days, os.sick_days, K.sick_days],
+    ['Coffee queue per person', fixed(1, ' min/day'), ob.coffee_minutes_per_day, os.coffee_minutes_per_day, 'estimate'],
+    ['Desks for staff', fixed(0, ' desks'), b.desk_capacity, s_.desk_capacity, 'calculated'],
+    ['Staff', fixed(0, ' people'), b.staff, s_.staff, 'calculated'],
+  ];
+  $('#outcomes').replaceChildren(h('table', {},
+    h('thead', {}, h('tr', {}, h('th', { text: '' }), h('th', { class: 'num', text: 'Doing nothing' }), h('th', { class: 'num', text: 'Your plan' }))),
+    h('tbody', {}, rows.map(([label, fmt, a, bb, kind]) => h('tr', {},
+      h('td', {}, label, kind === 'estimate' ? h('span', { class: 'pill estimate', text: 'estimate' }) : kind === 'index' ? h('span', { class: 'pill', text: 'score' }) : null),
+      h('td', { class: 'num', text: fmt(a) }), h('td', { class: 'num', text: fmt(bb) }))))));
+}
+const FLAG_TEXT = {
+  over_budget: f => ['Over budget', `Up-front cost ${chf(f.capex)} is above the ${chf(f.budget)} budget.`, 'critical'],
+  reserve_below_minimum: f => ['Reserve', `From year ${f.year} the plan leaves ${chf(f.reserve)} in the reserve: below the ${chf(f.minimum)} minimum and less than doing nothing.`, 'critical'],
+  reserve_below_minimum_without_upgrades: f => ['Context', `Even doing nothing, replacing worn-out units runs the reserve below its minimum from year ${f.year} (${chf(f.reserve)}).`, 'info'],
+  desk_shortfall: f => ['Desks', `From year ${f.year}: ${compact(f.people)} more staff than desks.`, 'serious'],
+  ventilation_over_capacity: f => ['Air', `From year ${f.year}: floor ${f.floor} has ${f.people} people at its busiest, its ventilation supports ${f.capacity}.`, 'serious'],
+};
+function renderFlags(ul, flags) {
+  const seen = new Map();
+  for (const f of flags) { const k = f.type + (f.floor ?? ''); if (!seen.has(k)) seen.set(k, f); }
+  const items = [...seen.values()].map(f => {
+    const [kind, text, level] = (FLAG_TEXT[f.type] || (x => [x.type, JSON.stringify(x), 'serious']))(f);
+    const color = level === 'critical' ? css('critical') : level === 'serious' ? css('serious') : css('text-muted');
+    return h('li', {}, h('span', { class: 'flag-icon', style: `background:${color}`, text: level === 'info' ? 'i' : '!' , 'aria-hidden': 'true' }),
+      h('span', { class: 'flag-kind', text: kind }), h('span', { text }));
+  });
+  ul.replaceChildren(...(items.length ? items : [h('li', { class: 'muted', text: 'No warnings.' })]));
+}
+
+// ------------------------------------------------------------------ many futures
+function compareScenario() {
+  return $('#mc-vs').value === 'planB' && state.planB ? ['Plan B', state.planB] : ['Doing nothing', []];
+}
+async function runFutures() {
+  const [bName, bScen] = compareScenario();
+  const n = Number($('#mc-n').value), seed = Number($('#mc-seed').value);
+  $('#mc-status').textContent = `Running ${n} futures…`;
+  $('#mc-run').disabled = true;
+  $('#mc-out').classList.add('loading');
+  try {
+    const r = await api('/api/futures', { scenarios: { 'Your plan': state.swaps, [bName]: bScen }, n, seed });
+    $('#mc-out').hidden = false;
+    renderFutures(r, bName);
+    $('#mc-status').textContent = `${r.n} futures, seed ${r.seed}.`;
+    $('#error').hidden = true;
+  } catch (e) { showError(e); $('#mc-status').textContent = ''; }
+  finally { $('#mc-run').disabled = false; $('#mc-out').classList.remove('loading'); }
+}
+let fanView = 'cash';
+function renderFutures(r, bName) {
+  const a = r.summary['Your plan'], cmp = r.compare[`Your plan vs ${bName}`];
+  const range = p => `${chf(p.p10)} to ${chf(p.p90)}`;
+  $('#mc-tiles').replaceChildren(
+    tile('Cash value, middle future', chf(a.npv_cash.p50), `8 in 10 futures: ${range(a.npv_cash)}`, 'calculated'),
+    tile('Economic value, middle future', chf(a.npv_economic.p50), `8 in 10 futures: ${range(a.npv_economic)}`, 'estimate'),
+    tile('Chance cash value is positive', pct(a.prob_cash_positive), `economic: ${pct(a.prob_economic_positive)}`),
+    tile('Cash payback, middle future', years(a.payback_cash_p50), `never pays back in ${pct(a.prob_no_cash_payback)} of futures`),
+    tile(`Beats ${bName.toLowerCase()}`, `${pct(cmp.prob_better_cash)} of futures`, `cash view · economic view: ${pct(cmp.prob_better_economic)}`),
+  );
+  const draw = () => {
+    const fan = a.fan[fanView];
+    lineChart($('#c-fan'), {
+      title: `Range of outcomes over time (${fanView === 'cash' ? 'cash' : 'economic, estimate'})`,
+      sub: 'Cumulative money gained vs doing nothing. The band holds the middle 8 in 10 futures; the line is the middle future.',
+      xs: fan.map(p => p.year), xFmt: x => `Year ${x}`, xLabel: 'Year', yFmt: chf,
+      band: { name: 'Middle 8 in 10 futures (P10–P90)', color: css('series-1'), lo: fan.map(p => p.p10), hi: fan.map(p => p.p90) },
+      series: [{ name: 'Middle future (P50)', color: css('series-1'), values: fan.map(p => p.p50) }],
+    });
+    const toggle = h('div', { class: 'row', style: 'margin-bottom:6px' },
+      ['cash', 'economic'].map(v => h('button', { class: v === fanView ? 'primary' : '', text: v === 'cash' ? 'Cash' : 'Economic', onclick: () => { fanView = v; draw(); } })));
+    $('#c-fan').insertBefore(toggle, $('#c-fan').children[2]);
+  };
+  draw();
+  const flagNames = { desk_shortfall: 'More staff than desks', reserve_below_minimum: 'Plan runs the reserve low', reserve_below_minimum_without_upgrades: 'Reserve runs low even doing nothing', over_budget: 'Over budget', ventilation_over_capacity: 'Ventilation over capacity' };
+  const fp = Object.entries(a.flag_probability);
+  if (fp.length) {
+    barChart($('#c-mcflags'), {
+      title: 'How often each warning comes up', sub: 'Share of futures with this warning at least once, for your plan.',
+      fmt: pct, labelWidth: 220,
+      rows: fp.map(([k, v]) => ({ label: flagNames[k] || k, bars: [{ x0: 0, x1: v, color: css('series-1'), name: 'Your plan', text: pct(v) }] })),
+    });
+  } else {
+    chartCard($('#c-mcflags'), 'How often each warning comes up', 'No warnings in any future.');
+  }
+  const st = r.stories;
+  $('#stories').replaceChildren(...[['bad', 'A bad future'], ['typical', 'A typical future'], ['good', 'A good future']].map(([k, label]) =>
+    h('div', { class: 'story' }, h('div', { class: 'h', text: `${label}: ${chf(st[k].npv_economic)}` }),
+      h('div', { class: 'sub', text: st[k].what_happened || 'Nothing unusual happened.' }))));
+  $('#mc-method').textContent = `How the futures are drawn: ${r.method}`;
+  $('#raw-mc').textContent = JSON.stringify(r, null, 2);
+}
+
+// ------------------------------------------------------------------ sensitivity
+async function runSens() {
+  $('#sens-status').textContent = 'Running…';
+  $('#sens-run').disabled = true;
+  try {
+    const body = { scenario: state.swaps, events: state.events };
+    const [t, b] = await Promise.all([api('/api/tornado', body), api('/api/bands', body)]);
+    $('#sens-out').hidden = false;
+    $('#bands').replaceChildren(
+      tile('Economic value, weak people effects', chf(b.weak), 'all staff effects at their low end', 'estimate'),
+      tile('Economic value, central', chf(b.central), 'the engine’s central assumptions', 'estimate'),
+      tile('Economic value, strong people effects', chf(b.strong), 'all staff effects at their high end', 'estimate'),
+    );
+    barChart($('#c-tornado'), {
+      title: 'Assumptions that move the economic value most',
+      sub: `Economic value (NPV) with each assumption at its low or high end. Central: ${chf(t.central)}.`,
+      legendItems: [{ name: 'Assumption at its low end', color: css('series-1') }, { name: 'Assumption at its high end', color: css('series-2') }],
+      fmt: chf, labelWidth: 230,
+      refs: [{ x: t.central, label: 'central' }],
+      rows: t.rows.map(row => ({
+        label: row.parameter.replaceAll('_', ' '),
+        bars: [
+          { x0: t.central, x1: row.at_low, color: css('series-1'), name: `At low end (${row.low})`, text: chf(row.at_low) },
+          { x0: t.central, x1: row.at_high, color: css('series-2'), name: `At high end (${row.high})`, text: chf(row.at_high) },
+        ],
+      })),
+    });
+    $('#sens-out').hidden = false;
+    $('#sens-status').textContent = '';
+  } catch (e) { showError(e); $('#sens-status').textContent = ''; }
+  finally { $('#sens-run').disabled = false; }
+}
+
+// ------------------------------------------------------------------ stress test
+async function runStress() {
+  try {
+    const [today, plan] = await Promise.all([api('/api/stress_test', { scenario: [] }), api('/api/stress_test', { scenario: state.swaps })]);
+    const yes = v => v ? 'running' : 'off';
+    $('#stress-tiles').replaceChildren(
+      tile('CO₂ at its worst, today', fixed(0, ' ppm')(today.peak_co2_ppm), `ventilation ${yes(today.ventilation_running)} · over capacity ${today.hours_over_capacity_per_day} h/day`, 'calculated'),
+      tile('CO₂ at its worst, your plan', fixed(0, ' ppm')(plan.peak_co2_ppm), `ventilation ${yes(plan.ventilation_running)} · over capacity ${plan.hours_over_capacity_per_day} h/day`, 'calculated'),
+      tile('People at the busiest hour', fixed(0, ' people')(today.peak_people), 'ground floor, hackathon weekend', 'calculated'),
+      tile('Ventilation capacity', fixed(0, ' people')(plan.capacity_people), `today: ${fixed(0, ' people')(today.capacity_people)}`, 'calculated'),
+    );
+    const hrs = today.hours.map(x => x.hour);
+    lineChart($('#c-stress-co2'), {
+      title: 'Ground-floor CO₂ during the hackathon',
+      sub: 'Hour by hour on the weekend. The old units run on a workday timer, so they are off; demand-controlled units react to people.',
+      xs: hrs, xFmt: x => `${String(x).padStart(2, '0')}:00`, xLabel: 'Hour', yFmt: v => compact(v) + ' ppm', zero: false,
+      series: [
+        { name: 'Today', color: css('series-2'), values: today.hours.map(x => x.co2_ppm) },
+        { name: 'Your plan', color: css('series-1'), values: plan.hours.map(x => x.co2_ppm) },
+      ],
+    });
+    lineChart($('#c-stress-people'), {
+      title: 'People on the ground floor vs what the air supports',
+      sub: 'Hackathon participants per hour, against the ventilation capacity.',
+      xs: hrs, xFmt: x => `${String(x).padStart(2, '0')}:00`, xLabel: 'Hour', yFmt: v => compact(v),
+      refs: [{ y: today.capacity_people, label: `Today ${compact(today.capacity_people)}` }, ...(plan.capacity_people !== today.capacity_people ? [{ y: plan.capacity_people, label: `Plan ${compact(plan.capacity_people)}` }] : [])],
+      series: [{ name: 'People', color: css('series-3'), values: today.hours.map(x => x.people) }],
+    });
+    $('#error').hidden = true;
+  } catch (e) { showError(e); }
+}
+
+// ------------------------------------------------------------------ wiring
+function showError(e) {
+  const el = $('#error');
+  el.hidden = false;
+  el.textContent = `Could not reach the engine. Is the API running (make api)? ${e.message || e}`;
+}
+function planChanged() {
+  renderSwaps();
+  if (state.tab === 'single') runSingle();
+  if (state.tab === 'stress') runStress();
+}
+function selectTab(tab) {
+  state.tab = tab;
+  document.querySelectorAll('[role="tab"]').forEach(b => b.setAttribute('aria-selected', String(b.dataset.tab === tab)));
+  document.querySelectorAll('[data-panel]').forEach(p => { p.hidden = p.dataset.panel !== tab; });
+  if (tab === 'single') runSingle();
+  if (tab === 'stress') runStress();
+}
+document.querySelectorAll('[role="tab"]').forEach(b => b.addEventListener('click', () => selectTab(b.dataset.tab)));
+$('#mc-run').addEventListener('click', runFutures);
+$('#mc-save').addEventListener('click', () => {
+  state.planB = state.swaps.map(x => ({ ...x }));
+  const sel = $('#mc-vs');
+  if (!sel.querySelector('[value="planB"]')) sel.append(h('option', { value: 'planB', text: 'Plan B' }));
+  sel.querySelector('[value="planB"]').textContent = `Plan B (${state.planB.length} swaps)`;
+  sel.value = 'planB';
+});
+$('#sens-run').addEventListener('click', runSens);
+
+(async function init() {
+  try {
+    state.catalog = await api('/api/catalog');
+  } catch (e) { showError(e); return; }
+  buildForm();
+  state.swaps = PRESETS.energy.map(x => ({ ...x }));
+  renderSwaps();
+  // Open a view directly with #futures, #sens or #stress (futures and sensitivity also run straight away).
+  const tab = location.hash.slice(1);
+  if (['futures', 'sens', 'stress'].includes(tab)) {
+    selectTab(tab);
+    if (tab === 'futures') runFutures();
+    if (tab === 'sens') runSens();
+  } else runSingle();
+})();
+</script>
+</body>
+</html>
