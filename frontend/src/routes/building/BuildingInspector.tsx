@@ -1,5 +1,5 @@
 import { Blinds, Coffee, Fan, Flag, Heater, Lightbulb, ListChecks, Monitor, PcCase, Server, Sun } from 'lucide-react';
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -16,13 +16,13 @@ const icons = {
   lighting: Lightbulb, monitors: Monitor, computers: PcCase, coffee: Coffee, lauzhack_banner: Flag,
 };
 
-function changesByFloor(draft: ReadonlyMap<string, EquipmentSwap>) {
-  const groups = new Map<number | null, [string, EquipmentSwap][]>();
-  for (const [key, swap] of draft) {
+function changesByFloor(scenario: EquipmentSwap[]) {
+  const groups = new Map<number | null, EquipmentSwap[]>();
+  for (const swap of scenario) {
     const level = isBuildingWide(swap.group) ? null : swap.floor ?? null;
     const changes = groups.get(level);
-    if (changes) changes.push([key, swap]);
-    else groups.set(level, [[key, swap]]);
+    if (changes) changes.push(swap);
+    else groups.set(level, [swap]);
   }
   return [null, ...floors].flatMap(level => {
     const changes = groups.get(level);
@@ -46,14 +46,18 @@ interface BuildingInspectorProps {
   onFloorChange: (floor: number | null) => void;
   onSelectGroup: (group: EquipmentGroup | null) => void;
   onChooseOption: (group: EquipmentGroup, option: string) => void;
-  saved: SavedConfiguration[];
+  configurations: SavedConfiguration[];
+  activeId: number;
   storageError: boolean;
-  onSaveAndStartNew: () => void;
+  onCreateConfiguration: () => number;
+  onEditConfiguration: (id: number) => void;
   onRemoveConfiguration: (id: number) => void;
 }
 
-export default function BuildingInspector({ floor, selectedGroup, draft, onFloorChange, onSelectGroup, onChooseOption, saved,
-  storageError, onSaveAndStartNew, onRemoveConfiguration }: BuildingInspectorProps) {
+export default function BuildingInspector({ floor, selectedGroup, draft, onFloorChange, onSelectGroup, onChooseOption,
+  configurations, activeId, storageError, onCreateConfiguration, onEditConfiguration, onRemoveConfiguration }: BuildingInspectorProps) {
+  const [reviewed, setReviewed] = useState('');
+  const reviewedTrigger = useRef<HTMLButtonElement>(null);
   const inspectorBody = useRef<HTMLDivElement>(null);
   const activeTrigger = useRef<HTMLButtonElement>(null);
   const groups = equipmentGroups(floor);
@@ -69,6 +73,10 @@ export default function BuildingInspector({ floor, selectedGroup, draft, onFloor
     if (row.top < panel.top) body.scrollTop += row.top - panel.top;
     else if (row.bottom > panel.bottom) body.scrollTop += row.bottom - panel.bottom;
   }, [selectedGroup]);
+
+  useEffect(() => {
+    reviewedTrigger.current?.scrollIntoView({ block: 'nearest' });
+  }, [reviewed, configurations.length]);
 
   return (
     <aside aria-label="Building explorer" className="flex min-h-0 min-w-0 flex-col border-t bg-background md:border-t-0 md:border-l">
@@ -127,88 +135,94 @@ export default function BuildingInspector({ floor, selectedGroup, draft, onFloor
           </Accordion>
           {!selectedGroup && <p className="text-xs text-muted-foreground">Pick equipment here or click an outlined item in 3D.</p>}
         </section>
-        {saved.length > 0 && (
-          <section aria-labelledby="saved-configurations" className="flex shrink-0 flex-col gap-2 border-t pt-4">
-            <h2 id="saved-configurations" className="text-xs font-semibold tracking-wider text-muted-foreground uppercase">Saved configurations</h2>
-            <ul className="flex flex-col gap-2">
-              {saved.map(({ id, scenario }) => (
-                <li key={id} className="flex items-start justify-between gap-2 rounded-lg border px-3 py-2 text-sm">
-                  <details className="min-w-0">
-                    <summary className="cursor-pointer">{configurationName(id)} <span className="text-xs text-muted-foreground">· {scenario.length}</span></summary>
-                    <ul className="mt-2 flex flex-col gap-1 text-xs text-muted-foreground">
-                      {scenario.map(swap => {
-                        const level = swap.floor ?? null;
-                        const option = equipmentForFloor(level, swap.group).choices.find(choice => choice.option_id === swap.option);
-                        return <li key={draftKey(level, swap.group)}>{level === null ? 'Whole building' : floorLabel(level)} · {equipmentLabels[swap.group]}: {option?.name ?? swap.option}</li>;
-                      })}
-                    </ul>
-                  </details>
-                  <button type="button" aria-label={`Remove ${configurationName(id)}`} onClick={() => onRemoveConfiguration(id)} className="text-xs text-muted-foreground underline underline-offset-4">Remove</button>
-                </li>
-              ))}
-            </ul>
-          </section>
-        )}
       </div>
 
       <footer className="flex shrink-0 flex-col gap-2 border-t bg-background px-5 py-4">
-        <Dialog>
+        <Dialog onOpenChange={open => { if (open) setReviewed(String(activeId)); }}>
           <DialogTrigger asChild>
             <button type="button" className="flex min-h-10 items-center gap-2.5 rounded-lg border bg-card px-4 py-2 text-left text-sm font-medium hover:bg-sidebar-accent focus-visible:outline-2 focus-visible:outline-ring">
               <ListChecks aria-hidden="true" className="size-4 shrink-0 text-muted-foreground" />
               <span className="flex-1">Review changes</span>
-              <span aria-live="polite" className="text-xs tabular-nums text-muted-foreground">{draft.size}</span>
+              <span className="text-xs text-muted-foreground">{configurationName(activeId)}</span>
             </button>
           </DialogTrigger>
           <DialogContent className="max-h-[calc(100dvh-2rem)] grid-rows-[auto_minmax(0,1fr)_auto]">
-            <DialogHeader>
-              <DialogTitle>Planned changes</DialogTitle>
+            <DialogHeader className="pr-5">
+              <DialogTitle>Building configurations</DialogTitle>
               <DialogDescription>
-                {draft.size === 0 ? 'No changes yet. Pick an equipment option to add one.'
-                  : `${draft.size} ${draft.size === 1 ? 'change' : 'changes'} to test across the building.`}
+                Open a configuration to see its planned changes.{' '}
+                {storageError ? 'Browser storage is unavailable. Changes may not survive a reload.' : 'Equipment changes are saved automatically in this browser.'}
               </DialogDescription>
             </DialogHeader>
-            <div className="min-h-0 overflow-y-auto" role={draft.size ? 'region' : undefined}
-              aria-label={draft.size ? 'Change details' : undefined} tabIndex={draft.size ? 0 : undefined}>
-              {draft.size > 0 && (
-                <ul className="flex flex-col gap-3 rounded-lg border bg-card px-3 py-2.5">
-                  {changesByFloor(draft).map(({ level, changes }) => (
-                    <li key={level ?? 'building'}>
-                      <h3 className="text-sm font-semibold">{level === null ? 'Whole building' : floorLabel(level)}</h3>
-                      <ul className="mt-1 ml-1.5 border-l pl-3">
-                        {changes.map(([key, swap]) => {
-                          const planned = equipmentForFloor(level, swap.group).choices.find(option => option.option_id === swap.option);
-                          return (
-                            <li key={key} className="relative py-0.5 text-xs before:absolute before:top-2.5 before:-left-3 before:w-2 before:border-t">
-                              <span className="font-medium">{equipmentLabels[swap.group]}:</span>{' '}
-                              <span className="text-muted-foreground">{planned?.name ?? swap.option}</span>
-                            </li>
-                          );
-                        })}
+            <Accordion type="single" collapsible value={reviewed} onValueChange={setReviewed}
+              className="flex min-h-0 flex-col gap-2 overflow-y-auto p-1">
+              {configurations.map(({ id, scenario }) => (
+                <AccordionItem key={id} value={String(id)} className="shrink-0 rounded-lg border last:border-b">
+                  <AccordionTrigger ref={reviewed === String(id) ? reviewedTrigger : undefined} className="items-center gap-2 px-3 py-2">
+                    <span className="flex-1">{configurationName(id)}</span>
+                    <span className="text-xs font-normal text-muted-foreground">
+                      {activeId === id && 'Editing · '}{scenario.length} {scenario.length === 1 ? 'change' : 'changes'}
+                    </span>
+                  </AccordionTrigger>
+                  <AccordionContent className="flex flex-col gap-3 px-3 pb-3">
+                    {scenario.length === 0 ? (
+                      <p className="text-xs text-muted-foreground">No changes yet. Pick equipment in the building view to add some.</p>
+                    ) : (
+                      <ul className="flex flex-col gap-3">
+                        {changesByFloor(scenario).map(({ level, changes }) => (
+                          <li key={level ?? 'building'}>
+                            <h3 className="text-sm font-semibold">{level === null ? 'Whole building' : floorLabel(level)}</h3>
+                            <ul className="mt-1 border-l pl-3">
+                              {changes.map(swap => {
+                                const planned = equipmentForFloor(level, swap.group).choices.find(option => option.option_id === swap.option);
+                                return (
+                                  <li key={draftKey(level, swap.group)} className="py-0.5 text-xs">
+                                    <span className="font-medium">{equipmentLabels[swap.group]}:</span>{' '}
+                                    <span className="text-muted-foreground">{planned?.name ?? swap.option}</span>
+                                  </li>
+                                );
+                              })}
+                            </ul>
+                          </li>
+                        ))}
                       </ul>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
+                    )}
+                    {configurations.length > 1 && (
+                      <div className="flex flex-wrap items-center gap-2">
+                        {activeId !== id && (
+                          <DialogClose asChild>
+                            <button type="button" onClick={() => onEditConfiguration(id)}
+                              className="rounded-md border px-3 py-1.5 text-xs font-medium hover:bg-sidebar-accent focus-visible:outline-2 focus-visible:outline-ring">
+                              Edit in building
+                            </button>
+                          </DialogClose>
+                        )}
+                        <button type="button" aria-label={'Remove ' + configurationName(id)}
+                          onClick={() => {
+                            const next = configurations.find(configuration => configuration.id === activeId && configuration.id !== id)
+                              ?? configurations.find(configuration => configuration.id !== id);
+                            onRemoveConfiguration(id);
+                            setReviewed(String(next?.id ?? ''));
+                          }}
+                          className="ml-auto rounded-md border border-status-expired bg-status-expired/20 px-3 py-1.5 text-xs font-medium text-foreground hover:bg-status-expired/35 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring">
+                          Remove
+                        </button>
+                      </div>
+                    )}
+                  </AccordionContent>
+                </AccordionItem>
+              ))}
+            </Accordion>
             <DialogFooter>
-              <DialogClose asChild>
-                <button type="button" className="min-h-10 rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground hover:bg-primary/90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring">
-                  Done
-                </button>
-              </DialogClose>
+              <button type="button" onClick={() => setReviewed(String(onCreateConfiguration()))}
+                className="min-h-10 rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground hover:bg-primary/90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring">
+                + New configuration
+              </button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
-        <button type="button" onClick={onSaveAndStartNew} disabled={!draft.size}
-          className="min-h-10 rounded-lg border bg-card px-4 py-2 text-left text-sm font-medium hover:bg-sidebar-accent focus-visible:outline-2 focus-visible:outline-ring disabled:opacity-50">
-          Save &amp; start new
-        </button>
-        <p role="status" className="text-xs text-muted-foreground">
-          {storageError ? 'Browser storage is unavailable. Changes to saved configurations may not survive a reload.'
-            : `${saved.length} saved${draft.size ? ' · Unsaved draft will also be simulated' : ''}`}
-        </p>
-        <ConfigurationComparison saved={saved} draft={draft} />
+        {storageError && <p role="status" className="text-xs text-muted-foreground">Browser storage is unavailable. Changes may not survive a reload.</p>}
+        <ConfigurationComparison configurations={configurations} activeId={activeId} />
       </footer>
     </aside>
   );

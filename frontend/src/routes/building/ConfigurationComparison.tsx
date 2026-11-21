@@ -5,7 +5,6 @@ import { api } from '@/api/client';
 import type { Scenario, SimulateResult } from '@/api/types';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { configurationName, type SavedConfiguration } from './configurations';
-import type { EquipmentSwap } from './equipment';
 
 interface Plan {
   name: string;
@@ -30,14 +29,16 @@ const metrics: { label: string; value: (result: SimulateResult, isCurrent: boole
     : finance.payback_cash === null ? 'Not within the simulation period' : `${number.format(finance.payback_cash)} years` },
 ];
 
-export default function ConfigurationComparison({ saved, draft }: { saved: SavedConfiguration[]; draft: ReadonlyMap<string, EquipmentSwap> }) {
+export default function ConfigurationComparison({ configurations, activeId }: { configurations: SavedConfiguration[]; activeId: number }) {
+  const alternatives = configurations.filter(({ scenario }) => scenario.length > 0);
   const [plans, setPlans] = useState<Plan[]>([]);
   const [results, setResults] = useState<(SimulateResult | null)[] | null>(null);
   const navigate = useNavigate();
+  const active = configurations.find(({ id }) => id === activeId);
 
-  /** Open the full results for the draft, or the newest saved configuration, behind a short simulating screen. */
+  /** Open the full results for the configuration being edited, behind a short simulating screen. */
   function openResults() {
-    const scenario = draft.size ? Array.from(draft.values()) : saved.at(-1)?.scenario ?? [];
+    const scenario = active?.scenario ?? [];
     navigate(`/results?config=${encodeURIComponent(JSON.stringify({ scenario }))}`, { state: { intro: true } });
   }
 
@@ -45,8 +46,7 @@ export default function ConfigurationComparison({ saved, draft }: { saved: Saved
     setResults(null);
     setPlans([
       { name: 'Current setup', scenario: [] },
-      ...saved.map(({ id, scenario }) => ({ name: configurationName(id), scenario })),
-      ...(draft.size ? [{ name: 'Unsaved draft', scenario: Array.from(draft.values()) }] : []),
+      ...alternatives.map(({ id, scenario }) => ({ name: configurationName(id), scenario })),
     ]);
   }
 
@@ -63,10 +63,10 @@ export default function ConfigurationComparison({ saved, draft }: { saved: Saved
     <Dialog>
       <button type="button" onClick={openResults}
         className="flex min-h-10 items-center justify-between gap-2 rounded-lg bg-primary px-4 py-2 text-left text-sm font-semibold text-primary-foreground hover:bg-primary/90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring">
-        {draft.size ? 'Simulate this plan' : saved.length ? 'Simulate the last saved plan' : 'Simulate current setup'}
+        {active?.scenario.length ? 'Simulate this plan' : 'Simulate current setup'}
         <ArrowRight aria-hidden="true" className="size-4 shrink-0" />
       </button>
-      {(saved.length > 0 || draft.size > 0) && (
+      {alternatives.length > 0 && (
         <DialogTrigger asChild>
           <button type="button" onClick={simulate} className="self-start text-sm text-muted-foreground underline underline-offset-4 hover:text-foreground">
             Quick table: compare all plans
