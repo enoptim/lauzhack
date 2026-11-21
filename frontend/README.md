@@ -16,6 +16,8 @@ Open the URL printed by Vite. Use the page picker in the header or enter a route
 - `/assistant` — Assistant placeholder.
 - `/results` — Results placeholder.
 
+The **Assistant** button in the header (every page) opens a chat window. It calls `POST /api/chat` (see [chat/README.md](../chat/README.md)), so it needs the API running (`make dev`) and an OpenRouter key in `chat/.env`. The code is in `src/components/assistant/`. “Show results” on a recommended plan opens it on `/results`.
+
 `pnpm build` typechecks and builds the app. `pnpm preview` serves the production build locally. In production, configure the host to serve `index.html` for direct page URLs such as `/assistant` and `/results`.
 
 ## Working on a route
