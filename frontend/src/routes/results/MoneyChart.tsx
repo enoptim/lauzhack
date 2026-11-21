@@ -176,7 +176,8 @@ export default function MoneyChart({ rows, horizon, staffEffects, equipment, pla
         {
           id: 'nothing', type: 'line', name: 'Doing nothing', data: rows.map(r => [r.year, r.nothing]),
           symbol: 'none', lineStyle: { width: 2.5, color: C.nothing, cap: 'round', join: 'round', type: staffEffects ? [8, 6] : 'solid' }, itemStyle: { color: C.nothing },
-          endLabel: { show: true, color: C.muted, fontSize: 13, distance: 10, lineHeight: 18, formatter: `Doing nothing\n${chfShort(last.nothing)}` },
+          endLabel: { show: true, color: C.muted, fontSize: 13, distance: 10, lineHeight: 18, valueAnimation: true,
+            formatter: (p: { value: unknown }) => `Doing nothing\n${chfShort((p.value as [number, number])[1])}` },
           labelLayout: { moveOverlap: 'shiftY' },
         },
         {
@@ -184,7 +185,8 @@ export default function MoneyChart({ rows, horizon, staffEffects, equipment, pla
           symbol: 'none', z: 5,
           lineStyle: { width: 3, color: C.upgrade, cap: 'round', join: 'round', type: 'solid' },
           itemStyle: { color: C.upgrade },
-          endLabel: { show: true, color: C.upgrade, fontSize: 13, fontWeight: 600, distance: 10, lineHeight: 18, formatter: last.upgrade - rows[0].upgrade < 1000 ? `With the upgrade\n${chfShort(last.upgrade)}, paid once` : `With the upgrade\n${chfShort(last.upgrade)}` },
+          endLabel: { show: true, color: C.upgrade, fontSize: 13, fontWeight: 600, distance: 10, lineHeight: 18, valueAnimation: true,
+            formatter: (p: { value: unknown }) => `With the upgrade\n${chfShort((p.value as [number, number])[1])}${last.upgrade - rows[0].upgrade < 1000 ? ', paid once' : ''}` },
           labelLayout: { moveOverlap: 'shiftY' },
           markPoint: payback === null ? undefined : {
             symbol: 'circle', symbolSize: 12,
@@ -201,7 +203,13 @@ export default function MoneyChart({ rows, horizon, staffEffects, equipment, pla
         },
       ],
     };
-    instance.setOption(option, replay ? { notMerge: true } : { replaceMerge: ['series'] });
+    if (replay) {
+      // Clearing first makes ECharts run its first-draw animation: each line grows from today to the last year.
+      instance.clear();
+      instance.setOption(option);
+    } else {
+      instance.setOption(option, { replaceMerge: ['series'] });
+    }
   }, [rows, horizon, staffEffects, equipment, playToken, playMs]);
 
   return <div ref={host} role="img" aria-label="Money that depends on the choice: doing nothing compared with the upgrade" className="h-[24rem] w-full md:h-[28rem]" />;
