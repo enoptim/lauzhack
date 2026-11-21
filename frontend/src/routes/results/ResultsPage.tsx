@@ -194,7 +194,7 @@ export default function ResultsPage() {
 
         <p className="flex flex-wrap gap-x-6 gap-y-1 text-sm text-muted-foreground">
           <span className="flex items-center gap-2"><span className="h-0.5 w-5 rounded bg-chart-1" />Solid line: money only</span>
-          <span className="flex items-center gap-2"><span className="h-0.5 w-5 rounded border-t-2 border-dashed border-chart-1" />Dashed line: depends on guesses about staff</span>
+          <span className="flex items-center gap-2"><svg aria-hidden="true" width="20" height="4" className="text-chart-1"><line x1="0" y1="2" x2="20" y2="2" stroke="currentColor" strokeWidth="2" strokeDasharray="5 3" /></svg>Dashed line: depends on guesses about staff</span>
           {!staffEffects && <span className="flex items-center gap-2"><span className="h-3 w-5 rounded-sm bg-chart-1/10" />Shaded band: range over 200 possible futures{engine.futures.loading && ' (updating…)'}</span>}
         </p>
       </section>
