@@ -59,3 +59,11 @@ export function useEngine(scenario: Scenario, overrides: Record<string, number>,
 
   return { catalog, assumptions, runs, futures };
 }
+
+/** Every plan in the current world (no what-if, or one what-if). Used to draw all plans on one chart. */
+export function usePlanRuns(scenarios: Scenario[], overrides: Record<string, number>, whatIf: WhatIf | null) {
+  const key = scenarios.length > 1 ? JSON.stringify({ scenarios, overrides, whatIf }) : null;
+  return useCall<SimulateResult[]>(key, () => Promise.all(scenarios.map(scenario => api.simulate({
+    scenario, overrides, events: whatIf ? [whatIf] : [],
+  }))), 80);
+}

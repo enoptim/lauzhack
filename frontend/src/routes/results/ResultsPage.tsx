@@ -1,7 +1,7 @@
-import { ArrowLeft, ArrowRight, Pause, Play, TriangleAlert } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Eye, EyeOff, Pause, Play, TriangleAlert } from 'lucide-react';
 import { useCallback, useMemo, useState } from 'react';
 import { Link, useLocation, useSearchParams } from 'react-router';
-import type { Catalog, Swap } from '@/api/types';
+import type { Catalog, Scenario, Swap } from '@/api/types';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -16,7 +16,8 @@ import { flagText, groupLabels, isContextFlag, seriesColor, whatIfDetails, whatI
 import MoneyBreakdown from './MoneyBreakdown';
 import SimulationIntro from './SimulationIntro';
 import MoneyChart, { crossing, totals } from './MoneyChart';
-import { useEngine, WHAT_IFS, type WhatIf } from './useEngine';
+import PlansChart, { type PlanLine } from './PlansChart';
+import { useEngine, usePlanRuns, WHAT_IFS, type WhatIf } from './useEngine';
 
 const PRICE_KEY = 'electricity_price_chf_kwh';
 const TODAY_PRICE = 0.2;
@@ -31,6 +32,17 @@ const TIMINGS: { value: Timing; label: string }[] = [
   { value: 8, label: 'In year 8' },
 ];
 const MS_PER_YEAR = 250;
+/** One fixed colour per plan, by its place in the list. The first is the brand orange. */
+const PLAN_COLORS = ['#c34e00', '#2f6fc0', '#a3368f', '#0f766e', '#6f7f1f', '#7c5a00'];
+
+/** The same plan, bought at the chosen time. The engine keeps the old units running until then. */
+function withTiming(scenario: Scenario, timing: Timing): Scenario {
+  return scenario.map(swap => {
+    const { timing: _t, year: _y, ...rest } = swap;
+    if (timing === 'now') return rest;
+    return timing === 'end_of_life' ? { ...rest, timing: 'end_of_life' as const } : { ...rest, year: timing };
+  });
+}
 
 function optionName(catalog: Catalog | null, group: string, optionId: string | undefined) {
   return catalog?.groups[group]?.find(item => item.option_id === optionId)?.name;
@@ -68,13 +80,15 @@ export default function ResultsPage() {
   const [intro, setIntro] = useState(() => Boolean((location.state as { intro?: boolean } | null)?.intro));
   const read = readConfig(params);
   const [timing, setTiming] = useState<Timing>('now');
-  const chosen = useMemo(() => read?.config.scenario ?? [], [params]); // eslint-disable-line react-hooks/exhaustive-deps
-  // The same plan, bought at the chosen time. The engine keeps the old units running until then.
-  const scenario = useMemo(() => chosen.map(swap => {
-    const { timing: _t, year: _y, ...rest } = swap;
-    if (timing === 'now') return rest;
-    return timing === 'end_of_life' ? { ...rest, timing: 'end_of_life' as const } : { ...rest, year: timing };
-  }), [chosen, timing]);
+  const plans = useMemo(() => read?.config.plans ?? [], [params]); // eslint-disable-line react-hooks/exhaustive-deps
+  const multi = plans.length > 1;
+  // The plan shown in detail. The others stay on the chart; any can be hidden.
+  const [selected, setSelected] = useState(read?.config.selected ?? 0);
+  const [hidden, setHidden] = useState<ReadonlySet<number>>(() => new Set());
+  const [hovered, setHovered] = useState<number | null>(null);
+  const chosen = plans[selected]?.scenario ?? [];
+  const scenario = useMemo(() => withTiming(chosen, timing), [chosen, timing]);
+  const allScenarios = useMemo(() => plans.map(plan => withTiming(plan.scenario, timing)), [plans, timing]);
 
   const [price, setPrice] = useState(read?.config.overrides[PRICE_KEY] ?? TODAY_PRICE);
   const [settledPrice, setSettledPrice] = useState(price);
@@ -88,6 +102,7 @@ export default function ResultsPage() {
   const overrides = useMemo(() => ({ ...(read?.config.overrides ?? {}), [PRICE_KEY]: price }), [price, params]); // eslint-disable-line react-hooks/exhaustive-deps
   const settled = useMemo(() => ({ ...(read?.config.overrides ?? {}), [PRICE_KEY]: settledPrice }), [settledPrice, params]); // eslint-disable-line react-hooks/exhaustive-deps
   const engine = useEngine(scenario, overrides, settled, useMemo(() => (whatIf ? [whatIf] : []), [whatIf]));
+  const planRuns = usePlanRuns(allScenarios, overrides, whatIf);
   const runs = engine.runs.data;
   const plan = runs?.plan;
 
@@ -113,6 +128,29 @@ export default function ResultsPage() {
 
   const world = (whatIf && runs?.[whatIf]) || plan;
   const rows = useMemo(() => (world ? totals(world, horizon, staffEffects) : []), [world, horizon, staffEffects]);
+  // Every plan's totals, for the plan list and the chart. The selected plan uses its own detailed run.
+  const planRows = useMemo(() => plans.map((_, index) => {
+    if (index === selected) return rows.length ? rows : null;
+    const run = planRuns.data?.[index];
+    return run ? totals(run, horizon, staffEffects) : null;
+  }), [plans, selected, rows, planRuns.data, horizon, staffEffects]);
+  const lines = useMemo<PlanLine[]>(() => plans.flatMap((plan, index) => {
+    const r = planRows[index];
+    return r && (index === selected || !hidden.has(index)) ? [{ id: index, name: plan.name, color: PLAN_COLORS[index % PLAN_COLORS.length], rows: r }] : [];
+  }), [plans, planRows, selected, hidden]);
+
+  function selectPlan(index: number) {
+    setSelected(index);
+    setHidden(previous => { const next = new Set(previous); next.delete(index); return next; });
+  }
+
+  function toggleHidden(index: number) {
+    setHidden(previous => {
+      const next = new Set(previous);
+      if (next.has(index)) next.delete(index); else next.add(index);
+      return next;
+    });
+  }
 
   if (read === null) {
     return (
@@ -160,6 +198,7 @@ export default function ResultsPage() {
   const badPayback = fan ? fanPayback(fan.map(p => ({ year: p.year, value: p.p10 }))) : null;
   const flags = (finance?.flags ?? []).filter(flag => !isContextFlag(flag) && (flag.year === undefined || flag.year <= horizon));
   const contextFlags = (finance?.flags ?? []).filter(flag => isContextFlag(flag) && (flag.year === undefined || flag.year <= horizon));
+  const subject = multi ? plans[selected]?.name : 'the upgrade';
   const today = plan?.snapshot_baseline.building;
   const after = plan?.snapshot.building;
 
@@ -169,11 +208,53 @@ export default function ResultsPage() {
         <SimulationIntro ready={Boolean(plan && engine.catalog.data)} onDone={endIntro}
           changes={chosen.map(swap => `${groupLabels[swap.group] ?? swap.group} → ${optionName(engine.catalog.data, swap.group, swap.option) ?? swap.option}`)} />
       )}
+      {multi && (
+        <section aria-label="Your plans" className="flex flex-col gap-3">
+          <div className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1">
+            <h2 className="text-base font-semibold">Your plans</h2>
+            <p className="text-sm text-muted-foreground">Click a plan to see it in detail. Use the eye to hide a plan from the chart.</p>
+          </div>
+          <ul className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+            {plans.map((p, index) => {
+              const end = planRows[index]?.at(-1);
+              const value = end ? end.nothing - end.upgrade : null;
+              const isSelected = index === selected;
+              const isHidden = hidden.has(index) && !isSelected;
+              return (
+                <li key={index} onMouseEnter={() => setHovered(index)} onMouseLeave={() => setHovered(null)}
+                  className={cn('flex items-stretch overflow-hidden rounded-xl border bg-card transition-[border-color,box-shadow,opacity] duration-200',
+                    isSelected ? 'border-transparent ring-2' : 'hover:border-foreground/20', isHidden && 'opacity-55')}
+                  style={isSelected ? { ['--tw-ring-color' as string]: PLAN_COLORS[index % PLAN_COLORS.length] } : undefined}>
+                  <button type="button" onClick={() => selectPlan(index)} aria-pressed={isSelected}
+                    className="flex min-w-0 flex-1 items-center gap-3 px-4 py-3 text-left focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring">
+                    <span aria-hidden="true" className="h-8 w-1.5 shrink-0 rounded-full" style={{ background: PLAN_COLORS[index % PLAN_COLORS.length] }} />
+                    <span className="flex min-w-0 flex-col">
+                      <span className="truncate font-semibold">{p.name}</span>
+                      <span className="truncate text-sm text-muted-foreground tabular-nums">
+                        {value === null ? '…' : value >= 0 ? <>saves <b className="font-semibold text-foreground">{chfShort(value)}</b> in {horizon} years</>
+                          : <>still needs {chfShort(-value)} after {horizon} years</>}
+                      </span>
+                    </span>
+                  </button>
+                  {!isSelected && (
+                    <button type="button" onClick={() => toggleHidden(index)} aria-label={isHidden ? `Show ${p.name} on the chart` : `Hide ${p.name} from the chart`}
+                      className="flex w-11 shrink-0 items-center justify-center border-l text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring">
+                      {isHidden ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+                    </button>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        </section>
+      )}
+
       <section aria-label="What changed" className="flex flex-col gap-4 rounded-xl border bg-card p-4 md:flex-row md:items-center md:justify-between md:p-5">
         <div className="flex flex-col gap-3">
           <Link to="/" className="flex w-fit items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground">
             <ArrowLeft className="size-4" /> Change the plan
           </Link>
+          {multi && <h2 className="text-sm font-semibold">{plans[selected]?.name}</h2>}
           {scenario.length === 0 && <p className="text-lg font-semibold">No changes: this is today’s building.</p>}
           <ul className="flex flex-col gap-2">
             {scenario.map((swap, index) => (
@@ -198,8 +279,8 @@ export default function ResultsPage() {
       <section aria-label="Verdict" className="flex flex-col gap-2">
         {finance ? (
           <p className={cn("font-semibold tracking-tight text-balance", endValue >= 0 ? "text-4xl md:text-5xl" : "text-2xl sm:text-3xl")}>
-            {endValue >= 0 ? <>After {horizon} years, the upgrade has saved <span className="text-primary">{chfShort(endValue)}</span></>
-              : <>After {horizon} years, the upgrade still needs <span className="text-warning">{chfShort(-endValue)}</span> to pay for itself</>}
+            {endValue >= 0 ? <>After {horizon} years, {subject} has saved <span className="text-primary">{chfShort(endValue)}</span></>
+              : <>After {horizon} years, {subject} still needs <span className="text-warning">{chfShort(-endValue)}</span> to pay for itself</>}
           </p>
         ) : <Skeleton className="h-14 w-full max-w-2xl" />}
         <p className="text-lg text-muted-foreground text-pretty">
@@ -229,8 +310,10 @@ export default function ResultsPage() {
       <section aria-label="Money over time" className="flex flex-col gap-5 rounded-xl border bg-card p-4 shadow-[0_1px_2px_oklch(0_0_0/0.04),0_8px_24px_-12px_oklch(0.3_0.02_60/0.14)] md:p-6">
         <div className="flex flex-wrap items-center justify-between gap-x-8 gap-y-4">
           <div className="flex flex-col gap-1">
-            <h2 className="text-base font-semibold">Money compared with doing nothing</h2>
-            <p className="text-sm text-muted-foreground">Only the extra costs each choice causes, added up year by year. Costs both choices share are left out.</p>
+            <h2 className="text-base font-semibold">{multi ? 'Money saved compared with doing nothing' : 'Money compared with doing nothing'}</h2>
+            <p className="text-sm text-muted-foreground">{multi
+              ? 'Each plan starts below the grey line by its price. Where it crosses the grey line, it has paid for itself.'
+              : 'Only the extra costs each choice causes, added up year by year. Costs both choices share are left out.'}</p>
           </div>
           <div className="flex flex-wrap items-center gap-3">
             <ToggleGroup type="single" variant="outline" value={String(horizon)} aria-label="Years to show"
@@ -306,11 +389,14 @@ export default function ResultsPage() {
 
         {runs ? (
           <div className="relative">
-            <div className={cn('transition-opacity duration-200', engine.runs.loading && 'opacity-60')}>
-          <MoneyChart rows={rows} horizon={horizon} staffEffects={staffEffects} playToken={playToken} playing={playState === 'playing'} msPerYear={MS_PER_YEAR} onYear={onYear}
-            equipment={[...new Set(scenario.map(swap => (groupLabels[swap.group] ?? swap.group).toLowerCase()))].join(' and ') || 'equipment'} />
+            <div className={cn('transition-opacity duration-200', (engine.runs.loading || planRuns.loading) && 'opacity-60')}>
+          {multi ? (
+            <PlansChart lines={lines} selected={selected} highlighted={hovered} horizon={horizon} staffEffects={staffEffects} onSelect={selectPlan}
+              playToken={playToken} playing={playState === 'playing'} msPerYear={MS_PER_YEAR} onYear={onYear} />
+          ) : <MoneyChart rows={rows} horizon={horizon} staffEffects={staffEffects} playToken={playToken} playing={playState === 'playing'} msPerYear={MS_PER_YEAR} onYear={onYear}
+            equipment={[...new Set(scenario.map(swap => (groupLabels[swap.group] ?? swap.group).toLowerCase()))].join(' and ') || 'equipment'} />}
             </div>
-            {engine.runs.loading && (
+            {(engine.runs.loading || planRuns.loading) && (
               <span className="absolute top-2 left-1/2 flex -translate-x-1/2 items-center gap-2 rounded-full border bg-card px-3 py-1.5 text-sm shadow-sm">
                 <Spinner /> Recalculating…
               </span>
@@ -320,8 +406,8 @@ export default function ResultsPage() {
 
         <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-2 text-sm text-muted-foreground">
           <p className="flex flex-wrap gap-x-6 gap-y-1">
-            <span className="flex items-center gap-2"><span className="h-3 w-5 rounded-sm bg-chart-3/25" />Green: the upgrade has spent less</span>
-            <span className="flex items-center gap-2"><span className="h-3 w-5 rounded-sm bg-warning/15" />Red: the upgrade has spent more</span>
+            <span className="flex items-center gap-2"><span className="h-3 w-5 rounded-sm bg-chart-3/25" />Green: {multi ? `${plans[selected]?.name} has saved money` : 'the upgrade has spent less'}</span>
+            <span className="flex items-center gap-2"><span className="h-3 w-5 rounded-sm bg-warning/15" />Red: {multi ? `${plans[selected]?.name} has not paid for itself yet` : 'the upgrade has spent more'}</span>
             {staffEffects && <span className="flex items-center gap-2"><svg aria-hidden="true" width="20" height="4" className="text-chart-1"><line x1="0" y1="2" x2="20" y2="2" stroke="currentColor" strokeWidth="2" strokeDasharray="5 3" /></svg>Dashed: includes lost staff value, a guess</span>}
           </p>
           {engine.futures.loading && !staffEffects && !whatIf && (
@@ -329,7 +415,7 @@ export default function ResultsPage() {
           )}
           {fan && !engine.futures.loading && !staffEffects && !whatIf && (
             <p className="text-foreground">
-              Across 200 possible futures: paid for itself by {goodPayback !== null ? `year ${goodPayback.toFixed(1)}` : `—`} in good ones,{' '}
+              {multi ? `${plans[selected]?.name}, across` : 'Across'} 200 possible futures: paid for itself by {goodPayback !== null ? `year ${goodPayback.toFixed(1)}` : `—`} in good ones,{' '}
               {badPayback !== null ? `by year ${badPayback.toFixed(1)} in bad ones` : `not within ${horizon} years in bad ones`}.
             </p>
           )}
