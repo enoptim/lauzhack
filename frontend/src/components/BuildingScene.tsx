@@ -4,15 +4,15 @@ import { OrbitControls } from '@react-three/drei';
 import Campus from './Campus';
 import MountainHorizon from './MountainHorizon';
 import OfficeBuilding from './OfficeBuilding';
-import type { WorkstationSelection } from './Furniture';
+import type { FloorEquipmentSelection } from './Furniture';
 
 const initialCamera = { position: [95, 80, 125] as [number, number, number], fov: 43, far: 1000 };
 const initialTarget: [number, number, number] = [0, 7, 0];
 
-export default function BuildingScene({ floor, children, workstationSelection }: {
+export default function BuildingScene({ floor, children, equipmentSelection }: {
   floor: number | null;
   children?: ReactNode;
-  workstationSelection?: WorkstationSelection;
+  equipmentSelection?: FloorEquipmentSelection;
 }) {
   return (
     <Canvas
@@ -35,7 +35,7 @@ export default function BuildingScene({ floor, children, workstationSelection }:
         shadow-camera-far={250}
         shadow-normalBias={.04}
       />
-      <OfficeBuilding floor={floor} workstationSelection={workstationSelection} />
+      <OfficeBuilding floor={floor} equipmentSelection={equipmentSelection} />
       {children}
       <Campus />
       <MountainHorizon />

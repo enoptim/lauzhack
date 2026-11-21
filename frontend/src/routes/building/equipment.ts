@@ -6,7 +6,7 @@ import { FLOOR_COUNT, FLOOR_HEIGHT, LAYOUT_LENGTH, LAYOUT_WIDTH, LENGTH, WIDTH }
 import { sideRooms } from '@/data/sideRooms';
 import type { Swap } from '@/api/types';
 
-export const equipmentLabels = { lighting: 'Lighting', monitors: 'Monitors', computers: 'Computers' };
+export const equipmentLabels = { lighting: 'Lighting', monitors: 'Monitors', computers: 'Computers', coffee: 'Coffee machines' };
 export type EquipmentGroup = keyof typeof equipmentLabels;
 export type FloorSwap = Swap & { floor: number; group: EquipmentGroup };
 

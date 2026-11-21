@@ -3,7 +3,7 @@ import TopLanding from './TopLanding';
 import GroundFloor from './GroundFloor';
 import Staircase from './Staircase';
 import { FLOOR_COUNT, FLOOR_HEIGHT, WIDTH, LENGTH, LAYOUT_WIDTH, LAYOUT_LENGTH } from '../data/building';
-import { Box, Desk, Plant, type WorkstationSelection } from './Furniture';
+import { Box, Desk, Plant, type FloorEquipmentSelection } from './Furniture';
 
 const white = '#d9ddda';
 const metal = '#9ca8a9';
@@ -13,7 +13,7 @@ function Glass({ size, position }: { size: [number, number, number]; position: [
   return <mesh position={position}><boxGeometry args={size}/><meshStandardMaterial color="#a4c6ce" transparent opacity={.18} roughness={.22} metalness={.15} depthWrite={false}/></mesh>;
 }
 
-function Floor({ level, workstationSelection }: { level: number; workstationSelection?: WorkstationSelection }) {
+function Floor({ level, equipmentSelection }: { level: number; equipmentSelection?: FloorEquipmentSelection }) {
   const y = level * FLOOR_HEIGHT;
   return <group position={[0, y, 0]}>
     {/* Ring slabs leave a genuine open atrium through all upper floors. */}
@@ -35,7 +35,7 @@ function Floor({ level, workstationSelection }: { level: number; workstationSele
           <Box size={[outer-inner, 2.7, .12]} color={white} position={[side*(outer+inner)/2, 1.35, z]}/>
           <Glass size={[.05, 2.8, depth-.2]} position={[side * 12.3, 1.4, z + depth/2]}/>
           <Box size={[.1, 3.3, .1]} color={metal} position={[side * 12.3, 1.65, z]}/>
-          {depth >= 4 && <Desk position={[side * 16, 0, z + 3]} workstationSelection={workstationSelection}/>}
+          {depth >= 4 && <Desk position={[side * 16, 0, z + 3]} workstationSelection={equipmentSelection}/>}
         </group>;
       })}
       {level > 0 && <>
@@ -49,14 +49,14 @@ function Floor({ level, workstationSelection }: { level: number; workstationSele
       {/* Leave a clear opening where the staircase landing meets the corridor. */}
       {[-4.5, 4.5].map(x => <Glass key={x} size={[7, 1.05, .06]} position={[x, .55, 32]}/>)}
     </>}
-    {level === 4 && <><TopLanding/><TopCantina/></>}
+    {level === 4 && <><TopLanding/><TopCantina coffeeSelection={equipmentSelection?.coffee}/></>}
     {(level === 4 ? [-40] : [-40, 40]).map(z => <group key={z}>
       <Box size={[5, 3, 5]} color="#bdc4c1" position={[12, 1.5, z]}/>
       <Box size={[1.8, 2.4, .06]} color="#7e9195" position={[12, 1.2, z + 2.55]}/>
       <Plant position={[-7, 0, z]}/>
     </group>)}
     {level === 0 && <>
-      <GroundFloor workstationSelection={workstationSelection}/>
+      <GroundFloor workstationSelection={equipmentSelection}/>
     </>}
   </group>;
 }
@@ -86,11 +86,11 @@ function Facade({ floors }: { floors: number }) {
   </group>;
 }
 
-export default function OfficeBuilding({ floor, workstationSelection }: { floor: number | null; workstationSelection?: WorkstationSelection }) {
+export default function OfficeBuilding({ floor, equipmentSelection }: { floor: number | null; equipmentSelection?: FloorEquipmentSelection }) {
   const visibleFloors = floor === null ? FLOOR_COUNT : floor + 1;
   return <group scale={[WIDTH / LAYOUT_WIDTH, 1, LENGTH / LAYOUT_LENGTH]}>
     <Box size={[48, .4, 108]} color="#bfc5bc" position={[0, -.5, 0]}/>
-    {Array.from({ length: visibleFloors }, (_, level) => <Floor key={level} level={level} workstationSelection={level === floor ? workstationSelection : undefined}/>)}
+    {Array.from({ length: visibleFloors }, (_, level) => <Floor key={level} level={level} equipmentSelection={level === floor ? equipmentSelection : undefined}/>)}
     <Staircase floors={visibleFloors}/>
     {floor !== 0 && <Facade floors={floor ?? FLOOR_COUNT}/>}
     {/* Broad canopy frames the long transparent atrium skylight. */}

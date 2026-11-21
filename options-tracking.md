@@ -1,7 +1,7 @@
 # Options tracking
 
 - [x] Monitors (`monitors`)
-- [ ] Computers (`computers`)
+- [x] Computers (`computers`)
 - [x] Lighting (`lighting`)
 - [ ] Blinds (`blinds`)
 - [ ] Ventilation (`ventilation`)

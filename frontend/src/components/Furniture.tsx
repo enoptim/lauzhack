@@ -1,11 +1,15 @@
+import type { ReactNode } from 'react';
 import { Edges } from '@react-three/drei';
 import type { ThreeElements } from '@react-three/fiber';
 
 type DeviceSelection = { outline: string; onSelect: () => void };
 export type WorkstationSelection = { monitors: DeviceSelection; computers: DeviceSelection };
+export type FloorEquipmentSelection = WorkstationSelection & { coffee: DeviceSelection };
 type DeviceProps = { position: [number, number, number]; selection?: DeviceSelection };
 
-function Device({ position, selection, size, color }: DeviceProps & { size: [number, number, number]; color: string }) {
+function Device({ position, selection, size, color, children }: DeviceProps & {
+  size: [number, number, number]; color: string; children?: ReactNode;
+}) {
   return (
     <mesh position={position} castShadow receiveShadow onClick={selection && (event => {
       event.stopPropagation();
@@ -14,6 +18,7 @@ function Device({ position, selection, size, color }: DeviceProps & { size: [num
       <boxGeometry args={size} />
       <meshStandardMaterial color={color} roughness={.75} />
       {selection && <Edges lineWidth={2} color={selection.outline} />}
+      {children}
     </mesh>
   );
 }
@@ -22,6 +27,18 @@ export function Monitor(props: DeviceProps) {
 }
 export function Computer(props: DeviceProps) {
   return <Device {...props} size={[.22, .42, .36]} color="#333738" />;
+}
+export function CoffeeMachine(props: DeviceProps) {
+  return <Device {...props} size={[.55, .66, .64]} color="#363b3d">
+    <Box size={[.05, .21, .48]} position={[.285, .18, 0]} color="#a9afaf" />
+    <Box size={[.03, .1, .24]} position={[.32, .19, 0]} color="#252b2b" />
+    <Box size={[.21, .045, .49]} position={[.35, -.285, 0]} color="#8a9193" />
+    <Box size={[.12, .07, .1]} position={[.33, .015, 0]} color="#212524" />
+    <mesh position={[.385, -.2, 0]} castShadow>
+      <cylinderGeometry args={[.055, .043, .12, 12]} />
+      <meshStandardMaterial color="#f4eee0" />
+    </mesh>
+  </Device>;
 }
 export function Box({ size, color, ...props }: Omit<ThreeElements['mesh'], 'args'> & { size: [number, number, number]; color: string }) {
   return <mesh castShadow receiveShadow {...props}><boxGeometry args={size}/><meshStandardMaterial color={color} roughness={.75}/></mesh>;
