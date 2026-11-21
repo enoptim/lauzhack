@@ -157,12 +157,13 @@ export default function ResultsPage() {
       <section aria-label="Verdict" className="flex flex-col gap-2">
         {finance ? (
           <p className="text-4xl font-semibold tracking-tight text-balance md:text-5xl">
-            After {horizon} years: {endValue >= 0 ? 'ahead by ' : 'behind by '}
-            <span className={cn(endValue < 0 ? 'text-warning' : 'text-primary')}>{chfShort(Math.abs(endValue))}</span>
+            {endValue >= 0 ? <>After {horizon} years, the upgrade has saved <span className="text-primary">{chfShort(endValue)}</span></>
+              : <>After {horizon} years, the upgrade still needs <span className="text-warning">{chfShort(-endValue)}</span> to pay for itself</>}
           </p>
         ) : <Skeleton className="h-14 w-full max-w-2xl" />}
         <p className="text-lg text-muted-foreground text-pretty">
-          Compared with doing nothing{whatIf ? `, if ${whatIfLabels[whatIf].toLowerCase()} happens` : ''}{staffEffects ? ', counting staff effects' : ''}.
+          {endValue >= 0 ? 'Saved means: doing nothing would have cost this much more.' : 'It has not paid for itself yet within these years.'}
+          {whatIf ? ` This is with: ${whatIfLabels[whatIf].toLowerCase()}.` : ''}{staffEffects ? ' Staff effects are counted.' : ''}
           {Math.abs(residual) >= 50_000 && residual < 0 && ` Doing nothing would also leave you with ${chfShort(-residual)} more equipment value at the end.`}
         </p>
       </section>
