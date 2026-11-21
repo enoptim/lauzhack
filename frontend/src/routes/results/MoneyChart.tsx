@@ -90,6 +90,8 @@ export default function MoneyChart({ rows, horizon, staffEffects, equipment, pla
   const host = useRef<HTMLDivElement>(null);
   const chart = useRef<echarts.ECharts | null>(null);
   const lastToken = useRef(playToken);
+  // The vertical axis only grows, so moving the price slider moves the lines instead of rescaling the axis.
+  const axis = useRef({ key: '', max: 0 });
 
   useEffect(() => {
     if (!host.current) return;
@@ -107,6 +109,11 @@ export default function MoneyChart({ rows, horizon, staffEffects, equipment, pla
     lastToken.current = playToken;
     const payback = crossing(rows);
     const last = rows[rows.length - 1];
+    const step = 200_000;
+    const top = Math.ceil((Math.max(...rows.map(r => Math.max(r.nothing, r.upgrade))) * 1.1) / step) * step;
+    const axisKey = `${horizon}|${staffEffects}`;
+    if (axis.current.key !== axisKey) axis.current = { key: axisKey, max: top };
+    else axis.current.max = Math.max(axis.current.max, top);
 
     // Shade the gap: green where the upgrade has spent less, red where it has spent more.
     const lower = rows.map(r => [r.year, Math.min(r.nothing, r.upgrade)]);
@@ -127,7 +134,7 @@ export default function MoneyChart({ rows, horizon, staffEffects, equipment, pla
         axisLine: { show: false }, axisTick: { show: false }, splitLine: { show: false },
       },
       yAxis: {
-        type: 'value', min: 0,
+        type: 'value', min: 0, max: axis.current.max,
         axisLabel: { color: C.muted, fontSize: 13, formatter: (v: number) => chfShort(v) },
         axisLine: { show: false }, axisTick: { show: false },
         splitLine: { lineStyle: { color: C.grid } },

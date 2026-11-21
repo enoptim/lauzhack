@@ -127,6 +127,7 @@ export default function ResultsPage() {
   }
 
   const finance = plan?.finance;
+  const yearlySaving = finance?.years[0] ? finance.years[0].operating_cost_baseline - finance.years[0].operating_cost : null;
   // The year the upgrade is paid for: today, or the first year its equipment spending differs from doing nothing.
   const boughtIn = !finance ? null : finance.capex_year0 > 0 ? 0
     : finance.years.find(y => Math.abs(y.capex - y.capex_baseline) > 1000)?.year ?? null;
@@ -276,8 +277,14 @@ export default function ResultsPage() {
               )}
             </div>
             <span className="w-28 whitespace-nowrap font-medium tabular-nums">{pricePerKwh(price)}</span>
+            {yearlySaving !== null && (
+              <span className="whitespace-nowrap text-muted-foreground tabular-nums">
+                {yearlySaving >= 0 ? <>the upgrade saves <b className="font-semibold text-foreground">{chfShort(yearlySaving)} a year</b> on bills</>
+                  : <>the upgrade costs <b className="font-semibold text-foreground">{chfShort(-yearlySaving)} a year</b> more in bills</>}
+              </span>
+            )}
             <Button variant="ghost" size="sm" onClick={() => setPrice(TODAY_PRICE)}
-              className={cn(Math.abs(price - TODAY_PRICE) < 0.001 && 'invisible')}>Back to today</Button>
+              className={cn('shrink-0', Math.abs(price - TODAY_PRICE) < 0.001 && 'invisible')}>Back to today</Button>
           </div>
           <div className="flex items-center gap-3 text-sm">
             <Switch id="staff-effects" checked={staffEffects} onCheckedChange={setStaffEffects} />
