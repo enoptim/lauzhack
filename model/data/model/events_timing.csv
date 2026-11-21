@@ -1,0 +1,5 @@
+event_id,start_year,end_year,kind,notes
+hackathon_weekend,1,1,stress_test,Two days; checked hour by hour instead of in the yearly money flows
+new_lab,2,,annual,Permanent from year 2
+energy_price_spike,1,1,annual,One year
+heatwave_summer,3,3,annual,One summer; applied to the cooling months only

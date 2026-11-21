@@ -1,0 +1,49 @@
+key,value,low,high,unit,category,description,source
+discount_rate_real,0.03,0.02,0.05,fraction/yr,financial,Real discount rate,placeholder until data team adds it
+horizon_years,15,15,15,years,financial,Analysis horizon,placeholder until data team adds it
+capex_budget_chf,1500000,1000000,2000000,CHF,financial,Upfront upgrade budget for facilities,placeholder until data team adds it
+opening_reserve_chf,3000000,3000000,3000000,CHF,financial,Building reserve the upgrades are paid from,placeholder until data team adds it
+min_reserve_chf,1000000,1000000,1000000,CHF,financial,Reserve must not fall below this,placeholder until data team adds it
+other_operating_cf_chf_year,600000,600000,600000,CHF/yr,financial,Yearly building budget inflow besides energy,placeholder until data team adds it
+pv_self_consumption_share,0.85,0.7,0.95,share,solar,Share of solar output used on site,placeholder until data team adds it
+pv_max_kwp_with_rooftop_hp,250,250,250,kWp,solar,Roof space for PV with today's rooftop heat-pump units,placeholder until data team adds it
+pv_max_kwp_without_rooftop_hp,350,300,400,kWp,solar,Roof space for PV if the lake-water heat pump frees the roof,placeholder until data team adds it
+ventilation_share_of_heating,0.4,0.3,0.5,share,physics,Share of heating demand that is ventilation heat loss (at 50% heat recovery),model estimate
+solar_share_of_cooling,0.4,0.3,0.5,share,physics,Share of cooling demand from sun through windows (with today's blinds),model estimate
+internal_gain_heating_offset,0.8,0.5,1.0,share,physics,Share of lost internal gains that heating must replace in heating season,model estimate
+person_heat_w,90,70,110,W/person,physics,Sensible body heat of a seated person,literature to verify
+co2_outdoor_ppm,420,400,440,ppm,physics,Outdoor CO2,model estimate
+co2_generation_lps_per_person,0.0052,0.0045,0.006,L/s/person,physics,CO2 generation at office activity; CO2 = outdoor + generation / ventilation per person,literature to verify
+co2_dcv_target_ppm,1000,900,1100,ppm,physics,CO2 level demand-controlled ventilation holds rooms at (if the floor has spare capacity),from options.csv description
+summer_overheating_base_degc,1.5,1.0,2.5,degC,physics,Average summer overheating in offices today (manual blinds; reference cooling load),model estimate
+overheating_season_share,0.3,0.25,0.35,share,physics,Share of office days in the cooling season,model estimate
+meeting_time_share,0.15,0.1,0.25,share,people,Share of staff working time spent in meeting rooms,model estimate
+hot_desk_desks_per_person,0.8,0.7,0.9,desks/person,people,Desks needed per laptop user with hot-desking,model estimate
+m2_per_extra_person,12,10,15,m2/person,people,Space to rent per person who does not fit,model estimate
+hackathon_floor0_share,0.9,0.7,1.0,share,people,Share of hackathon participants on the ground floor,model estimate
+student_daily_share,0.65,0.5,0.8,share,people,Teaching seats occupied on a typical day (for per-use appliances),model estimate
+hours_per_workday,8,8,8,h,people,Working hours per day,model estimate
+co2_no_effect_below_ppm,600,600,800,ppm,coupling,Performance flat below this CO2 level,model estimate
+perf_loss_per_100ppm_co2,0.003,0.001,0.006,share per 100 ppm,coupling,Performance loss per 100 ppm above threshold,Allen et al. 2016 (COGfx); Wargocki/Seppanen: to verify
+sick_vent_ref_lps,10,10,10,L/s/person,coupling,Ventilation with baseline sick days,model estimate
+sick_vent_high_lps,24,24,24,L/s/person,coupling,Ventilation where the full sick-leave reduction applies,Milton et al. 2000
+sick_leave_reduction_at_high_ventilation,0.2,0.05,0.35,share,coupling,Relative sick-leave reduction from ref to high ventilation,Milton et al. 2000: to verify
+perf_loss_per_degc_discomfort,0.02,0.01,0.03,share per degC,coupling,Performance loss per degC of overheating,Seppanen et al. 2006: to verify
+perf_loss_per_poor_lighting,0.008,0.0,0.02,share per unit,coupling,Loss x (1 - lighting quality),model estimate
+perf_loss_per_eye_strain,0.004,0.0,0.01,share per unit,coupling,Loss x eye strain,model estimate
+perf_loss_open_printers,0.02,0.0,0.04,share,coupling,Loss for makerspace users next to open 3D printers (particles and fumes),model estimate
+productive_share_of_time_saved,0.5,0.2,1.0,share,coupling,Saved minutes that become productive,model estimate
+max_total_perf_gain,0.08,0.05,0.1,share,coupling,Cap on combined performance change,model estimate
+infiltration_ach,0.3,0.2,0.5,1/h,physics,Air changes per hour through the building envelope with ventilation off,model estimate
+weekend_override_current_ahu,0,0,1,0/1,people,Whether facilities switch the constant-volume units on for a weekend event,model estimate
+price_volatility_per_year,0.08,0.05,0.12,log-sd/yr,future,Year-to-year wander of the electricity price (random walk around today's price),model estimate
+price_path_min,0.5,0.5,0.5,x today,future,Floor on the sampled price path,model estimate
+price_path_max,3.0,3.0,3.0,x today,future,Cap on the sampled price path,model estimate
+heatwave_prob_per_year,0.2,0.1,0.3,prob/yr,future,Chance that a given summer is a heatwave,model estimate
+price_spike_prob_per_year,0.07,0.03,0.12,prob/yr,future,Chance that a given year has an energy price spike,model estimate
+new_lab_prob_never,0.3,0.1,0.5,prob,future,Chance the new lab never comes within the horizon,model estimate
+new_lab_latest_year,5,5,5,year,future,If it comes it arrives in year 1 to this year,model estimate
+lifetime_spread_low,0.7,0.7,0.7,x nominal,future,Shortest actual lifetime as a share of nominal,model estimate
+lifetime_spread_high,1.4,1.4,1.4,x nominal,future,Longest actual lifetime as a share of nominal,model estimate
+overdue_failure_prob_per_year,0.25,0.15,0.4,prob/yr,future,Chance per year that an overdue unit fails,model estimate
+failure_premium,0.15,0.05,0.3,share,future,Extra cost of an emergency replacement after a failure (rush order, downtime),model estimate
