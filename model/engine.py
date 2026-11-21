@@ -211,13 +211,14 @@ def item_plan(data, item, choice, horizon, remaining=None):
     if remaining is None:
         remaining = max(0.0, _life(cur) - (item["age"] or 0)) if _life(cur) != INF else INF
     up_t, pulled = None, False
-    if choice and isinstance(choice[1], int):          # phased: upgrade in a given year
+    if choice and isinstance(choice[1], int):          # phased: upgrade at time up_t (end of year up_t)
         up_t = choice[1]
-        if remaining < up_t:
-            if random_failure:                         # it broke first: upgrade then, as an emergency
-                up_t, pulled = int(math.ceil(remaining)), True
-            else:                                      # deterministic: the old unit is kept running until then
-                remaining = up_t
+        if random_failure and remaining != INF and math.ceil(remaining) <= up_t:
+            # The original unit breaks first, or at that very moment: the upgrade goes in when it breaks,
+            # as an emergency (kind "failure", pays the premium), like a like-for-like replacement would.
+            up_t, pulled = int(math.ceil(remaining)), True
+        elif remaining < up_t:                         # deterministic: the old unit is kept running until then
+            remaining = up_t
     elif choice:
         up_t = 0 if choice[1] == "now" else (remaining if remaining != INF else 0)
         up_t = int(math.ceil(up_t)) if up_t != INF else None
@@ -637,6 +638,17 @@ def _physical_state(data, ctx, sel, ref):
             "desk_capacity": cap, "desk_shortfall": max(0.0, ctx["staff"] - cap)}
 
 
+def install_plans(data, scenario=None, future=None, horizon=None):
+    """Who installs what, when, for every item: (choices, plans with the scenario, plans doing nothing).
+    A plan is [(time, option_id, kind)], kind "planned" or "failure"; time t is the end of year t."""
+    H = int(horizon or data["params"]["horizon_years"])
+    choices = resolve(data, scenario)
+    rem = (future or {}).get("remaining_life") or {}
+    plans_b = {i["id"]: item_plan(data, i, None, H, rem.get(i["id"])) for i in data["items"]}
+    plans_s = {i["id"]: item_plan(data, i, choices.get(i["id"]), H, rem.get(i["id"])) for i in data["items"]}
+    return choices, plans_s, plans_b
+
+
 def simulate(data, scenario=None, events_on=(), overrides=None, detail_years=(1,), future=None):
     """future (optional, from montecarlo.draw_future): sampled parameters, event timings,
     a yearly electricity price path and each unit's remaining life. Without it the run is deterministic."""
@@ -646,10 +658,7 @@ def simulate(data, scenario=None, events_on=(), overrides=None, detail_years=(1,
     p = {**data["params"], **overrides}
     H = int(p["horizon_years"])
     r = p["discount_rate_real"]
-    choices = resolve(data, scenario)
-    rem = (future or {}).get("remaining_life") or {}
-    plans_b = {i["id"]: item_plan(data, i, None, H, rem.get(i["id"])) for i in data["items"]}
-    plans_s = {i["id"]: item_plan(data, i, choices.get(i["id"]), H, rem.get(i["id"])) for i in data["items"]}
+    choices, plans_s, plans_b = install_plans(data, scenario, future, H)
     final_s = {i["id"]: (plans_s[i["id"]][-1][1] if plans_s[i["id"]] else i["option"]) for i in data["items"]}
     final_s.update({iid: c[0] for iid, c in choices.items()})
     capex_b, assets_b = plan_money(data, plans_b, baseline(data), H, p)
