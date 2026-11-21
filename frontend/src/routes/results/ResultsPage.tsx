@@ -178,20 +178,6 @@ export default function ResultsPage() {
         </div>
       </section>
 
-      {chosen.length > 0 && (
-        <section aria-label="When to buy" className="-mt-4 flex flex-wrap items-center gap-x-4 gap-y-2">
-          <span id="timing-label" className="text-sm font-medium">When to buy?</span>
-          <ToggleGroup type="single" variant="outline" value={String(timing)} aria-labelledby="timing-label"
-            onValueChange={(value: string) => value && setTiming(value === 'now' || value === 'end_of_life' ? value : Number(value))}>
-            {TIMINGS.map(option => <ToggleGroupItem key={String(option.value)} value={String(option.value)} className="px-3">{option.label}</ToggleGroupItem>)}
-          </ToggleGroup>
-          <span className="text-sm text-muted-foreground">
-            {timing === 'now' ? 'You pay the full price today.'
-              : timing === 'end_of_life' ? 'Keep the old units until they fail, then buy the upgrade instead of the same old kind.'
-              : `Keep the old units until year ${timing}, replacing them like-for-like if they fail first.`}
-          </span>
-        </section>
-      )}
 
       <section aria-label="Verdict" className="flex flex-col gap-2">
         {finance ? (
@@ -241,6 +227,23 @@ export default function ResultsPage() {
             </Button>
           </div>
         </div>
+
+        {chosen.length > 0 && (
+          <div className="flex flex-col gap-2 border-t pt-4">
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+              <span id="timing-label" className="text-sm font-medium">When to buy?</span>
+              <ToggleGroup type="single" variant="outline" value={String(timing)} aria-labelledby="timing-label"
+                onValueChange={(value: string) => value && setTiming(value === 'now' || value === 'end_of_life' ? value : Number(value))}>
+                {TIMINGS.map(option => <ToggleGroupItem key={String(option.value)} value={String(option.value)} className="px-3">{option.label}</ToggleGroupItem>)}
+              </ToggleGroup>
+            </div>
+            <p className="min-h-5 text-sm text-muted-foreground">
+              {timing === 'now' ? 'You pay the full price today.'
+                : timing === 'end_of_life' ? 'Keep the old units until they fail, then buy the upgrade instead of the same old kind.'
+                : `Keep the old units until year ${timing}, replacing them like-for-like if they fail first.`}
+            </p>
+          </div>
+        )}
 
         <div className="flex flex-col gap-2 border-t pt-4">
           <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
