@@ -48,3 +48,7 @@ lifetime_spread_low,0.7,0.7,0.7,x nominal,future,Shortest actual lifetime as a s
 lifetime_spread_high,1.4,1.4,1.4,x nominal,future,Longest actual lifetime as a share of nominal,model estimate
 overdue_failure_prob_per_year,0.25,0.15,0.4,prob/yr,future,Chance per year that an overdue unit fails,model estimate
 failure_premium,0.15,0.05,0.3,share,future,"Extra cost of an emergency replacement after a failure (rush order, downtime)",model estimate
+event_notice_years_new_lab,1,1,1,years,future,Years of warning before the new lab arrives (play mode announces it this early),model estimate
+event_notice_years_energy_price_spike,0,0,0,years,future,Years of warning before an energy price spike (0 = only when it starts),model estimate
+event_notice_years_heatwave_summer,0,0,0,years,future,Years of warning before a heatwave summer (0 = only when it starts),model estimate
+price_jump_pause_threshold,0.2,0.2,0.2,share,future,Play mode pauses when the electricity price rises more than this from one year to the next,model estimate

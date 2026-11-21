@@ -13,6 +13,7 @@ same futures, so differences between plans come from the decision, not from luck
 Percentiles describe the spread of outcomes under these assumed distributions. They are not
 known real-world probabilities.
 """
+import json
 import math
 import random
 
@@ -23,51 +24,162 @@ def _tri(rng, lo, mode, hi):
     return mode if lo == hi else rng.triangular(lo, hi, mode)
 
 
-def draw_future(data, rng):
-    p = data["params"]
-    H = int(p["horizon_years"])
+# Yearly random events: (event id, probability key in the assumptions).
+YEARLY_EVENTS = (("heatwave_summer", "heatwave_prob_per_year"), ("energy_price_spike", "price_spike_prob_per_year"))
 
-    # electricity price: random walk in log space around today's price, clipped
-    path, m = [], 1.0
-    for _ in range(H):
+
+def _price_walk(rng, p, start, years):
+    """Electricity price multipliers for `years` years: a random walk in log space from `start`, clipped."""
+    path, m = [], start
+    for _ in range(years):
         m *= math.exp(rng.gauss(0.0, p["price_volatility_per_year"]))
         m = min(max(m, p["price_path_min"]), p["price_path_max"])
         path.append(m)
+    return path
 
-    # events with probabilities and their own timing
-    events = []
-    for y in range(1, H + 1):
-        if rng.random() < p["heatwave_prob_per_year"]:
-            events.append({"id": "heatwave_summer", "start_year": y, "end_year": y})
-        if rng.random() < p["price_spike_prob_per_year"]:
-            events.append({"id": "energy_price_spike", "start_year": y, "end_year": y})
+
+def _draw_lab(rng, p):
+    """The new lab: comes in a random year up to new_lab_latest_year, or never."""
     if rng.random() >= p["new_lab_prob_never"]:
-        events.append({"id": "new_lab", "start_year": rng.randint(1, int(p["new_lab_latest_year"])), "end_year": None})
+        return {"id": "new_lab", "start_year": rng.randint(1, int(p["new_lab_latest_year"])), "end_year": None}
+    return None
 
-    # when each old unit actually fails (drawn per item, independent of any scenario)
-    remaining = {}
-    for i in data["items"]:
-        o = data["options"][i["option"]]
-        life = o["lifetime_years"]
-        if not life:
-            continue
-        actual = life * rng.triangular(p["lifetime_spread_low"], p["lifetime_spread_high"], 1.0)
-        age = i["age"] or 0
-        if actual > age:
-            remaining[i["id"]] = actual - age
-        else:                       # already past its life and still running: fails with a yearly hazard
-            n = 0
-            while rng.random() >= p["overdue_failure_prob_per_year"] and n < H:
-                n += 1
-            remaining[i["id"]] = n
 
-    # strength of people effects: one draw per future
+def _draw_remaining(rng, p, item, life, H):
+    """Years until the item's current unit actually fails."""
+    actual = life * rng.triangular(p["lifetime_spread_low"], p["lifetime_spread_high"], 1.0)
+    age = item["age"] or 0
+    if actual > age:
+        return actual - age
+    n = 0                           # already past its life and still running: fails with a yearly hazard
+    while rng.random() >= p["overdue_failure_prob_per_year"] and n < H:
+        n += 1
+    return n
+
+
+def _draw_params(rng, data):
+    """Strength of the people effects: one draw per future from each coupling parameter's range."""
     params = {}
     for k, meta in data["param_meta"].items():
         if meta["category"] == "coupling":
             lo, hi = data["ranges"][k]
             params[k] = _tri(rng, lo, data["params"][k], hi)
+    return params
 
+
+def draw_future(data, rng):
+    p = data["params"]
+    H = int(p["horizon_years"])
+    path = _price_walk(rng, p, 1.0, H)
+    events = []
+    for y in range(1, H + 1):
+        for eid, prob in YEARLY_EVENTS:
+            if rng.random() < p[prob]:
+                events.append({"id": eid, "start_year": y, "end_year": y})
+    lab = _draw_lab(rng, p)
+    if lab:
+        events.append(lab)
+    # when each old unit actually fails (drawn per item, independent of any scenario)
+    remaining = {i["id"]: _draw_remaining(rng, p, i, data["options"][i["option"]]["lifetime_years"], H)
+                 for i in data["items"] if data["options"][i["option"]]["lifetime_years"]}
+    return {"price_path": path, "events": events, "remaining_life": remaining, "params": _draw_params(rng, data)}
+
+
+# ---------------------------------------------------------------- what is known at time t
+# Time t is the end of year t. An event starting in year Y is announced at time Y - 1 - notice,
+# and a unit whose remaining life is r fails at time ceil(r).
+def notice_years(data, event_id):
+    return int(data["params"].get(f"event_notice_years_{event_id}", 0))
+
+
+def announced_at(data, event):
+    """Time an event of a future becomes known: its start (time Y - 1) minus its notice period, never before 0."""
+    return max(0, event["start_year"] - 1 - notice_years(data, event["id"]))
+
+
+def draw_future_after(data, rng, known, t):
+    """A future that agrees with everything `known` revealed by time t, with the rest drawn as in draw_future:
+    the price path up to year t, the events announced or started by t, and the units that failed by t.
+    The people-effect strengths are drawn afresh: time does not reveal them."""
+    p = data["params"]
+    H = int(p["horizon_years"])
+    path = list(known["price_path"][:t]) + _price_walk(rng, p, known["price_path"][t - 1] if t else 1.0, H - t)
+    events = [e for e in known["events"] if announced_at(data, e) <= t]
+    for y in range(1, H + 1):
+        for eid, prob in YEARLY_EVENTS:
+            if y - 1 - notice_years(data, eid) > t and rng.random() < p[prob]:   # still unknown at t
+                events.append({"id": eid, "start_year": y, "end_year": y})
+    if not any(e["id"] == "new_lab" for e in events):      # not announced yet: it comes later, or never
+        for _ in range(200):
+            lab = _draw_lab(rng, p)
+            if lab is None or announced_at(data, lab) > t:
+                break
+        if lab and announced_at(data, lab) > t:
+            events.append(lab)
+    remaining = {}
+    for i in data["items"]:
+        life = data["options"][i["option"]]["lifetime_years"]
+        if not life:
+            continue
+        r = known["remaining_life"].get(i["id"])
+        if r is not None and r != engine.INF and math.ceil(r) <= t:
+            remaining[i["id"]] = r                          # it already failed: that is history
+            continue
+        for _ in range(200):                                # still running at t: draw a life that lasts past t
+            r = _draw_remaining(rng, p, i, life, H)
+            if r > t:
+                break
+        else:                                               # rare: continue the yearly failure hazard from t
+            r = t + 1
+            while rng.random() >= p["overdue_failure_prob_per_year"] and r < H:
+                r += 1
+        remaining[i["id"]] = r
+    return {"price_path": path, "events": events, "remaining_life": remaining, "params": _draw_params(rng, data)}
+
+
+# ---------------------------------------------------------------- scripted futures (for demos)
+SCRIPTED = engine.HERE / "data" / "model" / "scripted_futures.json"
+
+
+def scripted_names():
+    return sorted(json.load(open(SCRIPTED))) if SCRIPTED.exists() else []
+
+
+def load_scripted(data, name):
+    """A future we control, in the same shape as draw_future returns, so simulate can't tell the difference.
+    - price_path: a number (flat) or a list with one multiplier per year.
+    - events: [{id, start_year, end_year}].
+    - remaining_life: {item_id: years} for units whose failure the script sets.
+    - Every other unit with a lifetime fails at its nominal time (lifetime - age) if that is still ahead;
+      if it is already overdue, it keeps running for the whole horizon.
+    - params: people-effect strengths at their central values, plus any the script sets."""
+    scripts = json.load(open(SCRIPTED))
+    if name not in scripts:
+        raise ValueError(f"Unknown scripted future {name!r}; known: {sorted(scripts)}")
+    spec = scripts[name]
+    H = int(data["params"]["horizon_years"])
+    pp = spec.get("price_path", 1.0)
+    path = [float(pp)] * H if isinstance(pp, (int, float)) else [float(x) for x in pp]
+    if len(path) != H:
+        raise ValueError(f"{name}: price_path needs {H} values")
+    events = []
+    for e in spec.get("events", []):
+        if e["id"] not in data["events"]:
+            raise ValueError(f"{name}: unknown event {e['id']!r}")
+        events.append({"id": e["id"], "start_year": int(e["start_year"]), "end_year": e.get("end_year")})
+    remaining = {}
+    for i in data["items"]:
+        life = data["options"][i["option"]]["lifetime_years"]
+        if not life:
+            continue
+        nominal = life - (i["age"] or 0)
+        remaining[i["id"]] = nominal if nominal > 0 else engine.INF
+    for iid, r in spec.get("remaining_life", {}).items():
+        if iid not in data["item_by_id"]:
+            raise ValueError(f"{name}: unknown item {iid!r}")
+        remaining[iid] = float(r)
+    params = {k: data["params"][k] for k, m in data["param_meta"].items() if m["category"] == "coupling"}
+    params.update(spec.get("params", {}))
     return {"price_path": path, "events": events, "remaining_life": remaining, "params": params}
 
 

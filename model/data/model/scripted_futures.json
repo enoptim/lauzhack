@@ -1,0 +1,12 @@
+{
+  "ventilation_failure": {
+    "description": "Floor 0's ventilation breaks in year 2, the new lab is announced in year 1 and arrives in year 3, a heatwave in year 5 and an energy price spike in year 6. Prices otherwise stay at today's level.",
+    "price_path": 1.0,
+    "events": [
+      {"id": "new_lab", "start_year": 3, "end_year": null},
+      {"id": "heatwave_summer", "start_year": 5, "end_year": 5},
+      {"id": "energy_price_spike", "start_year": 6, "end_year": 6}
+    ],
+    "remaining_life": {"BC_991.0:ventilation:floor0": 1.5}
+  }
+}
