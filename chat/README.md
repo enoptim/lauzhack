@@ -1,6 +1,6 @@
 # Chat with the twin
 
-Ask the building a question in plain words, like "Cut our monthly energy bill by 5%. What does it cost and what's the ROI?" The assistant picks the upgrades, tests them in Oscar's engine, answers with cost, savings, payback and ROI, and hands the app a scenario to show.
+Ask the building a question in plain words, like "Cut our monthly energy bill by 5%. What does it cost and what's the ROI?" or "Lowest running costs for at most CHF 200k, but don't touch the ventilation." The assistant picks the upgrades, tests them in Oscar's engine, answers with cost, savings, payback and ROI, and hands the app a scenario to show.
 
 ## How it works
 
@@ -16,6 +16,8 @@ The tools:
 - `list_options`: the products for one group, with prices and descriptions.
 - `rank_upgrades`: every single upgrade, ranked by payback, for the whole building or floor by floor.
 - `simulate_scenario`: runs the engine on a set of swaps, optionally with events such as a price spike.
+- `list_metrics`: the goals and limits the optimizer understands, with today's value of each.
+- `optimize`: turns the user's goal and limits (budget, things that must not change, only certain options) into a problem for the optimizer in `model/optimize.py`, and returns the best plan it found next to today.
 - `show_scenario`: the package the model recommends, sent to the app.
 
 The model never does the maths. Every number it gives comes from the engine.
@@ -49,6 +51,7 @@ The reply:
   - `events`: any what-if events it used.
   - `item_ids`: the items that change. They match the mesh names, so they can be highlighted in 3D.
   - `summary`: the figures the assistant quoted, such as `upfront_cost_chf`, `energy_bill_chf_month` and `payback_years`.
+- `problem`: `null`, or the goal and limits the assistant optimized for. Show it so the user can check and correct it. The format is in [model/README.md](../model/README.md#optimizer-optimizepy).
 
 ## Files
 

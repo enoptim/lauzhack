@@ -12,6 +12,7 @@ _MODEL_DIR = str(Path(__file__).resolve().parent.parent / "model")
 if _MODEL_DIR not in sys.path:
     sys.path.insert(0, _MODEL_DIR)
 import engine  # noqa: E402
+import optimize  # noqa: E402
 
 DATA = engine.load()
 _OPTIONS = DATA["options"]
@@ -82,6 +83,47 @@ SCHEMAS = [
             "scenario": _SCENARIO, "events": _EVENTS_PARAM,
         }, "required": ["title", "scenario"]},
     }},
+    {"type": "function", "function": {
+        "name": "list_metrics",
+        "description": "The goals and limits optimize understands, with today's value of each (doing nothing). "
+                       "Call it before optimize when the user gives a target in their own words.",
+        "parameters": {"type": "object", "properties": {}},
+    }},
+    {"type": "function", "function": {
+        "name": "optimize",
+        "description": "Finds the best plan for one goal under the user's limits by running the building model "
+                       "many times. Use it whenever the user wants the best or cheapest plan under conditions "
+                       "(a budget, things that must not change, a target). Returns the problem as understood, the "
+                       "plan, and today vs the plan for every metric. Then call show_scenario with the plan.",
+        "parameters": {"type": "object", "properties": {
+            "objective": {"type": "object", "description": "What to make as small or as large as possible.",
+                          "properties": {"metric": {"type": "string", "enum": list(optimize.METRICS)},
+                                         "sense": {"type": "string", "enum": ["min", "max"],
+                                                   "description": "Leave out to use the metric's natural direction."}},
+                          "required": ["metric"]},
+            "constraints": {"type": "array", "description": "Limits the plan must meet. Use max/min for absolute "
+                            "values, max_change_pct/min_change_pct for changes vs today (e.g. -20 = at least 20% lower).",
+                            "items": {"type": "object", "properties": {
+                                "metric": {"type": "string", "enum": list(optimize.METRICS)},
+                                "max": {"type": "number"}, "min": {"type": "number"},
+                                "max_change_pct": {"type": "number"}, "min_change_pct": {"type": "number"}},
+                                "required": ["metric"]}},
+            "locked": {"type": "array", "description": "Things that must stay as they are today. Leave out floor "
+                       "to lock the whole group.",
+                       "items": {"type": "object", "properties": {
+                           "group": {"type": "string", "enum": _GROUPS},
+                           "floor": {"type": "integer", "minimum": -1, "maximum": 4}}, "required": ["group"]}},
+            "allowed": {"type": "object", "description": "Per group, the only options the plan may use, e.g. "
+                        '{"coffee": ["coffee_current", "coffee_mid"]}. List one option to force it. Include the '
+                        "group's current option to allow keeping it.",
+                        "additionalProperties": {"type": "array", "items": {"type": "string", "enum": sorted(_OPTIONS)}}},
+            "per_floor": {"type": "boolean", "description": "Decide floor by floor (slower, finer). Default: one "
+                          "choice per group for the whole building."},
+            "allow_warnings": {"type": "boolean", "description": "Allow plans that cause warnings such as over "
+                               "budget or a reserve below the minimum. Default false."},
+            "events": _EVENTS_PARAM,
+        }, "required": ["objective"]},
+    }},
 ]
 
 
@@ -105,17 +147,7 @@ def _check(scenario, events):
 
 def _upfront(res):
     """What the swaps made now cost to buy and install, after the solar subsidy."""
-    sel = engine.baseline(DATA) | {iid: c[0] for iid, c in res["choices"].items()}
-    total = 0.0
-    for iid, (oid, timing) in res["choices"].items():
-        if timing != "now":
-            continue
-        item, o = DATA["item_by_id"][iid], _OPTIONS[oid]
-        units = engine.units_of(DATA, item, oid, sel)
-        total += units * ((o["purchase_chf_per_unit"] or 0) + (o["install_chf_per_unit"] or 0))
-        if item["group"] == "solar_pv":
-            total -= units * DATA["params"]["pv_subsidy_chf_per_kwp"]
-    return total
+    return optimize.upfront_cost(DATA, res)
 
 
 def _bill(costs):
@@ -240,6 +272,33 @@ def rank_upgrades(group=None, by_floor=False):
                     "are totals over the horizon in today's money."}
 
 
+def list_metrics():
+    today = optimize.metrics(DATA, optimize._simulate(DATA, [], []))
+    return [{"metric": k, "unit": u, "natural_direction": sense, "kind": kind, "description": desc,
+             "today": _r(today[k], 2)} for k, (u, sense, kind, desc) in optimize.METRICS.items()]
+
+
+def optimize_plan(objective, constraints=None, locked=None, allowed=None, per_floor=False, allow_warnings=False,
+                  events=None):
+    problem = {"objective": objective, "constraints": constraints or [], "locked": locked or [],
+               "allowed": allowed or {}, "per_floor": per_floor, "allow_warnings": allow_warnings,
+               "events": events or []}
+    out = optimize.solve(DATA, problem)
+    best, today = out["best"], out["today"]
+    return {
+        "problem": out["problem"],
+        "all_limits_met": best["feasible"],
+        "limits_missed": best["violations"],
+        "scenario": best["scenario"],
+        "today_vs_plan": {k: {"today": _r(today["metrics"][k], 2), "plan": _r(best["metrics"][k], 2)}
+                          for k in optimize.METRICS},
+        "summary": summary(_run(best["scenario"], events)),
+        "note": "today_vs_plan money and energy figures are yearly averages over the horizon; summary is year 1. "
+                f"The search tried {out['evaluations']} plans. If all_limits_met is false, the plan is the "
+                "closest it found: say which limit could not be met.",
+    }
+
+
 def simulate_scenario(scenario, events=None):
     return summary(_run(scenario, events))
 
@@ -255,7 +314,8 @@ def app_scenario(title, scenario, events=None):
             "item_ids": sorted(res["choices"]), "summary": summary(res)}
 
 
-HANDLERS = {f.__name__: f for f in (get_building_overview, list_options, rank_upgrades, simulate_scenario, show_scenario)}
+HANDLERS = {f.__name__: f for f in (get_building_overview, list_options, rank_upgrades, simulate_scenario, show_scenario,
+                                     list_metrics)} | {"optimize": optimize_plan}
 
 
 def run(name, args):

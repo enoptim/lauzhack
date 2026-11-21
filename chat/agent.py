@@ -38,11 +38,19 @@ They want to know what to change, what it costs up front, what it saves, and whe
 
 Rules:
 - Every number you give must come from a tool. Never estimate or do your own sums on savings.
-- For a goal ("cut the bill by 5%", "save CHF 2,000 a month", "spend at most CHF 100k"):
-  1. Call rank_upgrades to find the upgrades with the shortest payback. Use by_floor with a group to fit a target closely.
-  2. Pick the cheapest package that meets the goal. Doing an upgrade on only some floors is fine.
-  3. Check the package with simulate_scenario. Adjust until it meets the goal.
-  4. Call show_scenario with the package you recommend, so the app shows it.
+- For a goal or limits ("cheapest way to cut electricity by 20%", "lowest running costs for at most CHF 200k",
+  "we can't touch the ventilation", "only mid-range coffee machines"), use optimize:
+  1. Turn the user's words into one objective and a list of limits. Call list_metrics if you need today's values
+     or the exact metric names. Use max_change_pct / min_change_pct for targets relative to today; never work out
+     the absolute number yourself.
+  2. "Can't change X" or "keep X" goes in locked (with floor if they name one). "Only consider X" goes in allowed;
+     to force an option, allow only that option. Decide floor by floor (per_floor) only if the user talks about floors.
+  3. If the user names limits but no goal, maximise npv_cash_chf (value over 15 years) and say so.
+     If the goal is truly unclear, ask one short question instead.
+  4. Call optimize, then show_scenario with the plan it returns.
+  5. In your answer, first restate the goal and limits you used in one or two lines, so the user can correct them.
+     If all_limits_met is false, say which limit could not be met and how close the plan gets.
+- For a quick question about single upgrades ("what pays back fastest?"), use rank_upgrades.
 - When the user asks for a specific change, simulate it and show it.
 - For what-if questions about the future (price spike, heatwave, new lab), pass the matching events. The single-year figures are for year 1; use what_if.by_year for the years the event hits.
 - "Energy bill" means the electricity bill. Running costs also include maintenance and supplies such as coffee capsules. Point out when an upgrade lowers the energy bill but raises running costs.
@@ -90,8 +98,9 @@ def chat(messages, scenario=None, on_tool=None):
     scenario: the swaps the app shows right now (optional), e.g. [{"group": "lighting", "option": "lighting_mid", "floor": 2}]
     on_tool:  optional callback(name, args) for logging
 
-    Returns {"reply": str, "scenario": dict | None}. `scenario` is set when the model picked one to show
-    (see tools.app_scenario).
+    Returns {"reply": str, "scenario": dict | None, "problem": dict | None}. `scenario` is set when the model
+    picked one to show (see tools.app_scenario). `problem` is the last goal and limits it optimized for
+    (see model/optimize.py), so the app can show them.
     """
     system = SYSTEM
     if scenario:
@@ -99,13 +108,13 @@ def chat(messages, scenario=None, on_tool=None):
     convo = [{"role": "system", "content": system}] + [
         {"role": m["role"], "content": m["content"]} for m in messages if m.get("role") in ("user", "assistant")
     ]
-    shown = None
+    shown = problem = None
     for _ in range(MAX_STEPS):
         msg = _post({"model": MODEL, "messages": convo, "tools": tools.SCHEMAS})["choices"][0]["message"]
         calls = msg.get("tool_calls") or []
         convo.append({"role": "assistant", "content": msg.get("content") or "", **({"tool_calls": calls} if calls else {})})
         if not calls:
-            return {"reply": msg.get("content") or "", "scenario": shown}
+            return {"reply": msg.get("content") or "", "scenario": shown, "problem": problem}
         for call in calls:
             name = call["function"]["name"]
             try:
@@ -115,10 +124,12 @@ def chat(messages, scenario=None, on_tool=None):
                 result = tools.run(name, args)
                 if name == "show_scenario":
                     shown = tools.app_scenario(**args)
+                if name == "optimize":
+                    problem = result["problem"]
             except Exception as e:  # the model sees the error and can fix its call
                 result = {"error": str(e)}
             convo.append({"role": "tool", "tool_call_id": call["id"], "content": json.dumps(result)})
-    return {"reply": "Sorry, I couldn't finish that. Try a simpler question.", "scenario": shown}
+    return {"reply": "Sorry, I couldn't finish that. Try a simpler question.", "scenario": shown, "problem": problem}
 
 
 def _log(name, args):
