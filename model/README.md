@@ -35,8 +35,18 @@ Timing per swap: `"now"` (default), `"end_of_life"`, or `"year": k` to phase it 
 | `events_timing.csv` | Fallback start/end year and kind. Unused now: the team's `events.csv` has these columns, and they win. |
 | `monthly.csv` | Fallback monthly heating, cooling and solar shares. Unused now: the team's `monthly.csv` replaces it. |
 
+## Flags
+Each flag has a `type` and, except `over_budget`, the first `year` it happens:
+- `over_budget`: up-front spending is above `capex_budget_chf`.
+- `reserve_below_minimum`: the plan leaves less in the reserve than doing nothing would, and below `min_reserve_chf`.
+- `reserve_below_minimum_without_upgrades`: even doing nothing, like-for-like replacements run the reserve below its minimum. This is context, not a warning about the plan.
+- `desk_shortfall`: more staff than desks (e.g. after the new lab arrives).
+- `ventilation_over_capacity`: more people on a floor than its ventilation supports.
+
+Sick days are anchored to today's building: with today's equipment the engine shows the team's `sick_days_per_employee_year`, and upgrades change it from there (Milton 2000).
+
 ## Values from the literature
-The engine takes these straight from the cited rows in the team's `assumptions.csv` (value, low and high), via `LITERATURE` in `engine.py`:
+The engine takes these straight from the cited rows in the team's `assumptions.csv` (value, low and high), via `FROM_TEAM` in `engine.py`:
 - Sick leave and ventilation: Milton et al. 2000. Going from about 12 to 24 L/s of outdoor air per person cuts short-term sick leave by 35% (18–48%).
 - Heat and performance: Seppänen et al. 2006. About 1.4% (1.1–2.0%) of performance is lost per degree of overheating.
 - 3D-printer enclosures: Azimi et al. 2017 and others. An enclosure removes 80% (67–99.95%) of the particles.

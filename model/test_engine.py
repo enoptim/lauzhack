@@ -198,6 +198,25 @@ def test_over_budget_flag():
     assert any(f["type"] == "over_budget" for f in s["flags"])
 
 
+def test_reserve_flag_only_when_plan_is_worse_than_doing_nothing():
+    types = {f["type"] for f in engine.simulate(D)["flags"]}
+    assert "reserve_below_minimum" not in types                       # doing nothing is never flagged against itself
+    big = engine.simulate(D, [{"group": "ventilation", "option": "ventilation_premium"},
+                              {"group": "blinds", "option": "blinds_upgrade"}])
+    first = next(f for f in big["flags"] if f["type"] == "reserve_below_minimum")
+    y = big["years"][first["year"] - 1]
+    assert y["cash_closing"] < D["params"]["min_reserve_chf"] and y["cash_closing"] < y["cash_closing_baseline"]
+
+
+def test_sick_days_today_match_the_data():
+    out = engine.simulate(D)["years"][0]["outcomes"]
+    assert abs(out["sick_days"] - D["params"]["sick_days_per_employee_year"]) < 1e-9
+
+
+def test_roof_space_from_team_data():
+    assert D["params"]["pv_max_kwp_without_rooftop_hp"] == D["params"]["pv_max_kwp_without_roof_heat_pumps"]
+
+
 def test_hackathon_timer_off_vs_demand_control():
     off = engine.stress_test(D)
     dcv = engine.stress_test(D, [{"group": "ventilation", "option": "ventilation_budget", "floor": 0}])

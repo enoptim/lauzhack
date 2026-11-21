@@ -106,7 +106,9 @@ export interface NpvBreakdown {
 }
 
 export interface Flag {
-  type: 'ventilation_over_capacity' | 'desk_shortfall' | 'over_budget' | 'reserve_below_minimum' | string;
+  /** reserve_below_minimum_without_upgrades is context (doing nothing also runs the reserve low), not a warning about the plan. */
+  type: 'ventilation_over_capacity' | 'desk_shortfall' | 'over_budget' | 'reserve_below_minimum'
+    | 'reserve_below_minimum_without_upgrades' | string;
   year?: number;
   [detail: string]: unknown;
 }

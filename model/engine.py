@@ -28,12 +28,16 @@ PROFILE = {"office": "office_weekday", "meeting": "meeting_weekday", "teaching":
 POPULATION_TYPES = {"office", "makerspace", "seminar", "computer_lab"}   # default if team adds no flag
 STAFF_TYPES = {"office", "makerspace"}
 
-# People effects taken straight from the literature rows in the team's assumptions.csv.
+# Engine parameters read from the team's assumptions.csv under another name or unit.
 # engine key: (team key, scale). Value, low and high all follow the team's row, so a change there flows through.
-LITERATURE = {
+FROM_TEAM = {
+    # people effects from the literature rows
     "sick_leave_reduction_at_high_ventilation": ("sick_leave_attributable_pct_moderate_outdoor_air", 0.01),  # Milton 2000
     "perf_loss_per_degc_discomfort": ("performance_loss_pct_per_c_above_25c", 0.01),                         # Seppanen 2006
     "printer_enclosure_particle_reduction": ("printer_enclosure_ufp_reduction_pct", 0.01),                    # Azimi 2017
+    # roof space for solar
+    "pv_max_kwp_with_rooftop_hp": ("pv_max_kwp_with_roof_heat_pumps", 1),
+    "pv_max_kwp_without_rooftop_hp": ("pv_max_kwp_without_roof_heat_pumps", 1),
 }
 # Physical facts per option in the team's options.csv that replace our own drivers. driver: options.csv column
 OPTION_FACTS = {"seconds_per_drink": "seconds_per_drink", "humidity_control": "humidity_control",
@@ -76,11 +80,12 @@ def load(team_dir=None, model_dir=None):
             meta[r[key]] = {"unit": r.get("unit", ""), "category": r.get("category", "team"),
                             "source": r.get("source", ""), "description": r.get("description", "")}
 
-    for key, (src, scale) in LITERATURE.items():
+    for key, (src, scale) in FROM_TEAM.items():
         if src in params:
+            ours = meta.get(key, {})
             params[key] = params[src] * scale
             ranges[key] = tuple(x * scale for x in ranges[src])
-            meta[key] = {**meta[src], "category": "coupling", "unit": "share", "source": meta[src]["source"]}
+            meta[key] = {**meta[src], "category": ours.get("category", "team"), "unit": ours.get("unit", meta[src]["unit"])}
 
     rtypes = {r["type"]: r for r in _read(team / "room_types.csv")}
     rooms = {}
@@ -465,6 +470,19 @@ def _weighted(pairs):
     return sum(x * v for x, v in pairs) / w if w else 0.0
 
 
+def office_air_per_person(data, env):
+    """Outdoor air per person at the busiest hour, desk-weighted over offices and the makerspace (L/s)."""
+    E = env["rooms"]
+    return _weighted([(r["seats"], E[r["id"]]["lps_per_person"]) for r in data["rooms"].values()
+                      if r["type"] in STAFF_TYPES and r["seats"] > 0 and r["id"] in E])
+
+
+def _sick_factor(p, lpp):
+    """Relative sick leave at this ventilation (Milton 2000): 1 at the reference rate, lower with more air."""
+    f = max(-0.5, min(1.0, (lpp - p["sick_vent_ref_lps"]) / (p["sick_vent_high_lps"] - p["sick_vent_ref_lps"])))
+    return 1 - p["sick_leave_reduction_at_high_ventilation"] * f
+
+
 def outcomes(data, ctx, sel, env):
     p = ctx["params"]
     o_ = data["options"]
@@ -502,9 +520,9 @@ def outcomes(data, ctx, sel, env):
     }
     perf_index = math.prod(1 - min(v, 0.5) for v in loss.values())
 
-    office_lpp = _weighted([(r["seats"], E[r["id"]]["lps_per_person"]) for r in desk_rooms])
-    f = max(-0.5, min(1.0, (office_lpp - p["sick_vent_ref_lps"]) / (p["sick_vent_high_lps"] - p["sick_vent_ref_lps"])))
-    sick = p["sick_days_per_employee_year"] * (1 - p["sick_leave_reduction_at_high_ventilation"] * f)
+    office_lpp = office_air_per_person(data, env)
+    # sick_days_per_employee_year is today's building, so scale relative to today's ventilation
+    sick = p["sick_days_per_employee_year"] * _sick_factor(p, office_lpp) / _sick_factor(p, ctx.get("office_lpp_today", office_lpp))
 
     coffee = [i for i in data["items"] if i["group"] == "coffee"]
     secs = _weighted([(i["units"], o_[sel[i["id"]]]["drivers"].get("seconds_per_drink", 60)) for i in coffee])
@@ -639,6 +657,8 @@ def simulate(data, scenario=None, events_on=(), overrides=None, detail_years=(1,
 
     ref_ctx = year_context(data, 1, (), overrides)
     ref = energy(data, ref_ctx, baseline(data))
+    cool_ref = ref["thermal"]["cooling_kwh_th"]
+    lpp_today = office_air_per_person(data, environment(data, ref_ctx, baseline(data), cool_ref, cool_ref))
     upfront = capex_s[0] - capex_b[0]
     cash_s = p["opening_reserve_chf"] - capex_s[0]
     cash_b = p["opening_reserve_chf"] - capex_b[0]
@@ -651,6 +671,7 @@ def simulate(data, scenario=None, events_on=(), overrides=None, detail_years=(1,
 
     for t in range(1, H + 1):
         ctx = year_context(data, t, events_on, overrides)
+        ctx["office_lpp_today"] = lpp_today
         if future is not None:
             ctx["price"] *= future["price_path"][t - 1]
         sel_b = {i["id"]: active_at(i, plans_b[i["id"]], t) for i in data["items"]}
@@ -685,6 +706,13 @@ def simulate(data, scenario=None, events_on=(), overrides=None, detail_years=(1,
                               "people": round(env["floor_population_peak"][f]), "capacity": round(cap)})
         if ys["desk_shortfall"] > 0:
             flags.append({"year": t, "type": "desk_shortfall", "people": round(ys["desk_shortfall"], 1)})
+        # Like-for-like replacements alone can run the reserve low, so a plan is only flagged
+        # when it leaves less in the reserve than doing nothing would.
+        low = p["min_reserve_chf"]
+        if cash_s < low and cash_s < cash_b - 1e-6 and not any(f["type"] == "reserve_below_minimum" for f in flags):
+            flags.append({"year": t, "type": "reserve_below_minimum", "reserve": round(cash_s), "minimum": low})
+        if cash_b < low and not any(f["type"] == "reserve_below_minimum_without_upgrades" for f in flags):
+            flags.append({"year": t, "type": "reserve_below_minimum_without_upgrades", "reserve": round(cash_b), "minimum": low})
         row = {"year": t, "cash_cf": cf, "economic_cf": cf_econ, "people_value": pv,
                "savings": saving, "capex": capex_s[t], "capex_baseline": capex_b[t], "residual_value": residual,
                "operating_cost": op_s, "operating_cost_baseline": op_b,
@@ -702,8 +730,6 @@ def simulate(data, scenario=None, events_on=(), overrides=None, detail_years=(1,
 
     if upfront > p["capex_budget_chf"]:
         flags.append({"year": 0, "type": "over_budget", "capex": round(upfront), "budget": p["capex_budget_chf"]})
-    if any(y["cash_closing"] < p["min_reserve_chf"] for y in years):
-        flags.append({"type": "reserve_below_minimum"})
     return {"choices": choices, "events": list(events_on), "capex_year0": upfront,
             "npv_cash": npv["cash"], "npv_economic": npv["economic"],
             "payback_cash": payback(cums["cash"]), "payback_economic": payback(cums["economic"]),
