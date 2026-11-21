@@ -28,6 +28,12 @@ Outputs per scenario:
 
 Scope: the only interactions are moving the camera and changing the components (type, power draw, efficiency, etc.). The building's geometry itself is not editable.
 
+## Code and data
+- `data/`: Theo's building data for EPFL building BC. Read `data/README.md`. Change numbers in `data/generate.py`, not in the CSV files.
+- `model/`: Oscar's simulation and its API. Read `model/README.md`.
+- `frontend/`: Casper's 3D app. Read `frontend/README.md`.
+- Run everything with `make setup` once, then `make dev`. Run `make test` after you change data or the model.
+
 ## Enoptim context
 - For Enoptim-specific context (product, customers, pilots, competitors, past pitches), read Alexandria, Enoptim's Obsidian vault. It's cloned at different paths on different machines: look for an `alexandria` folder next to this repo (`../alexandria`), and ask the user if it isn't there.
 - Alexandria's own `AGENTS.md` and safety rules apply when you read or change it.

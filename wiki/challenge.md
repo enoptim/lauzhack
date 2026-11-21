@@ -47,6 +47,7 @@ Don't say "predict". Don't make a chatbot the main thing. Don't depend on the Wi
 - No real customer data in the demo.
 - **No slides.** The organisers confirmed this on 2026-11-21.
 - **Strictly 30 seconds at most to connect to the big screen.** There's no extra time. If it isn't working at 30 seconds, we present from the laptop screen.
-- **Ask the organisers:** how long the pitch is, stage or table, how to hand in.
+- About 245 participants plus about 55 staff and challenge hosts, so about 300 people in total (organisers, 2026-11-21). This matches the 300 people in `data/events.csv`.
+- Pitch length: 3 minutes on the main stage, 5 minutes for UBS (see D6).
 
 Links: [LauzHack](https://lauzhack.com), [rules](https://lauzhack.com/pdf/rules.pdf), [2025 winners](https://2025.lauzhack.com/projects), [2024 winners](https://2024.lauzhack.com/projects), and the challenge repo (`ai-financial-twin-lauzhack-2026/evaluation/`).
