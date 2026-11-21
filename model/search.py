@@ -89,6 +89,21 @@ METRICS = {
                                     "not enough desks. Each kind counts once, whatever the year. Doing nothing has 0."},
     "lowest_reserve_chf": {"unit": "CHF", "better": "higher",
                            "description": "The lowest the cash reserve gets over the timeframe (after paying for the plan)."},
+    # The same definitions as optimize.METRICS, so search.py can be the solver behind optimize.solve().
+    "extra_cost_vs_like_for_like_chf": {"unit": "CHF", "better": "lower",
+                                        "description": "Same as net_upfront_cost_chf."},
+    "running_cost_chf_year": {"unit": "CHF/year", "better": "lower",
+                              "description": "Yearly running cost (energy, maintenance, supplies, rent), average over the timeframe."},
+    "energy_bill_chf_year": {"unit": "CHF/year", "better": "lower",
+                             "description": "Yearly electricity bill after solar, average over the timeframe."},
+    "electricity_kwh_year": {"unit": "kWh/year", "better": "lower",
+                             "description": "Electricity used per year, average over the timeframe."},
+    "warnings": {"unit": "warnings", "better": "lower",
+                 "description": "Engine warning entries for the plan, each year counted (except the reserve warning "
+                                "about doing nothing). Includes warnings doing nothing has too."},
+    "classroom_co2_ppm": {"unit": "ppm", "better": "lower", "description": "CO2 in classrooms at the busiest hour in year 1."},
+    "summer_overheating_degc": {"unit": "degC", "better": "lower",
+                                "description": "Average summer overheating in offices in year 1."},
 }
 
 # Short names for messages.
@@ -104,6 +119,9 @@ _LABEL = {
     "payback_years": "payback time", "comfort_score": "comfort score", "office_co2_ppm": "office CO2",
     "meeting_co2_ppm": "meeting-room CO2", "sick_days": "sick days",
     "new_warnings": "new warnings", "lowest_reserve_chf": "lowest cash reserve",
+    "extra_cost_vs_like_for_like_chf": "extra up-front cost", "running_cost_chf_year": "average running cost",
+    "energy_bill_chf_year": "average energy bill", "electricity_kwh_year": "average electricity use",
+    "warnings": "warnings", "classroom_co2_ppm": "classroom CO2", "summer_overheating_degc": "summer overheating",
 }
 
 # Groups whose choices interact so strongly that they are decided together:
@@ -293,6 +311,31 @@ class _Space:
             out.append({"zones": u, "choices": combos})
         return out
 
+    @classmethod
+    def from_slots(cls, data, slot_list):
+        """A space with the given zones, e.g. optimize.slots(): group-wide and per-floor zones may mix, and
+        anything not in a slot stays as it is. Each slot: {"key", "group", "floor" (or None), "options"},
+        where None in options means keep."""
+        sp = cls.__new__(cls)
+        sp.granularity = "slots:" + ",".join(s["key"] for s in slot_list)
+        by_group = {}
+        for i in data["items"]:
+            by_group.setdefault(i["group"], []).append(i)
+        sp.zones, sp.choices = [], []
+        for s in slot_list:
+            its = [i for i in by_group.get(s["group"], []) if s["floor"] is None or engine.served_floor(i) == s["floor"]]
+            if not its or not s["options"]:
+                raise ValueError(f"Slot {s['key']!r} has no equipment or no options.")
+            cur = {i["option"] for i in its}
+            sp.zones.append({"zone": s["key"], "group": s["group"], "floor": s["floor"],
+                             "current_option": cur.pop() if len(cur) == 1 else None,
+                             "options": [o for o in s["options"] if o is not None],
+                             "units": sum(i["units"] for i in its), "item_ids": [i["id"] for i in its],
+                             "served_floors": sorted({engine.served_floor(i) for i in its})})
+            sp.choices.append(list(s["options"]))
+        sp.units = sp._units()
+        return sp
+
     def base(self):
         """Doing nothing, or the closest plan to it (required zones take their first option)."""
         return tuple(c[0] for c in self.choices)
@@ -383,9 +426,10 @@ def _flag_id(f):
 
 
 def _warnings(p, capex_s, capex_b, op, op_b, states):
-    """The engine's flags for a plan, as identities, and its cash reserve path (year-1 opening, then each
-    closing). Same rules as engine.simulate; `states` are the plan's year states (any order)."""
-    flags = set()
+    """The engine's flags for a plan, as identities, its cash reserve path (year-1 opening, then each
+    closing), and how many yearly flag entries are not about money (ventilation, desks).
+    Same rules as engine.simulate; `states` are the plan's states, one per year."""
+    flags, entries = set(), 0
     if capex_s[0] - capex_b[0] > p["capex_budget_chf"]:
         flags.add(("over_budget", None))
     for st in states:
@@ -393,8 +437,10 @@ def _warnings(p, capex_s, capex_b, op, op_b, states):
         for f, cap in env["floor_capacity_people"].items():
             if env["floor_population_peak"].get(f, 0) > cap:
                 flags.add(("ventilation_over_capacity", f))
+                entries += 1
         if st["desk_shortfall"] > 0:
             flags.add(("desk_shortfall", None))
+            entries += 1
     cash_s, cash_b = p["opening_reserve_chf"] - capex_s[0], p["opening_reserve_chf"] - capex_b[0]
     path = [cash_s]
     for t in range(1, len(op) + 1):
@@ -403,7 +449,7 @@ def _warnings(p, capex_s, capex_b, op, op_b, states):
         path.append(cash_s)
         if cash_s < p["min_reserve_chf"] and cash_s < cash_b - 1e-6:
             flags.add(("reserve_below_minimum", None))
-    return frozenset(flags), path
+    return frozenset(flags), path, entries
 
 
 class _Ctx:
@@ -444,7 +490,8 @@ class _Ctx:
         yb = [self.yb[k] for k in self.year_kind]
         self.op_b = [sum(b["costs"].values()) for b in yb]          # do-nothing rows, shared by every plan
         self.kwh_b = [b["energy"]["total_kwh"] for b in yb]
-        self.warn_b, self.reserve_b = _warnings(p, self.capex_b, self.capex_b, self.op_b, self.op_b, self.yb)
+        self.warn_b, self.reserve_b, _ = _warnings(p, self.capex_b, self.capex_b, self.op_b, self.op_b, yb)
+        self.bill_b = [b["costs"]["energy"] + b["costs"]["pv_export"] for b in yb]
         # A plan gets the reserve warning in year t if its reserve is below min(minimum, doing nothing's reserve).
         self.reserve_floor = [min(p["min_reserve_chf"], v - 1e-6) for v in self.reserve_b[1:]]
         self.money, self.upfront, self.cache = {}, {}, {}
@@ -506,7 +553,7 @@ class _Ctx:
         upfront = capex_s[0] - cb[0]
         npv_c = npv_e = cum_c = cum_e = -upfront
         cums_c, cums_e = [], []
-        op, kwh = [], []
+        op, kwh, bills = [], [], []
         for t in range(1, H + 1):
             s, b, ctx = ys[t - 1], yb[t - 1], self.ycs[t - 1]
             pv = engine.people_value(s["outcomes"], b["outcomes"], ctx)
@@ -523,14 +570,15 @@ class _Ctx:
             npv_e += cf_e / dd
             op.append(sum(s["costs"].values()))
             kwh.append(s["energy"]["total_kwh"])
+            bills.append(s["costs"]["energy"] + s["costs"]["pv_export"])
             if t == 1:
                 sav1 = sum(saving.values())
         s, b = ys[0], yb[0]
         raw = _raw(s, b, sav1, capex_s, cb, op, self.op_b, kwh, self.kwh_b, book_s, self.book_b,
                    npv_c, npv_e, engine.payback(cums_c))
         raw["cash"] = [c[2] for c in cums_c]
-        raw["warn"], raw["reserve"] = _warnings(self.p, capex_s, cb, op, self.op_b, ys)
-        raw["warn_b"] = self.warn_b
+        raw["warn"], raw["reserve"], raw["entries"] = _warnings(self.p, capex_s, cb, op, self.op_b, ys)
+        raw["warn_b"], raw["bills"] = self.warn_b, bills
         return raw
 
 
@@ -544,6 +592,7 @@ def _raw(s, b, sav1, capex_s, capex_b, op, op_b, kwh, kwh_b, book_s, book_b, npv
         "book": book_s, "book_b": book_b, "npv_cash": npv_c, "npv_economic": npv_e, "payback": payback,
         "people": {k: out_s[k] for k in ("comfort_score", "office_co2_ppm", "meeting_co2_ppm", "sick_days")},
         "people_b": {k: out_b[k] for k in ("comfort_score", "office_co2_ppm", "meeting_co2_ppm", "sick_days")},
+        "outcomes": {k: out_s[k] for k in ("classroom_co2_ppm", "summer_overheating_degc")},
     }
 
 
@@ -563,6 +612,8 @@ def _raw_from_sim(ctx, res, upfront):
     raw["warn"] = frozenset(_flag_id(f) for f in res["flags"] if f["type"] not in IGNORED_FLAGS)
     raw["reserve"] = [Y[0]["cash_opening"]] + [r["cash_closing"] for r in Y]
     raw["warn_b"] = ctx.warn_b
+    raw["entries"] = sum(1 for f in res["flags"] if f["type"] in ("ventilation_over_capacity", "desk_shortfall"))
+    raw["bills"] = [b - r["savings"]["energy"] - r["savings"]["pv_export"] for b, r in zip(ctx.bill_b, Y)]
     return raw
 
 
@@ -596,6 +647,12 @@ def _metrics(raw, r, discounted, include_residual):
         "npv_cash_chf": raw["npv_cash"], "npv_economic_chf": raw["npv_economic"], "payback_years": raw["payback"],
         **raw["people"],
         "new_warnings": len(raw["warn"] - raw["warn_b"]), "lowest_reserve_chf": min(raw["reserve"]),
+        # the definitions of optimize.metrics() (the chat assistant's interface)
+        "extra_cost_vs_like_for_like_chf": raw["capex_s"][0] - raw["capex_b"][0],
+        "running_cost_chf_year": sum(raw["op"]) / H, "energy_bill_chf_year": sum(raw["bills"]) / H,
+        "electricity_kwh_year": sum(raw["kwh"]) / H,
+        "warnings": raw["entries"] + sum(1 for f in raw["warn"] if f[0] in _CASH_FLAGS),
+        **raw["outcomes"],
     }
     base = {"energy_cost_chf_year": raw["bill_b"], "operating_cost_chf_year": raw["op_b"][0],
             "energy_kwh_year": raw["kwh_b"][0], "grid_energy_kwh_year": raw["grid_b"],
@@ -842,8 +899,10 @@ class _Search:
     Plans are compared by key(): total relative shortfall on the constraints, then the objective,
     then the tie-break, then the number of changed zones."""
 
-    def __init__(self, space, ctx, objective, constraints, tie_break, discounted, include_residual):
+    def __init__(self, space, ctx, objective, constraints, tie_break, discounted, include_residual, missing=_INF,
+                 abs_tol=False):
         self.space, self.ctx = space, ctx
+        self.missing, self.abs_tol = missing, abs_tol      # optimize.py ranks with payback None = 1e6, 1e-9 absolute
         self.obj, self.sense = objective
         self.cons = constraints
         self.tb, self.tb_sense = tie_break
@@ -851,7 +910,7 @@ class _Search:
         self.true = {}
         names = [self.obj] + [c[0] for c in self.cons] + [self.tb]
         self.payback = "payback_years" in names
-        self.warn = "new_warnings" in names
+        self.warn = bool({"new_warnings", "warnings"} & set(names))
         self.reserve = self.warn or "lowest_reserve_chf" in names
         # Payback, the lowest reserve and the reserve warning are not additive, but the yearly cash flows behind
         # them nearly are: the surrogate adds up the cumulative cash flow ("cum@t") and the reserve ("res@t") at
@@ -863,8 +922,8 @@ class _Search:
         if self.reserve:
             extra += [f"res@{t}" for t in range(ctx.H + 1)]
         if self.warn:
-            extra += ["net_upfront_cost_chf", "w_other"]
-        derived = ("payback_years", "lowest_reserve_chf", "new_warnings")
+            extra += ["net_upfront_cost_chf", "w_other", "w_entries"]
+        derived = ("payback_years", "lowest_reserve_chf", "new_warnings", "warnings")
         lin = []
         for n in names + extra:
             if n not in derived and n not in lin:
@@ -887,22 +946,26 @@ class _Search:
                     m[f"res@{t}"] = v
             if self.warn:
                 m["w_other"] = sum(1 for f in raw["warn"] - raw["warn_b"] if f[0] not in _CASH_FLAGS)
+                m["w_entries"] = raw["entries"]
             self.true[cfg] = m
         return self.true[cfg]
 
     def shortfalls(self, m, slack=None):
         out = []
         for j, (name, kind, b) in enumerate(self.cons):
-            v = _val(m, name)
+            v = self.v(m, name)
             s = slack[j] if slack else 0.0
             short = (b - s - v) if kind == "min" else (v - b - s)
             scale = max(abs(b), 1.0)
-            out.append(short / scale if short > _TOL * scale else 0.0)
+            out.append(short / scale if short > (1e-9 if self.abs_tol else _TOL * scale) else 0.0)
         return out
+
+    def v(self, m, name):
+        return self.missing if m[name] is None else m[name]
 
     def key(self, cfg, m=None, slack=None):
         m = self.m(cfg) if m is None else m
-        o, t = _val(m, self.obj), _val(m, self.tb)
+        o, t = self.v(m, self.obj), self.v(m, self.tb)
         return (round(sum(self.shortfalls(m, slack)), 9), round(o if self.sense == "min" else -o, 6),
                 round(t if self.tb_sense == "min" else -t, 6), sum(x is not None for x in cfg))
 
@@ -940,14 +1003,16 @@ class _Search:
             low = any(v < f for v, f in zip(res[1:], self.ctx.reserve_floor))
             over = m["net_upfront_cost_chf"] > self.ctx.p["capex_budget_chf"]
             m["new_warnings"] = max(0, round(m["w_other"])) + low + over
+            m["warnings"] = max(0, round(m["w_entries"])) + low + over
         return m
 
     def tight_years(self, base, D, name, xs=None):
         """The years where the reserve is closest to its limit: for the current plan, and for the plan where
         each unit takes its best x value. They become the DP axes for reserve-based metrics."""
         H, floor = self.ctx.H, self.ctx.reserve_floor
-        years = range(1, H + 1) if name == "new_warnings" else range(H + 1)
-        limit = (lambda t: floor[t - 1]) if name == "new_warnings" else (lambda t: 0.0)
+        warn = name in ("new_warnings", "warnings")
+        years = range(1, H + 1) if warn else range(H + 1)
+        limit = (lambda t: floor[t - 1]) if warn else (lambda t: 0.0)
         plans = [None]
         if xs:                                    # the plan pushing hardest on the objective comes first
             plans.insert(0, tuple(min(range(len(row)), key=lambda k: _dot(xs, self.li, row[k])) for row in D))
@@ -973,10 +1038,11 @@ class _Search:
             return [{"operating_cost_saving_chf_year": 1.0} if not up else {"net_upfront_cost_chf": 1.0}]
         if name == "lowest_reserve_chf":
             return [{f"res@{t}": 1.0 if up else -1.0} for t in self.tight_years(base, D, name, xs)]
-        if name == "new_warnings":
+        if name in ("new_warnings", "warnings"):
+            w = "w_other" if name == "new_warnings" else "w_entries"
             if up:
-                return [{"w_other": 1.0}]
-            return [{"w_other": -1.0}] + [{f"res@{t}": 1.0} for t in self.tight_years(base, D, name, xs)]
+                return [{w: 1.0}]
+            return [{w: -1.0}] + [{f"res@{t}": 1.0} for t in self.tight_years(base, D, name, xs)]
         return [{name: 1.0 if up else -1.0}]
 
     def cons_specs(self, j, base, D, xs):
@@ -1240,6 +1306,42 @@ def min_total_cost(data, years, basis="chf", budget=None, constraints=(), discou
     cons = ([{"metric": "upfront_cost_chf", "max": budget}] if budget is not None else []) + list(constraints)
     return solve(data, {"metric": metric, "sense": "min"}, cons, horizon_years=years, discounted=discounted,
                  include_residual=include_residual, **common)
+
+
+# ------------------------------------------------------------------ solver behind optimize.solve()
+def solve_problem(problem, slots, evaluate):
+    """The solver for optimize.solve (the chat assistant's interface): solve(problem, slots, evaluate) -> plan.
+
+    problem is optimize.normalize()'s output (absolute limits, warnings <= 0 by default, events); slots are
+    taken exactly as given; the plan is {slot key: option id or None}. It searches with this module's fast
+    evaluator, ranking plans as optimize.py does: smallest summed relative violation, then the objective.
+    optimize.solve sets evaluate.data; evaluate is also used to check the answer against engine.simulate."""
+    data = getattr(evaluate, "data", None)
+    if data is None:
+        raise ValueError("search.solve_problem needs evaluate.data (optimize.solve sets it).")
+    space = _Space.from_slots(data, slots)
+    ctx = _ctx(data, tuple(problem.get("events") or ()), {}, int(data["params"]["horizon_years"]))
+    obj = (problem["objective"]["metric"], problem["objective"]["sense"])
+    cons = [(c["metric"], k, float(c[k])) for c in problem.get("constraints", []) for k in ("min", "max") if k in c]
+    names = [obj[0]] + [c[0] for c in cons]
+
+    def run():
+        s = _Search(space, ctx, obj, cons, _parse_tie_break(None, obj), False, True, missing=_BIG, abs_tol=True)
+        cfg, _ = s.run(_budget(ctx, SOLVE_PLANS))
+        return s, cfg
+
+    s, cfg = run()
+    plan = {sl["key"]: o for sl, o in zip(slots, cfg)}
+    if not _agrees(s.m(cfg), evaluate(plan)["metrics"], names):
+        # The fast path disagrees with engine.simulate (the engine changed?): search again on the engine itself.
+        ctx.use_engine = True
+        ctx.cache.clear()
+        s, cfg = run()
+        plan = {sl["key"]: o for sl, o in zip(slots, cfg)}
+    return plan
+
+
+_BIG = 1e6        # optimize.py's stand-in for a missing payback
 
 
 # ------------------------------------------------------------------ trade-off curve

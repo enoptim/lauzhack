@@ -472,6 +472,89 @@ def test_small_scope_is_exhaustive():
     check(r, all_plans(P1, events=P1_EVENTS), "comfort_score", "max", [("payback_years", "max", 3.9)], events=P1_EVENTS)
 
 
+# --- the solver behind optimize.solve (the chat assistant's interface)
+def _oscar_sets():
+    import optimize as OZ
+    groups = sorted(OZ._groups(D))
+    lock = lambda keep: [{"group": g} for g in groups if g not in keep]          # noqa: E731
+    # mixed: lighting is split by its locked floor 3, monitors stay one building-wide decision; with the new lab
+    mixed = {"locked": lock({"lighting", "monitors", "solar_pv"}) + [{"group": "lighting", "floor": 3}],
+             "allowed": {"lighting": ["lighting_current", "lighting_budget"], "monitors": ["monitors_current", "monitors_budget"]},
+             "events": ["new_lab"]}                                                                       # 32*2*2 = 128 plans
+    floors = {"per_floor": True, "allowed": {"ventilation": ["ventilation_current", "ventilation_budget", "ventilation_mid"],
+                                             "coffee": ["coffee_current", "coffee_budget"]},
+              "locked": lock({"ventilation", "coffee"}) + [{"group": "ventilation", "floor": f} for f in (-1, 3, 4)]
+              + [{"group": "coffee", "floor": f} for f in (3, 4)]}                                       # 8*27 = 216 plans
+    return OZ, (mixed, floors)
+
+
+def _oscar_score(OZ, prob, m):
+    """optimize.evaluate_scenario's ranking, from metrics: (summed relative violation, objective)."""
+    total = 0.0
+    for c in prob["constraints"]:
+        v = OZ._BIG if m[c["metric"]] is None else m[c["metric"]]
+        for bound, over in (("max", v - c.get("max", 0)), ("min", c.get("min", 0) - v)):
+            if bound in c and over > 1e-9:
+                total += over / max(abs(c[bound]), 1.0)
+    o = OZ._BIG if m[prob["objective"]["metric"]] is None else m[prob["objective"]["metric"]]
+    return round(total, 9), (o if prob["objective"]["sense"] == "min" else -o)
+
+
+def test_fast_path_matches_optimize_metrics():
+    """Every metric of optimize.py, with its definitions (horizon averages, warning entries), from the fast path."""
+    import optimize as OZ
+    for gran, events, seed in (("floor", ("new_lab",), 7), ("building", ("new_lab", "energy_price_spike", "heatwave_summer"), 8)):
+        space, ctx = O._Space(D, gran, None), O._ctx(D, events, {}, int(D["params"]["horizon_years"]))
+        for cfg in _random_plans(space, 4, seed) + [space.nothing()]:
+            fast = O._metrics(ctx.run(space, cfg), ctx.r, False, True)[0]
+            ref = OZ.metrics(D, OZ._simulate(D, space.scenario(cfg), list(events)))
+            for k in OZ.METRICS:
+                assert (fast[k] is None and ref[k] is None) or close(fast[k], ref[k], 1e-9), (k, fast[k], ref[k])
+
+
+@forced_search
+def test_optimize_solve_matches_brute_force_with_its_own_evaluate():
+    import itertools
+    OZ, sets = _oscar_sets()
+    for base in sets:
+        prob0 = OZ.normalize(D, {"objective": {"metric": "upfront_cost_chf"}, **base})
+        slot_list = OZ.slots(D, prob0)
+        plans = [dict(zip([s["key"] for s in slot_list], combo)) for combo in itertools.product(*[s["options"] for s in slot_list])]
+        allm = [OZ.metrics(D, OZ._simulate(D, OZ.to_scenario(slot_list, p), prob0["events"])) for p in plans]
+        top_up = max(m["upfront_cost_chf"] for m in allm)
+        problems = [{"objective": {"metric": "running_cost_chf_year"}, "constraints": [{"metric": "upfront_cost_chf", "max": 0.3 * top_up}]},
+                    {"objective": {"metric": "running_cost_chf_year"}},
+                    {"objective": {"metric": "npv_cash_chf"}, "allow_warnings": True},
+                    {"objective": {"metric": "upfront_cost_chf"}, "constraints": [{"metric": "electricity_kwh_year", "max_change_pct": -1}],
+                     "allow_warnings": True},
+                    {"objective": {"metric": "upfront_cost_chf"}, "constraints": [{"metric": "electricity_kwh_year", "max": 1000}]}]
+        for p in problems:
+            r = OZ.solve(D, {**base, **p})
+            assert r["solver"] == "search"
+            prob = r["problem"]
+            best = min(_oscar_score(OZ, prob, m) for m in allm)
+            got = OZ.evaluate_scenario(D, prob, r["best"]["scenario"])
+            assert abs(got["_total"] - best[0]) < 1e-9 and close(got["objective"], best[1]), (p, got["_total"], got["objective"], best)
+        assert not OZ.solve(D, {**base, **problems[-1]})["best"]["feasible"]           # the unreachable limit is reported
+
+
+def test_optimize_solve_beats_greedy_on_the_full_building():
+    import optimize as OZ
+    problems = [{"objective": {"metric": "running_cost_chf_year"}, "constraints": [{"metric": "upfront_cost_chf", "max": 200000}]},
+                {"objective": {"metric": "upfront_cost_chf"}, "constraints": [{"metric": "electricity_kwh_year", "max_change_pct": -20}]}]
+    for p in problems:
+        for per_floor in (False, True):
+            q = {**p, "per_floor": per_floor}
+            t = time.time()
+            s = OZ.solve(D, q)
+            dt = time.time() - t
+            g = OZ.solve(D, q, solver="greedy")["best"]
+            print(f"  optimize.solve per_floor={per_floor}: {dt:.2f} s, search {s['best']['objective']:.0f} vs greedy {g['objective']:.0f}")
+            assert dt < (6 if per_floor else 3)
+            sb = s["best"]
+            assert (sb["feasible"] and not g["feasible"]) or (sb["feasible"] == g["feasible"] and sb["objective"] <= g["objective"] + 1e-6)
+
+
 if __name__ == "__main__":
     tests = [v for k, v in dict(globals()).items() if k.startswith("test_")]
     failed = 0

@@ -108,7 +108,7 @@ To plug in another search, write a function `solve(problem, slots, evaluate) -> 
 - `slots`: the decisions, e.g. `{"key": "lighting@2", "group": "lighting", "floor": 2, "options": [null, "lighting_budget", ...]}`. `null` means keep what is there.
 - `plan`: `{slot key: option id or null}`.
 - `evaluate(plan)` runs the engine and returns the metrics, the limits missed, `feasible`, `objective` (lower is better) and `score` (objective plus a large penalty for missed limits, for solvers that want one number).
-- Then start the API with `OPTIMIZER=package.module:function`. Without it, a simple greedy search runs: it changes one decision at a time while that helps.
+- Then start the API with `OPTIMIZER=package.module:function`. Without it, the full search in `search.py` runs (see Search below); `OPTIMIZER=greedy` runs the simple greedy search instead, which changes one decision at a time while that helps.
 - An optimizer outside Python can call `POST /api/evaluate` instead.
 
 Tests: `python3 test_optimize.py` (also run by `make test`).

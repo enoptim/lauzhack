@@ -238,8 +238,15 @@ def _load_solver(solver):
     if callable(solver):
         return solver, getattr(solver, "__name__", "custom")
     spec = solver or os.environ.get("OPTIMIZER")
-    if not spec or spec == "greedy":
+    if spec == "greedy":
         return greedy, "greedy"
+    if not spec:
+        # The real optimizer plugs in here: search.py's solver, with greedy as the fallback.
+        try:
+            import search
+            return search.solve_problem, "search"
+        except ImportError:
+            return greedy, "greedy"
     mod, _, fn = spec.partition(":")
     return getattr(importlib.import_module(mod), fn or "solve"), spec
 
@@ -258,6 +265,7 @@ def solve(data, problem, solver=None):
             cache[k] = evaluate_scenario(data, prob, sc)
         return cache[k]
 
+    evaluate.data = data  # lets a solver use its own fast evaluator (search.py does)
     fn, name = _load_solver(solver)
     best = evaluate(fn(prob, slot_list, evaluate))
     today = evaluate({})
