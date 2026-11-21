@@ -2,9 +2,11 @@ import { useLayoutEffect, useRef } from 'react';
 import { Color, DoubleSide, InstancedMesh, Object3D, SRGBColorSpace } from 'three';
 import { sideRooms } from '../data/sideRooms';
 import { useTexture } from '@react-three/drei';
+import { Computer, Monitor, type WorkstationSelection } from './Furniture';
 
 type Part = [number, number, number, number, number, number, string];
 const parts: Part[] = [];
+const workstations: { monitor: [number, number, number]; computer: [number, number, number] }[] = [];
 const box = (...p: Part) => parts.push(p);
 const steel = '#818c90';
 function table(x: number, z: number, width: number, depth = 1.25) {
@@ -44,7 +46,10 @@ for (const {ring, seats, lab} of sideRooms) {
       for (const facing of (lab?[1]:[-1,1])) for (const dx of [-.56,.56]) {
         if (placed>=seats) break;
         chair(x+dx,z-facing*.95,facing,'#b83a30'); placed++;
-        if (lab) box(x+dx,1.05,z+.16,.52,.35,.04,'#333a42');
+        if (lab) workstations.push({
+          monitor: [x+dx, 1.05, z+.16],
+          computer: [x+dx+Math.sign(dx)*.4, 1, z+.16],
+        });
       }
     }
   }
@@ -78,7 +83,7 @@ for (const x of [-3,3]) {
   box(x,.8,-23.3,1.55,.72,.15,'#414348');
 }
 
-export default function GroundFloor() {
+export default function GroundFloor({ workstationSelection }: { workstationSelection?: WorkstationSelection }) {
   const banner = useTexture('/lauzhack-banner.svg');
   banner.colorSpace = SRGBColorSpace;
   const mesh = useRef<InstancedMesh>(null!);
@@ -92,5 +97,12 @@ export default function GroundFloor() {
     mesh.current.instanceColor!.needsUpdate = true;
     mesh.current.computeBoundingSphere();
   }, []);
-  return <>{glazing.map(({x,z,depth},i)=><mesh key={i} position={[x,1.8,z]}><boxGeometry args={[.06,3.6,depth]}/><meshStandardMaterial color="#a4c6ce" transparent opacity={.18} depthWrite={false}/></mesh>)}<mesh position={[0,10.65*4/3.5,-31.8]}><planeGeometry args={[2.8,11.2]}/><meshStandardMaterial map={banner} side={DoubleSide}/></mesh><instancedMesh ref={mesh} args={[undefined,undefined,parts.length]} castShadow receiveShadow><boxGeometry/><meshStandardMaterial roughness={.75}/></instancedMesh></>;
+  return <>{glazing.map(({x,z,depth},i)=><mesh key={i} position={[x,1.8,z]}><boxGeometry args={[.06,3.6,depth]}/><meshStandardMaterial color="#a4c6ce" transparent opacity={.18} depthWrite={false}/></mesh>)}<mesh position={[0,10.65*4/3.5,-31.8]}><planeGeometry args={[2.8,11.2]}/><meshStandardMaterial map={banner} side={DoubleSide}/></mesh><instancedMesh ref={mesh} args={[undefined,undefined,parts.length]} castShadow receiveShadow><boxGeometry/><meshStandardMaterial roughness={.75}/></instancedMesh>
+    {workstations.map(({ monitor, computer }, i) => (
+      <group key={i}>
+        <Monitor position={monitor} selection={workstationSelection?.monitors} />
+        <Computer position={computer} selection={workstationSelection?.computers} />
+      </group>
+    ))}
+  </>;
 }

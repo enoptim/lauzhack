@@ -31,12 +31,25 @@ export interface PreviewRequest {
   scenario?: Scenario;
   swap: Swap;
   events?: string[];
+  overrides?: Record<string, number>;
 }
 
 export interface FuturesRequest {
   scenarios: Record<string, Scenario>;
   n?: number;
   seed?: number;
+  /** Events switched on in every future, on top of the random ones. */
+  events?: string[];
+  /** Assumptions fixed in every future. */
+  overrides?: Record<string, number>;
+}
+
+export interface BreakevenRequest {
+  scenario?: Scenario;
+  events?: string[];
+  overrides?: Record<string, number>;
+  /** Assumption key to solve for. Default: electricity_price_chf_kwh. */
+  param?: string;
 }
 
 // ---------------------------------------------------------------- /api/catalog
@@ -87,6 +100,7 @@ export interface Catalog {
   items: CatalogItem[];
   events: CatalogEvent[];
   horizon_years: number;
+  limits: { capex_budget_chf: number; opening_reserve_chf: number; min_reserve_chf: number };
 }
 
 // ---------------------------------------------------------------- /api/simulate
@@ -311,6 +325,38 @@ export interface FuturesResult {
   compare: Record<string, { prob_better_cash: number; prob_better_economic: number }>;
   stories: { bad: FutureStory; typical: FutureStory; good: FutureStory };
   method: string;
+}
+
+// ---------------------------------------------------------------- /api/assumptions
+/** fact: EPFL plans. research: a cited study. guess: our estimate or design choice. result: derived from other numbers. */
+export type AssumptionLabel = 'fact' | 'research' | 'guess' | 'result';
+
+export interface Assumption {
+  key: string;
+  value: number;
+  low: number;
+  high: number;
+  unit: string;
+  category: string;
+  source: string;
+  description: string;
+  label: AssumptionLabel;
+}
+
+// ---------------------------------------------------------------- /api/breakeven
+export interface BreakevenPoint {
+  /** Value of the assumption where NPV = 0; null if the plan always or never pays off in the search range. */
+  value: number | null;
+  pays_off: 'above' | 'below' | 'always' | 'never';
+  npv_at_current?: number;
+}
+
+export interface BreakevenResult {
+  param: string;
+  current: number;
+  search_range: [number, number];
+  npv_cash: BreakevenPoint;
+  npv_economic: BreakevenPoint;
 }
 
 // ---------------------------------------------------------------- /api/chat (chat/README.md)
