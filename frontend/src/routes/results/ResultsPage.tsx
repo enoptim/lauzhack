@@ -29,7 +29,7 @@ const TIMINGS: { value: Timing; label: string }[] = [
   { value: 5, label: 'In year 5' },
   { value: 8, label: 'In year 8' },
 ];
-const MS_PER_YEAR = 450;
+const MS_PER_YEAR = 250;
 
 function optionName(catalog: Catalog | null, group: string, optionId: string | undefined) {
   return catalog?.groups[group]?.find(item => item.option_id === optionId)?.name;
