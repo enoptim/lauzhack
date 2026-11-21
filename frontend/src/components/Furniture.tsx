@@ -40,8 +40,12 @@ export function CoffeeMachine(props: DeviceProps) {
     </mesh>
   </Device>;
 }
-export function Box({ size, color, ...props }: Omit<ThreeElements['mesh'], 'args'> & { size: [number, number, number]; color: string }) {
-  return <mesh castShadow receiveShadow {...props}><boxGeometry args={size}/><meshStandardMaterial color={color} roughness={.75}/></mesh>;
+export function Box({ size, color, children, ...props }: Omit<ThreeElements['mesh'], 'args'> & { size: [number, number, number]; color: string }) {
+  return <mesh castShadow receiveShadow {...props}>
+    <boxGeometry args={size} />
+    <meshStandardMaterial color={color} roughness={.75} />
+    {children}
+  </mesh>;
 }
 export function Desk({ position, workstationSelection }: { position: [number, number, number]; workstationSelection?: WorkstationSelection }) {
   return <group position={position}>

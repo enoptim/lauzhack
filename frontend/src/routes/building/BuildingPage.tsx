@@ -4,7 +4,9 @@ import { useNavigate } from 'react-router';
 import BuildingScene from '@/components/BuildingScene';
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { FLOOR_COUNT } from '@/data/building';
-import { draftKey, equipmentForFloor, equipmentLabels, lightingItems, type EquipmentGroup, type EquipmentSwap } from './equipment';
+import { draftKey, equipmentForFloor, equipmentLabels, isBuildingWide, lightingItems, type EquipmentGroup, type EquipmentSwap } from './equipment';
+
+import RoofEquipment from './RoofEquipment';
 
 const keepCurrent = 'keep-current';
 const selectableOutline = '#f5ad20';
@@ -17,17 +19,16 @@ export default function BuildingPage() {
   const [draft, setDraft] = useState(() => new Map<string, EquipmentSwap>());
   const navigate = useNavigate();
   const floorLights = lightingItems.filter(item => item.floor === floor);
-  const equipment = floor !== null && selectedGroup ? equipmentForFloor(floor, selectedGroup) : null;
+  const equipment = selectedGroup ? equipmentForFloor(floor, selectedGroup) : null;
+  const solarDraft = draft.get(draftKey(null, 'solar_pv'));
 
-  function chooseOption(option: string) {
-    if (floor === null || !selectedGroup) return;
-    const key = draftKey(floor, selectedGroup);
+  function chooseOption(group: EquipmentGroup, option: string) {
+    const key = draftKey(floor, group);
     setDraft(previous => {
       const next = new Map(previous);
       if (option === keepCurrent) next.delete(key);
-      else next.set(key, selectedGroup === 'water_heater'
-        ? { group: selectedGroup, option }
-        : { group: selectedGroup, floor, option });
+      else if (isBuildingWide(group)) next.set(key, { group, option });
+      else if (floor !== null) next.set(key, { group, floor, option });
       return next;
     });
   }
@@ -46,6 +47,8 @@ export default function BuildingPage() {
           monitors: selectionFor('monitors'), computers: selectionFor('computers'), coffee: selectionFor('coffee'),
           water_heater: selectionFor('water_heater'), servers: selectionFor('servers'),
         } : undefined}>
+          {floor === null && <RoofEquipment ventilation={selectionFor('ventilation')}
+            solar={solarDraft ? selectionFor('solar_pv') : undefined} />}
           {floor !== null && floorLights.map(item => (
             <mesh
               key={item.id}
@@ -83,14 +86,23 @@ export default function BuildingPage() {
             </SelectContent>
           </Select>
         </div>
-        {equipment && selectedGroup && floor !== null ? (
+        {floor === null && !solarDraft && (
+          <button type="button" className="rounded-md border border-input px-4 py-2 text-sm font-medium hover:bg-accent"
+            onClick={() => {
+              chooseOption('solar_pv', 'solar_pv_upgrade');
+              setSelectedGroup('solar_pv');
+            }}>
+            Add solar panels
+          </button>
+        )}
+        {equipment && selectedGroup ? (
           <section className="flex flex-col gap-2">
-            <h2 className="font-medium">{equipmentLabels[selectedGroup]} · {floorLabel(floor)}</h2>
+            <h2 className="font-medium">{equipmentLabels[selectedGroup]} · {isBuildingWide(selectedGroup) || floor === null ? 'Whole building' : floorLabel(floor)}</h2>
             <p className="text-sm text-muted-foreground">Installed: {equipment.installed?.name ?? 'Mixed equipment'}</p>
             <label htmlFor="equipment-option" className="text-sm font-medium">
-              {selectedGroup === 'water_heater' ? 'Configuration for the whole building' : 'Configuration for the whole floor'}
+              {isBuildingWide(selectedGroup) ? 'Configuration for the whole building' : 'Configuration for the whole floor'}
             </label>
-            <Select value={draft.get(draftKey(floor, selectedGroup))?.option ?? keepCurrent} onValueChange={chooseOption}>
+            <Select value={draft.get(draftKey(floor, selectedGroup))?.option ?? keepCurrent} onValueChange={option => chooseOption(selectedGroup, option)}>
               <SelectTrigger id="equipment-option" className="w-full"><SelectValue /></SelectTrigger>
               <SelectContent position="popper" className="w-(--radix-select-trigger-width)">
                 <SelectGroup>
@@ -104,7 +116,7 @@ export default function BuildingPage() {
           </section>
         ) : (
           <p className="text-sm text-muted-foreground">
-            {floor === null ? 'Choose a floor to see its equipment.'
+            {floor === null ? 'Click an outlined rooftop unit or choose a floor to see its equipment.'
               : floor === -1 ? 'Click an outlined hot-water tank or server rack to configure that equipment.'
               : 'Click any outlined item to configure that equipment for the whole floor.'}
           </p>
