@@ -364,6 +364,63 @@ AGE_BY_FLOOR = {
 AGE_BY_ROOM = {("BC_463", "printers_3d"): 2}
 
 
+# People effects from the literature (values checked against the papers/abstracts). The mapping from
+# product facts to these effects lives in Oscar's own file.
+ALLEN = "Allen et al. 2016, Environ Health Perspect 124:805-812, doi:10.1289/ehp.1510037"
+MILTON = "Milton, Glencross & Walters 2000, Indoor Air 10:212-221, doi:10.1034/j.1600-0668.2000.010004212.x"
+SEPPANEN = "Seppanen, Fisk & Lei 2006, LBNL-60946, https://www.osti.gov/biblio/903490"
+UFP = ("Stephens et al. 2013, Atmos Environ 79:334, doi:10.1016/j.atmosenv.2013.06.050; Kim et al. 2015, ES&T 49:12044, "
+       "doi:10.1021/acs.est.5b02805; Azimi et al. 2016/2017, doi:10.1021/acs.est.5b04983, doi:10.1111/jiec.12578")
+LITERATURE = [
+    dict(key="cognitive_score_change_pct_per_400ppm_co2", value=-21, low=-41, high=0, unit="% per 400 ppm",
+         description="Change in decision-making test scores (not productivity directly) per 400 ppm more CO2, "
+                     "ventilation held constant, 24 people in a lab office. Low = steepest step in the study "
+                     "(945 to 1400 ppm); high = 0 because a later study found no effect of CO2 alone",
+         source=ALLEN + "; high: Zhang et al. 2017, Indoor Air 27:47-64, doi:10.1111/ina.12284"),
+    dict(key="cognitive_score_ratio_945_vs_550ppm_co2", value=0.85, low=0.75, high=0.95, unit="ratio",
+         description="Cognitive score at ~945 ppm CO2 relative to ~550 ppm (bounds from the paper's Table 5 CIs)",
+         source=ALLEN),
+    dict(key="cognitive_score_ratio_1400_vs_550ppm_co2", value=0.50, low=0.42, high=0.58, unit="ratio",
+         description="Cognitive score at ~1400 ppm CO2 relative to ~550 ppm (bounds from the paper's Table 5 CIs)",
+         source=ALLEN),
+    dict(key="sick_leave_rr_moderate_vs_high_outdoor_air", value=1.53, low=1.22, high=1.92, unit="relative risk",
+         description="Relative risk of short-term sick leave with ~12 L/s (43 m3/h) vs ~24 L/s (86 m3/h) outdoor air "
+                     "per person; office workers, 40 buildings, observational (95% CI)", source=MILTON),
+    dict(key="sick_leave_attributable_pct_moderate_outdoor_air", value=35, low=18, high=48, unit="%",
+         description="Share of short-term sick leave among people at ~12 L/s per person that is due to the lower "
+                     "ventilation; low/high derived from the relative risk CI as (RR-1)/RR", source=MILTON),
+    dict(key="temperature_optimum_performance_c", value=21.75, low=21, high=24, unit="C",
+         description="Room temperature with the highest office-task performance. Fitted curve (relative to max): "
+                     "P = 0.1647524*T - 0.0058274*T^2 + 0.0000623*T^3 - 0.4685328; meta-analysis, high uncertainty",
+         source=SEPPANEN),
+    dict(key="relative_performance_at_30c", value=0.911, low=0.90, high="", unit="share of max",
+         description="Office-task performance at 30 C relative to the optimum (no CI reported; low from the "
+                     "authors' 2003 model)", source=SEPPANEN),
+    dict(key="performance_loss_pct_per_c_above_25c", value=1.4, low=1.1, high=2.0, unit="% per C",
+         description="Performance lost per degree between 25 and 30 C (from the fitted curve; high from the "
+                     "authors' 2003 model)", source=SEPPANEN),
+    dict(key="headache_eyestrain_ratio_flicker_free_vs_flickering", value=0.5, low="", high=0.5, unit="ratio",
+         description="Weekly headaches and eyestrain under flicker-free (high-frequency) vs 100 Hz flickering "
+                     "fluorescent light: 'more than halved'; double-blind office study, no CI in the abstract",
+         source="Wilkins et al. 1989, Lighting Res Technol 21:11-18, doi:10.1177/096032718902100102"),
+    dict(key="sleep_gain_min_per_night_daylit_workplace", value=46.7, low=7.9, high=85.5, unit="min/night",
+         description="Extra sleep on workday nights for workers with windows vs windowless workplaces (small pilot; "
+                     "daylight, not artificial lighting, so only a proxy for circadian lighting)",
+         source="Boubekri et al. 2014, J Clin Sleep Med 10:603-611, doi:10.5664/jcsm.3780"),
+    dict(key="ufp_emission_rate_pla_per_min", value=460000000, low=110000000, high=20000000000,
+         unit="particles/min", description="Ultrafine particles emitted by an open desktop 3D printer using PLA "
+                                           "(range across three studies)", source=UFP),
+    dict(key="ufp_emission_rate_abs_per_min", value=61000000000, low=16000000000, high=190000000000,
+         unit="particles/min", description="Ultrafine particles emitted by an open desktop 3D printer using ABS "
+                                           "(range across three studies)", source=UFP),
+    dict(key="printer_enclosure_ufp_reduction_pct", value=80, low=67, high=99.95, unit="%",
+         description="Reduction in ultrafine particles from enclosing the printer with filtration (chamber tests; "
+                     "low = enclosure without filter, high = enclosure with HEPA)",
+         source="Azimi, Fazli & Stephens 2017, doi:10.1111/jiec.12578; Kwon et al. 2017, ES&T 51:10357, "
+                "doi:10.1021/acs.est.7b01454; Barnes et al. 2025, Rapid Prototyping J, doi:10.1108/rpj-05-2025-0182"),
+]
+
+
 def age_of(group, room, served_floor=None):
     if (room["room_id"], group) in AGE_BY_ROOM:
         return AGE_BY_ROOM[(room["room_id"], group)]
@@ -574,7 +631,7 @@ def main():
         dict(key="green_loan_rate_pct", value=2.5, low=1.5, high=4.0, unit="%/yr",
              description="Interest on a green loan for energy upgrades", source=E),
     ]
-    write("assumptions.csv", ["key", "value", "low", "high", "unit", "description", "source"], A)
+    write("assumptions.csv", ["key", "value", "low", "high", "unit", "description", "source"], A + LITERATURE)
 
     # years count from 1 (first simulated year); empty end_year = until the end of the horizon;
     # empty months = the whole year
