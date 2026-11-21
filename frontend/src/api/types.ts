@@ -137,6 +137,8 @@ export interface FinanceYear {
   cash_closing_baseline: number;
   capex: number;
   capex_baseline: number;
+  /** Only in the last year: value left in the plan's equipment minus the do-nothing path's. */
+  residual_value: number;
   operating_cost: number;
   operating_cost_baseline: number;
   kwh: number;

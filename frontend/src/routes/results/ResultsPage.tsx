@@ -1,4 +1,4 @@
-import { ArrowLeft, Pause, Play, TriangleAlert } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Pause, Play, TriangleAlert } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router';
 import type { Catalog, SimulateResult, Swap } from '@/api/types';
@@ -11,20 +11,33 @@ import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { cn } from '@/lib/utils';
 import { readConfig } from './config';
 import { chf, chfShort, kwh, pricePerKwh, years } from './format';
-import KeyAssumptions from './KeyAssumptions';
 import { flagText, groupLabels, isContextFlag, seriesColor, whatIfLabels } from './labels';
 import MoneyBreakdown from './MoneyBreakdown';
-import MoneyChart from './MoneyChart';
+import MoneyChart, { crossing, moneyPoints, type Note } from './MoneyChart';
 import { useEngine, WHAT_IFS, type WhatIf } from './useEngine';
 
 const PRICE_KEY = 'electricity_price_chf_kwh';
 const TODAY_PRICE = 0.2;
+const PRICE_MIN = 0.1;
+const PRICE_MAX = 0.45;
+const HORIZONS = [5, 10, 15] as const;
+const MS_PER_YEAR = 450;
 
-function swapText(swap: Swap, catalog: Catalog | null) {
-  const option = catalog?.groups[swap.group]?.find(item => item.option_id === swap.option);
-  const where = swap.floor !== undefined ? (swap.floor === 0 ? 'ground floor' : `floor ${swap.floor}`) : 'whole building';
-  return `${option?.name ?? groupLabels[swap.group] ?? swap.group} · ${where}`;
+function optionName(catalog: Catalog | null, group: string, optionId: string | undefined) {
+  return catalog?.groups[group]?.find(item => item.option_id === optionId)?.name;
 }
+
+/** What is installed today for a swap's group (and floor), by the most common option. */
+function installedOption(catalog: Catalog | null, swap: Swap) {
+  const items = (catalog?.items ?? []).filter(item => item.group === swap.group
+    && (swap.floor === undefined || item.serves_floor === swap.floor));
+  const counts = new Map<string, number>();
+  for (const item of items) counts.set(item.option_id, (counts.get(item.option_id) ?? 0) + item.units);
+  const top = [...counts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0];
+  return optionName(catalog, swap.group, top);
+}
+
+const where = (swap: Swap) => swap.floor === undefined ? 'Whole building' : swap.floor === 0 ? 'Ground floor' : `Floor ${swap.floor}`;
 
 /** Years in which the plan leaves the savings account below its minimum and below doing nothing. */
 function belowMinimumRange(plan: SimulateResult): [number, number] | null {
@@ -38,6 +51,25 @@ function belowMinimumRange(plan: SimulateResult): [number, number] | null {
   return [hit[0], end];
 }
 
+/** Notes on the chart: the years where the money line jumps, in plain words. */
+function chartNotes(plan: SimulateResult): Note[] {
+  const notes: Note[] = [];
+  for (const y of plan.finance.years) {
+    const skipped = y.capex_baseline - y.capex;
+    if (skipped >= 50_000) {
+      notes.push({ year: y.year, title: `Skips a replacement · +${chfShort(skipped).replace('CHF ', 'CHF ')}`,
+        detail: `Without the upgrade, worn-out equipment would need replacing this year. With it, you skip ${chf(skipped)}.` });
+    }
+    if (Math.abs(y.residual_value ?? 0) >= 50_000) {
+      notes.push({ year: y.year, title: `Leftover value · ${chfShort(y.residual_value)}`,
+        detail: y.residual_value < 0
+          ? `At the end, the replacements you skipped would still be worth ${chf(-y.residual_value)}. That counts against the upgrade.`
+          : `At the end, the new equipment is still worth ${chf(y.residual_value)} more than doing nothing.` });
+    }
+  }
+  return notes;
+}
+
 export default function ResultsPage() {
   const [params] = useSearchParams();
   const read = readConfig(params);
@@ -46,20 +78,32 @@ export default function ResultsPage() {
   const [price, setPrice] = useState(read?.config.overrides[PRICE_KEY] ?? TODAY_PRICE);
   const [whatIfs, setWhatIfs] = useState<WhatIf[]>([]);
   const [staffEffects, setStaffEffects] = useState(false);
+  const [horizon, setHorizon] = useState<number>(15);
+  const [playToken, setPlayToken] = useState(0);
   const [playYear, setPlayYear] = useState<number | null>(null);
 
   const overrides = useMemo(() => ({ ...(read?.config.overrides ?? {}), [PRICE_KEY]: price }), [price, params]); // eslint-disable-line react-hooks/exhaustive-deps
   const engine = useEngine(scenario, overrides, whatIfs);
   const runs = engine.runs.data;
   const plan = runs?.plan;
-  const horizon = plan?.finance.years.length ?? 15;
+  const playMs = horizon * MS_PER_YEAR;
 
+  // The year counter runs alongside the chart's own drawing animation.
   useEffect(() => {
     if (playYear === null) return;
-    if (playYear >= horizon) { const done = setTimeout(() => setPlayYear(null), 900); return () => clearTimeout(done); }
-    const next = setTimeout(() => setPlayYear(playYear + 1), 380);
+    if (playYear >= horizon) { const done = setTimeout(() => setPlayYear(null), 1200); return () => clearTimeout(done); }
+    const next = setTimeout(() => setPlayYear(playYear + 1), MS_PER_YEAR);
     return () => clearTimeout(next);
   }, [playYear, horizon]);
+
+  function play() {
+    if (playYear !== null) { setPlayYear(null); return; }
+    setPlayToken(token => token + 1);
+    setPlayYear(0);
+  }
+
+  const notes = useMemo(() => (plan ? chartNotes(plan) : []), [plan]);
+  const belowMinimum = useMemo(() => (plan ? belowMinimumRange(plan) : null), [plan]);
 
   if (read === null) {
     return (
@@ -87,60 +131,60 @@ export default function ResultsPage() {
   }
 
   const finance = plan?.finance;
-  const npv = finance ? (staffEffects ? finance.npv_economic : finance.npv_cash) : 0;
-  const payback = finance ? (staffEffects ? finance.payback_economic : finance.payback_cash) : null;
+  const key = staffEffects ? 'cumulative_economic_cf' : 'cumulative_cash_cf';
+  const points = plan ? moneyPoints(plan, key, horizon) : [];
+  const endValue = points.at(-1)?.[1] ?? 0;
+  const payback = crossing(points);
   const breakeven = engine.breakeven.data?.npv_cash;
-  const visibleUntil = playYear ?? horizon;
-  const flags = (finance?.flags ?? []).filter(flag => !isContextFlag(flag));
-  const contextFlags = (finance?.flags ?? []).filter(isContextFlag);
+  const flags = (finance?.flags ?? []).filter(flag => !isContextFlag(flag) && (flag.year === undefined || flag.year <= horizon));
+  const contextFlags = (finance?.flags ?? []).filter(flag => isContextFlag(flag) && (flag.year === undefined || flag.year <= horizon));
   const today = plan?.snapshot_baseline.building;
   const after = plan?.snapshot.building;
+  const breakevenPct = breakeven?.value != null ? ((breakeven.value - PRICE_MIN) / (PRICE_MAX - PRICE_MIN)) * 100 : null;
 
   return (
     <main className="mx-auto flex w-full max-w-7xl flex-col gap-8 px-4 py-8 md:px-8">
-      <header className="flex flex-wrap items-start justify-between gap-4">
-        <div className="flex flex-col gap-1.5">
+      <section aria-label="What changed" className="flex flex-col gap-4 rounded-xl border bg-card p-4 md:flex-row md:items-center md:justify-between md:p-5">
+        <div className="flex flex-col gap-3">
           <Link to="/" className="flex w-fit items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground">
             <ArrowLeft className="size-4" /> Change the plan
           </Link>
-          <h1 className="text-xl font-semibold tracking-tight text-balance">
-            {scenario.length ? scenario.map(swap => swapText(swap, engine.catalog.data)).join(' + ') : 'No changes'}
-          </h1>
-          <p className="text-sm text-muted-foreground">
-            {finance ? `${chf(finance.capex_year0)} up front` : 'Calculating…'}
-            {read.isDemo && ' · demo plan'}
-          </p>
+          {scenario.length === 0 && <p className="text-lg font-semibold">No changes: this is today’s building.</p>}
+          <ul className="flex flex-col gap-2">
+            {scenario.map((swap, index) => (
+              <li key={index} className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                <span className="text-sm font-medium text-muted-foreground">{groupLabels[swap.group] ?? swap.group} · {where(swap)}</span>
+                <span className="flex flex-wrap items-center gap-2 text-lg">
+                  <span className="text-muted-foreground line-through decoration-1">{installedOption(engine.catalog.data, swap) ?? 'Today’s setup'}</span>
+                  <ArrowRight className="size-4 text-muted-foreground" />
+                  <span className="font-semibold">{optionName(engine.catalog.data, swap.group, swap.option) ?? swap.option}</span>
+                </span>
+              </li>
+            ))}
+          </ul>
         </div>
-        <Button variant="outline" size="lg" onClick={() => setPlayYear(playYear === null ? 1 : null)} disabled={!plan}>
-          {playYear === null ? <Play data-icon="inline-start" /> : <Pause data-icon="inline-start" />}
-          {playYear === null ? 'Play 15 years' : `Year ${playYear}`}
-        </Button>
-      </header>
-
-      <section aria-label="Verdict" className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
-        <div className="flex max-w-2xl flex-col gap-2">
-          {finance ? (
-            <>
-              <p className="text-4xl font-semibold tracking-tight text-balance md:text-5xl">
-                {npv >= 0 ? 'Gains' : 'Loses'} <span className={cn(npv < 0 && 'text-warning')}>{chfShort(Math.abs(npv))}</span> over {horizon} years
-              </p>
-              <p className="text-lg text-muted-foreground text-pretty">
-                {staffEffects ? 'Counting money and the value of better work and fewer sick days.' : 'Money only: purchase, energy and upkeep.'}
-                {!staffEffects && breakeven?.value != null && breakeven.pays_off === 'above' &&
-                  ` Pays off if electricity costs more than ${pricePerKwh(breakeven.value)}.`}
-                {!staffEffects && breakeven?.pays_off === 'always' && ' Pays off at any electricity price.'}
-              </p>
-            </>
-          ) : <Skeleton className="h-24 w-full max-w-xl" />}
+        <div className="flex flex-col gap-0.5 md:items-end">
+          <span className="text-sm text-muted-foreground">Up-front cost{read.isDemo && ' · demo plan'}</span>
+          <span className="text-2xl font-semibold tracking-tight tabular-nums">{finance ? chf(finance.capex_year0) : '…'}</span>
         </div>
       </section>
 
-      <dl aria-label="Today and after" className="-mt-2 grid grid-cols-2 gap-px overflow-hidden rounded-xl border bg-border md:grid-cols-4">
+      <section aria-label="Verdict" className="flex flex-col gap-2">
+        {finance ? (
+          <p className="text-4xl font-semibold tracking-tight text-balance md:text-5xl">
+            After {horizon} years: {endValue >= 0 ? 'ahead by ' : 'behind by '}
+            <span className={cn(endValue < 0 ? 'text-warning' : 'text-primary')}>{chfShort(Math.abs(endValue))}</span>
+          </p>
+        ) : <Skeleton className="h-14 w-full max-w-2xl" />}
+        <p className="text-lg text-muted-foreground">Compared with doing nothing{staffEffects ? ', counting staff effects' : ''}.</p>
+      </section>
+
+      <dl aria-label="Today and after" className="grid grid-cols-2 gap-px overflow-hidden rounded-xl border bg-border md:grid-cols-4">
         {[
           { label: 'Energy bill, year 1', before: today && chfShort(today.costs_chf.energy), now: after && chfShort(after.costs_chf.energy) },
           { label: 'Energy use, year 1', before: today && kwh(today.kwh_year), now: after && kwh(after.kwh_year) },
           { label: 'CO₂ in meeting rooms', before: today && `${Math.round(today.outcomes.meeting_co2_ppm)} ppm`, now: after && `${Math.round(after.outcomes.meeting_co2_ppm)} ppm` },
-          { label: 'Pays back in', before: null, now: finance ? years(payback) : null },
+          { label: 'Pays back in', before: null, now: finance ? (payback !== null ? years(payback) : `not within ${horizon} years`) : null },
         ].map(stat => (
           <div key={stat.label} className="flex flex-col gap-1 bg-card px-5 py-4">
             <dt className="text-sm text-muted-foreground">{stat.label}</dt>
@@ -153,12 +197,26 @@ export default function ResultsPage() {
       </dl>
 
       <section aria-label="Money over time" className="flex flex-col gap-5 rounded-xl border bg-card p-4 shadow-[0_1px_2px_oklch(0_0_0/0.04),0_8px_24px_-12px_oklch(0.3_0.02_60/0.14)] md:p-6">
-        <div className="flex flex-wrap items-start justify-between gap-x-8 gap-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-x-8 gap-y-4">
           <div className="flex flex-col gap-1">
             <h2 className="text-base font-semibold">Money compared with doing nothing</h2>
-            <p className="text-sm text-muted-foreground">What could happen? Switch on a what-if to add its line.</p>
+            <p className="text-sm text-muted-foreground">Below the line you are behind. Above it, the upgrade has paid for itself.</p>
           </div>
-          <ToggleGroup type="multiple" variant="outline" value={whatIfs} onValueChange={(value: string[]) => setWhatIfs(WHAT_IFS.filter(id => value.includes(id)))}>
+          <div className="flex flex-wrap items-center gap-3">
+            <ToggleGroup type="single" variant="outline" value={String(horizon)} aria-label="Years to show"
+              onValueChange={(value: string) => value && setHorizon(Number(value))}>
+              {HORIZONS.map(h => <ToggleGroupItem key={h} value={String(h)} className="px-3 tabular-nums">{h} years</ToggleGroupItem>)}
+            </ToggleGroup>
+            <Button size="lg" onClick={play} disabled={!plan} className="min-w-36 tabular-nums">
+              {playYear === null ? <Play data-icon="inline-start" /> : <Pause data-icon="inline-start" />}
+              {playYear === null ? `Play ${horizon} years` : playYear === 0 ? 'Today' : `Year ${playYear}`}
+            </Button>
+          </div>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-x-10 gap-y-4 border-y py-4">
+          <ToggleGroup type="multiple" variant="outline" value={whatIfs} aria-label="What if"
+            onValueChange={(value: string[]) => setWhatIfs(WHAT_IFS.filter(id => value.includes(id)))}>
             {WHAT_IFS.map(id => (
               <ToggleGroupItem key={id} value={id} className="gap-2 px-3">
                 <span className="size-2 rounded-[2px]" style={{ background: seriesColor[id] }} />
@@ -166,36 +224,41 @@ export default function ResultsPage() {
               </ToggleGroupItem>
             ))}
           </ToggleGroup>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-x-10 gap-y-4 border-y py-4">
-          <label className="flex min-w-0 flex-1 flex-wrap items-center gap-x-4 gap-y-2 text-sm sm:flex-nowrap">
-            <span className="shrink-0 text-muted-foreground">Electricity price</span>
-            <Slider min={0.1} max={0.45} step={0.01} value={[price]} onValueChange={([value]) => setPrice(value)} className="max-w-80" aria-label="Electricity price" />
+          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-4 gap-y-2 text-sm sm:flex-nowrap">
+            <span id="price-label" className="shrink-0 text-muted-foreground">Electricity price</span>
+            <div className="relative w-full max-w-72 py-3">
+              <Slider min={PRICE_MIN} max={PRICE_MAX} step={0.01} value={[price]} aria-labelledby="price-label"
+                onValueChange={([value]) => setPrice(Math.round(value * 100) / 100)} />
+              {breakevenPct !== null && breakevenPct >= 0 && breakevenPct <= 100 && !staffEffects && (
+                <span className="pointer-events-none absolute top-full -mt-1 -translate-x-1/2 text-xs whitespace-nowrap text-muted-foreground" style={{ left: `${breakevenPct}%` }}>
+                  ▲ pays off above {breakeven?.value?.toFixed(2)}
+                </span>
+              )}
+            </div>
             <span className="whitespace-nowrap font-medium tabular-nums">{pricePerKwh(price)}</span>
             {Math.abs(price - TODAY_PRICE) > 0.001 && (
-              <button type="button" className="text-muted-foreground underline underline-offset-4 hover:text-foreground" onClick={() => setPrice(TODAY_PRICE)}>Reset</button>
+              <Button variant="ghost" size="sm" onClick={() => setPrice(TODAY_PRICE)}>Back to today</Button>
             )}
-          </label>
-          <label className="flex items-center gap-3 text-sm">
-            <Switch checked={staffEffects} onCheckedChange={setStaffEffects} />
-            <span>Count staff effects <span className="text-muted-foreground">(depends on guesses)</span></span>
-          </label>
+          </div>
+          <div className="flex items-center gap-3 text-sm">
+            <Switch id="staff-effects" checked={staffEffects} onCheckedChange={setStaffEffects} />
+            <label htmlFor="staff-effects">Count staff effects <span className="text-muted-foreground">(depends on guesses)</span></label>
+          </div>
         </div>
 
         {runs ? (
           <MoneyChart
             runs={runs} whatIfs={whatIfs} staffEffects={staffEffects}
             fan={engine.futures.data?.summary.plan?.fan.cash ?? null}
-            visibleUntil={visibleUntil} belowMinimum={plan ? belowMinimumRange(plan) : null}
-            animate={playYear === null}
+            horizon={horizon} belowMinimum={belowMinimum} notes={notes}
+            playToken={playToken} playMs={playMs}
           />
-        ) : <Skeleton className="h-[26rem] w-full" />}
+        ) : <Skeleton className="h-[28rem] w-full" />}
 
         <p className="flex flex-wrap gap-x-6 gap-y-1 text-sm text-muted-foreground">
-          <span className="flex items-center gap-2"><span className="h-0.5 w-5 rounded bg-chart-1" />Solid line: money only</span>
-          <span className="flex items-center gap-2"><svg aria-hidden="true" width="20" height="4" className="text-chart-1"><line x1="0" y1="2" x2="20" y2="2" stroke="currentColor" strokeWidth="2" strokeDasharray="5 3" /></svg>Dashed line: depends on guesses about staff</span>
-          {!staffEffects && <span className="flex items-center gap-2"><span className="h-3 w-5 rounded-sm bg-chart-1/10" />Shaded band: range over 200 possible futures{engine.futures.loading && ' (updating…)'}</span>}
+          <span className="flex items-center gap-2"><svg aria-hidden="true" width="20" height="4" className="text-chart-1"><line x1="0" y1="2" x2="20" y2="2" stroke="currentColor" strokeWidth="3" /></svg>Solid: money only</span>
+          <span className="flex items-center gap-2"><svg aria-hidden="true" width="20" height="4" className="text-chart-1"><line x1="0" y1="2" x2="20" y2="2" stroke="currentColor" strokeWidth="2" strokeDasharray="5 3" /></svg>Dashed: depends on guesses about staff</span>
+          {!staffEffects && <span className="flex items-center gap-2"><span className="h-3 w-5 rounded-sm bg-chart-1/10" />Shaded: 8 in 10 of 200 possible futures fall here{engine.futures.loading && ' (updating…)'}</span>}
         </p>
       </section>
 
@@ -203,41 +266,29 @@ export default function ResultsPage() {
         <section aria-label="Where the money comes from" className="flex flex-col gap-4 rounded-xl border bg-card p-4 md:p-6">
           <div className="flex flex-col gap-1">
             <h2 className="text-base font-semibold">Where the money comes from</h2>
-            <p className="text-sm text-muted-foreground">Over {horizon} years, in today’s francs.</p>
+            <p className="text-sm text-muted-foreground">Over 15 years, with future francs counted at today’s value.</p>
           </div>
           {finance ? <MoneyBreakdown breakdown={finance.npv_breakdown} staffEffects={staffEffects} /> : <Skeleton className="h-40 w-full" />}
         </section>
 
-        <div className="flex flex-col gap-8">
-          <section aria-label="Warnings" className="flex flex-col gap-3 rounded-xl border bg-card p-4 md:p-6">
-            <h2 className="text-base font-semibold">Warnings</h2>
-            {flags.length === 0 && contextFlags.length === 0 && <p className="text-sm text-muted-foreground">No warnings for this plan.</p>}
-            <ul className="flex flex-col gap-2">
-              {flags.map(flag => {
-                const shown = playYear === null || flag.year === undefined || flag.year <= playYear;
-                return (
-                  <li key={`${flag.type}-${flag.year}`} className={cn('flex items-start gap-3 rounded-lg bg-warning/8 px-3 py-2.5 text-sm transition-opacity duration-500', !shown && 'opacity-0')}>
-                    <TriangleAlert className="mt-0.5 size-4 shrink-0 text-warning" />
-                    <span>{flag.year !== undefined && <span className="font-semibold">Year {flag.year}: </span>}{flagText(flag)}</span>
-                  </li>
-                );
-              })}
-              {contextFlags.map(flag => (
-                <li key={flag.type} className="px-3 text-sm text-muted-foreground">{flag.year !== undefined && `Year ${flag.year}: `}{flagText(flag)}</li>
-              ))}
-            </ul>
-          </section>
-
-          <section aria-label="Assumptions that matter most" className="flex flex-col gap-4 rounded-xl border bg-card p-4 md:p-6">
-            <div className="flex flex-col gap-1">
-              <h2 className="text-base font-semibold">What moves the result most</h2>
-              <p className="text-sm text-muted-foreground">The 15-year result with staff effects, from the low to the high value of each assumption.</p>
-            </div>
-            {engine.tornado.data && engine.assumptions.data
-              ? <KeyAssumptions tornado={engine.tornado.data} assumptions={engine.assumptions.data} />
-              : <Skeleton className="h-48 w-full" />}
-          </section>
-        </div>
+        <section aria-label="Warnings" className="flex flex-col gap-3 rounded-xl border bg-card p-4 md:p-6">
+          <h2 className="text-base font-semibold">Warnings</h2>
+          {flags.length === 0 && contextFlags.length === 0 && <p className="text-sm text-muted-foreground">No warnings for this plan.</p>}
+          <ul className="flex flex-col gap-2">
+            {flags.map(flag => {
+              const shown = playYear === null || flag.year === undefined || flag.year <= playYear;
+              return (
+                <li key={`${flag.type}-${flag.year}`} className={cn('flex items-start gap-3 rounded-lg bg-warning/8 px-3 py-2.5 text-sm transition-[opacity,translate] duration-500 ease-out', !shown && 'translate-y-1 opacity-0')}>
+                  <TriangleAlert className="mt-0.5 size-4 shrink-0 text-warning" />
+                  <span>{flag.year !== undefined && <span className="font-semibold">Year {flag.year}: </span>}{flagText(flag)}</span>
+                </li>
+              );
+            })}
+            {contextFlags.map(flag => (
+              <li key={flag.type} className="px-3 text-sm text-muted-foreground">{flag.year !== undefined && `Year ${flag.year}: `}{flagText(flag)}</li>
+            ))}
+          </ul>
+        </section>
       </div>
 
       <footer className="text-sm text-muted-foreground">The building is real. The numbers are our assumptions.</footer>

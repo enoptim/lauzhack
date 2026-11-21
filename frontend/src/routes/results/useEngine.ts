@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '@/api/client';
 import type {
-  Assumption, BreakevenResult, Catalog, FuturesResult, Scenario, SimulateResult, TornadoResult,
+  Assumption, BreakevenResult, Catalog, FuturesResult, Scenario, SimulateResult,
 } from '@/api/types';
 
 export type Load<T> = { data: T | null; error: string | null; loading: boolean };
@@ -49,9 +49,8 @@ export function useEngine(scenario: Scenario, overrides: Record<string, number>,
   });
 
   const breakeven = useCall<BreakevenResult>(base, () => api.breakeven({ scenario, overrides }));
-  // Slow calls (2-5 s) wait until the slider has settled.
+  // The futures run takes about 4.5 s, so it waits until the slider has settled.
   const futures = useCall<FuturesResult>(base, () => api.futures({ scenarios: { plan: scenario }, n: 200, seed: 2026, overrides }), 400);
-  const tornado = useCall<TornadoResult>(base, () => api.tornado({ scenario, overrides }), 400);
 
-  return { catalog, assumptions, runs, breakeven, futures, tornado };
+  return { catalog, assumptions, runs, breakeven, futures };
 }
