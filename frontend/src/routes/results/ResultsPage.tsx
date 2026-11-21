@@ -11,7 +11,7 @@ import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { cn } from '@/lib/utils';
 import { readConfig } from './config';
 import { chf, chfShort, kwh, pricePerKwh, years } from './format';
-import { flagText, groupLabels, isContextFlag, seriesColor, whatIfLabels } from './labels';
+import { flagText, groupLabels, isContextFlag, seriesColor, whatIfDetails, whatIfLabels } from './labels';
 import MoneyBreakdown from './MoneyBreakdown';
 import MoneyChart, { crossing, totals } from './MoneyChart';
 import { useEngine, WHAT_IFS, type WhatIf } from './useEngine';
@@ -202,19 +202,28 @@ export default function ResultsPage() {
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-x-10 gap-y-4 border-y py-4">
-          <ToggleGroup type="single" variant="outline" value={whatIf ?? ''} aria-label="What if"
-            onValueChange={(value: string) => setWhatIf((WHAT_IFS as readonly string[]).includes(value) ? (value as WhatIf) : null)}>
-            {WHAT_IFS.map(id => (
-              <ToggleGroupItem key={id} value={id} className="gap-2 px-3">
-                <span className="size-2 rounded-[2px]" style={{ background: seriesColor[id] }} />
-                {whatIfLabels[id]}
-              </ToggleGroupItem>
-            ))}
-          </ToggleGroup>
+        <div className="flex flex-col gap-2 border-t pt-4">
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+            <span id="what-if-label" className="text-sm font-medium">What if the world changes?</span>
+            <ToggleGroup type="single" variant="outline" value={whatIf ?? ''} aria-labelledby="what-if-label"
+              onValueChange={(value: string) => setWhatIf((WHAT_IFS as readonly string[]).includes(value) ? (value as WhatIf) : null)}>
+              {WHAT_IFS.map(id => (
+                <ToggleGroupItem key={id} value={id} className="gap-2 px-3">
+                  <span className="size-2 rounded-[2px]" style={{ background: seriesColor[id] }} />
+                  {whatIfLabels[id]}
+                </ToggleGroupItem>
+              ))}
+            </ToggleGroup>
+          </div>
+          <p className="min-h-5 text-sm text-muted-foreground" aria-live="polite">
+            {whatIf ? whatIfDetails[whatIf] : 'Pick one to replay both paths in that world. Click it again to go back.'}
+          </p>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-x-10 gap-y-4 border-b pb-4">
           <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-4 gap-y-2 text-sm sm:flex-nowrap">
             <span id="price-label" className="shrink-0 text-muted-foreground">Electricity price</span>
-            <div className="relative w-full max-w-72 py-3">
+            <div className="relative w-72 shrink-0 py-3">
               <Slider min={PRICE_MIN} max={PRICE_MAX} step={0.01} value={[price]} aria-labelledby="price-label"
                 onValueChange={([value]) => setPrice(Math.round(value * 100) / 100)} />
               {breakevenPct !== null && breakevenPct >= 0 && breakevenPct <= 100 && !staffEffects && (
@@ -223,10 +232,9 @@ export default function ResultsPage() {
                 </span>
               )}
             </div>
-            <span className="whitespace-nowrap font-medium tabular-nums">{pricePerKwh(price)}</span>
-            {Math.abs(price - TODAY_PRICE) > 0.001 && (
-              <Button variant="ghost" size="sm" onClick={() => setPrice(TODAY_PRICE)}>Back to today</Button>
-            )}
+            <span className="w-28 whitespace-nowrap font-medium tabular-nums">{pricePerKwh(price)}</span>
+            <Button variant="ghost" size="sm" onClick={() => setPrice(TODAY_PRICE)}
+              className={cn(Math.abs(price - TODAY_PRICE) < 0.001 && 'invisible')}>Back to today</Button>
           </div>
           <div className="flex items-center gap-3 text-sm">
             <Switch id="staff-effects" checked={staffEffects} onCheckedChange={setStaffEffects} />
@@ -235,7 +243,8 @@ export default function ResultsPage() {
         </div>
 
         {runs ? (
-          <MoneyChart rows={rows} horizon={horizon} staffEffects={staffEffects} playToken={playToken} playMs={playMs} />
+          <MoneyChart rows={rows} horizon={horizon} staffEffects={staffEffects} playToken={playToken} playMs={playMs}
+            equipment={[...new Set(scenario.map(swap => (groupLabels[swap.group] ?? swap.group).toLowerCase()))].join(' and ') || 'equipment'} />
         ) : <Skeleton className="h-[28rem] w-full" />}
 
         <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-2 text-sm text-muted-foreground">

@@ -2,9 +2,16 @@ import type { Flag } from '@/api/types';
 import type { WhatIf } from './useEngine';
 
 export const whatIfLabels: Record<WhatIf, string> = {
-  energy_price_spike: 'Price spike',
-  heatwave_summer: 'Heatwave',
-  new_lab: 'New lab',
+  energy_price_spike: 'Energy crisis',
+  heatwave_summer: 'Heatwave summer',
+  new_lab: '60 more staff',
+};
+
+/** One plain sentence per what-if: what happens, and when. Mirrors data/events.csv. */
+export const whatIfDetails: Record<WhatIf, string> = {
+  energy_price_spike: 'In year 3, electricity costs 80% more for a whole year, like in 2022.',
+  heatwave_summer: 'In year 6, a summer like 2003: the building needs 50% more cooling from June to August.',
+  new_lab: 'From year 4, a new lab moves in with 60 people for good: more fresh air, power and coffee needed.',
 };
 
 /** Fixed colour per line: the plan is always chart-1, each what-if keeps its own colour. */

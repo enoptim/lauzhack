@@ -21,6 +21,10 @@ export type Totals = {
   upgrade: number;
   /** What doing nothing spends on replacing worn-out equipment this year (0 if nothing). */
   nothingReplaces: number;
+  /** Doing nothing's total so far, split: extra energy and upkeep, replacements, lost staff value. */
+  nothingRunning: number;
+  nothingReplacedSoFar: number;
+  nothingStaff: number;
 };
 
 /**
@@ -31,17 +35,23 @@ export type Totals = {
  * With staff effects on, doing nothing also loses the value of better work and fewer sick days.
  */
 export function totals(run: SimulateResult, horizon: number, staffEffects: boolean): Totals[] {
-  const rows: Totals[] = [{ year: 0, nothing: 0, upgrade: run.finance.capex_year0, nothingReplaces: 0 }];
+  const rows: Totals[] = [{ year: 0, nothing: 0, upgrade: run.finance.capex_year0, nothingReplaces: 0, nothingRunning: 0, nothingReplacedSoFar: 0, nothingStaff: 0 }];
   let nothing = 0;
   let upgrade = run.finance.capex_year0;
+  let runningSoFar = 0;
+  let replacedSoFar = 0;
+  let staffSoFar = 0;
   for (const y of run.finance.years) {
     if (y.year > horizon) break;
     const replaces = Math.max(y.capex_baseline - y.capex, 0);
     const running = y.operating_cost_baseline - y.operating_cost;
     const people = staffEffects ? y.economic_cf - y.cash_cf : 0;
+    runningSoFar += Math.max(running, 0);
+    replacedSoFar += replaces;
+    staffSoFar += Math.max(people, 0);
     nothing += replaces + Math.max(running, 0) + Math.max(people, 0);
     upgrade += Math.max(y.capex - y.capex_baseline, 0) + Math.max(-running, 0) + Math.max(-people, 0);
-    rows.push({ year: y.year, nothing, upgrade, nothingReplaces: replaces });
+    rows.push({ year: y.year, nothing, upgrade, nothingReplaces: replaces, nothingRunning: runningSoFar, nothingReplacedSoFar: replacedSoFar, nothingStaff: staffSoFar });
   }
   return rows;
 }
@@ -67,6 +77,8 @@ type Props = {
   rows: Totals[];
   horizon: number;
   staffEffects: boolean;
+  /** What the plan replaces, in plain words, e.g. "ventilation". */
+  equipment: string;
   /** Changes on every press of Play; the chart then redraws from today over `playMs`. */
   playToken: number;
   playMs: number;
@@ -74,7 +86,7 @@ type Props = {
 
 type TooltipItem = { dataIndex: number };
 
-export default function MoneyChart({ rows, horizon, staffEffects, playToken, playMs }: Props) {
+export default function MoneyChart({ rows, horizon, staffEffects, equipment, playToken, playMs }: Props) {
   const host = useRef<HTMLDivElement>(null);
   const chart = useRef<echarts.ECharts | null>(null);
   const lastToken = useRef(playToken);
@@ -130,13 +142,23 @@ export default function MoneyChart({ rows, horizon, staffEffects, playToken, pla
           const r = rows[(raw as TooltipItem[])[0]?.dataIndex];
           if (!r) return '';
           const gap = r.nothing - r.upgrade;
+          const small = (text: string) => `<div style="color:${C.muted};font-size:12px;margin:1px 0 6px 14px">${text}</div>`;
           const line = (color: string, label: string, value: number) =>
-            `<div style="display:flex;justify-content:space-between;gap:20px"><span style="color:${C.muted}"><span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:${color};margin-right:6px"></span>${label}</span><b style="font-variant-numeric:tabular-nums">${chfShort(value)}</b></div>`;
-          return `<div style="font-weight:600;margin-bottom:6px">${r.year === 0 ? 'Today' : `After ${r.year} ${r.year === 1 ? 'year' : 'years'}`}</div>`
-            + line(C.nothing, 'Doing nothing', r.nothing)
-            + line(C.upgrade, 'With the upgrade', r.upgrade)
-            + `<div style="margin-top:6px;padding-top:6px;border-top:1px solid ${C.grid};font-weight:600">${gap >= 0 ? 'Ahead by' : 'Behind by'} ${chfShort(Math.abs(gap))}</div>`
-            + (r.nothingReplaces >= 50_000 ? `<div style="margin-top:4px;max-width:250px;white-space:normal;color:${C.muted}">This year, doing nothing must replace worn-out equipment: ${chf(r.nothingReplaces)}.</div>` : '');
+            `<div style="display:flex;justify-content:space-between;gap:20px"><span><span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:${color};margin-right:6px"></span>${label}</span><b style="font-variant-numeric:tabular-nums">${chfShort(value)}</b></div>`;
+          const nothingParts = [
+            r.nothingRunning > 0 && `higher energy and upkeep bills ${chfShort(r.nothingRunning)}`,
+            r.nothingReplacedSoFar > 0 && `replacing worn-out ${equipment} ${chfShort(r.nothingReplacedSoFar)}`,
+            r.nothingStaff > 0 && `lost staff value ${chfShort(r.nothingStaff)} (a guess)`,
+          ].filter(Boolean).join(' + ');
+          return `<div style="max-width:290px;white-space:normal">`
+            + `<div style="font-weight:600;margin-bottom:6px">${r.year === 0 ? 'Today' : `After ${r.year} ${r.year === 1 ? 'year' : 'years'}`}</div>`
+            + line(C.nothing, 'Doing nothing has cost', r.nothing)
+            + small(nothingParts || 'nothing extra yet')
+            + line(C.upgrade, 'The upgrade has cost', r.upgrade)
+            + small('the purchase today')
+            + `<div style="padding-top:6px;border-top:1px solid ${C.grid};font-weight:600">${r.year === 0 ? `You pay ${chfShort(r.upgrade)} up front` : gap >= 0 ? `The upgrade has saved you ${chfShort(gap)} so far` : `The upgrade still needs ${chfShort(-gap)} to pay for itself`}</div>`
+            + (r.nothingReplaces >= 50_000 ? `<div style="margin-top:6px;color:${C.muted}"><b style="color:${C.ink}">Why the grey line jumps:</b> this year the old ${equipment} would wear out. Doing nothing means buying new units for ${chf(r.nothingReplaces)}. With the upgrade, you already have them.</div>` : '')
+            + `</div>`;
         },
       },
       series: [
@@ -173,7 +195,7 @@ export default function MoneyChart({ rows, horizon, staffEffects, playToken, pla
       ],
     };
     instance.setOption(option, replay ? { notMerge: true } : { replaceMerge: ['series'] });
-  }, [rows, horizon, staffEffects, playToken, playMs]);
+  }, [rows, horizon, staffEffects, equipment, playToken, playMs]);
 
   return <div ref={host} role="img" aria-label="Money that depends on the choice: doing nothing compared with the upgrade" className="h-[24rem] w-full md:h-[28rem]" />;
 }
