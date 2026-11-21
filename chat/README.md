@@ -9,7 +9,7 @@ The language model can't run code. It can only ask for a tool.
 1. Every request to OpenRouter includes a list of tools: a name, a description and the inputs each one takes (`SCHEMAS` in `tools.py`).
 2. The model replies with either a final answer or a request to run a tool with certain inputs.
 3. `agent.py` runs that tool, which runs Oscar's engine (`model/engine.py`), and sends the result back to the model.
-4. This repeats until the model answers in plain text. A question takes 3 to 8 rounds.
+4. This repeats until the model answers in plain text. A goal takes 2 model calls: one to pick the tool and its inputs, one to write the answer. The optimizer tools put their plan in the app themselves, so no extra call is needed for that.
 
 The tools:
 - `get_building_overview`: today's bill, energy use, what's installed and what's worn out, air quality, money limits.
@@ -18,7 +18,7 @@ The tools:
 - `simulate_scenario`: runs the engine on a set of swaps, optionally with events such as a price spike.
 - `find_best_upgrades`: searches every combination of upgrades for a goal (`model/optimize.py`). Goals: the cheapest package that reaches a savings target, the most savings within a budget, or the lowest total cost over some years. It can keep some things as they are, change only some things, or force a change. When savings are counted on the energy bill or in kWh, a package may not raise total running costs (e.g. capsule coffee machines use less electricity but cost more in capsules), unless the user cares only about energy.
 - `upgrade_tradeoffs`: the best packages from cheapest to biggest saving, so people can see what more saving costs. Each package saves the most possible for its cost.
-- `show_scenario`: the package the model recommends, sent to the app.
+- `show_scenario`: simulates a package and sends it to the app. The two optimizer tools show their own plan, so the model uses this for a specific change or a different package.
 
 The model never does the maths. Every number it gives comes from the engine.
 

@@ -38,11 +38,11 @@ They want to know what to change, what it costs up front, what it saves, and whe
 
 Rules:
 - Every number you give must come from a tool. Never estimate or do your own sums on savings.
-- For a goal ("save CHF 10,000 a year", "cut energy use by 10%", "the best we can do with CHF 200k", "cheapest over 10 years"), call find_best_upgrades. It searches every combination, so don't build packages by hand. Then call show_scenario with the scenario it returns.
+- For a goal ("save CHF 10,000 a year", "cut energy use by 10%", "the best we can do with CHF 200k", "cheapest over 10 years"), call find_best_upgrades once. It searches every combination and puts its plan in the app, so answer straight from its result. Don't build packages by hand, and don't call show_scenario or simulate_scenario for that plan.
 - If find_best_upgrades says best_effort, say plainly that the target is out of reach, what the most achievable is, and what it costs.
-- For "what are my options" or "how does cost trade against savings", call upgrade_tradeoffs. Describe three packages: the cheapest useful one, the balanced one (knee_index) and the biggest saving. Show the one the user prefers; by default the balanced one.
+- For "what are my options" or "how does cost trade against savings", call upgrade_tradeoffs. Describe three packages: the cheapest useful one, the balanced one (knee_index) and the biggest saving. The app shows the balanced one; call show_scenario only if the user asked for another.
 - Use rank_upgrades to explore single upgrades.
-- When the user asks for a specific change, simulate it and show it.
+- When the user asks for a specific change, call show_scenario with it. It simulates too, so you don't need simulate_scenario first.
 - For what-if questions about the future (price spike, heatwave, new lab), pass the matching events. The single-year figures are for year 1; use what_if.by_year for the years the event hits.
 - "Energy bill" means the electricity bill. Running costs also include maintenance and supplies such as coffee capsules. Point out when an upgrade lowers the energy bill but raises running costs.
 - Mention comfort and health effects from the product descriptions when they matter (flicker-free light, fresher air, particle filters).
@@ -114,7 +114,9 @@ def chat(messages, scenario=None, on_tool=None):
                 result = tools.run(name, args)
                 if name == "show_scenario":
                     shown = tools.app_scenario(**args)
-                elif name == "upgrade_tradeoffs":
+                elif name in ("find_best_upgrades", "upgrade_tradeoffs"):  # these show their plan themselves
+                    shown = tools.auto_show(name, args, result)
+                if name == "upgrade_tradeoffs":
                     chart = tools.tradeoff_chart(result)
             except Exception as e:  # the model sees the error and can fix its call
                 result = {"error": str(e)}

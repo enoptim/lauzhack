@@ -76,8 +76,9 @@ SCHEMAS = [
     }},
     {"type": "function", "function": {
         "name": "show_scenario",
-        "description": "Sends a scenario to the app so people can see it. Call it once with the package you "
-                       "recommend, before your final answer.",
+        "description": "Simulates a scenario and sends it to the app so people can see it. Use it for a specific "
+                       "change the user asks for, or to show another package than the one find_best_upgrades or "
+                       "upgrade_tradeoffs already showed.",
         "parameters": {"type": "object", "properties": {
             "title": {"type": "string", "description": "Short name, e.g. 'LED lights on floors 1-3'."},
             "scenario": _SCENARIO, "events": _EVENTS_PARAM,
@@ -310,7 +311,7 @@ SCHEMAS += [
         "description": "Searches every combination of upgrades in the building model and returns the best package "
                        "for a goal. Use it for any goal or target: 'save CHF 10,000 a year', 'cut energy use by 10%', "
                        "'the best we can do with CHF 200k', 'cheapest over 10 years'. Its numbers match "
-                       "simulate_scenario. Pass the returned scenario to show_scenario. For a specific change "
+                       "simulate_scenario. The app shows the plan automatically. For a specific change "
                        "('what if we do X'), use simulate_scenario instead.",
         "parameters": {"type": "object", "properties": {
             "goal": {"type": "string", "enum": ["cheapest_for_target", "max_savings", "min_total_cost"],
@@ -324,6 +325,7 @@ SCHEMAS += [
                                            "percent is versus doing nothing."},
             "budget_chf": {"type": "number", "description": "The most it may cost up front, in CHF."},
             "years": {"type": "integer", "minimum": 1, "description": "Timeframe for min_total_cost."},
+            "title": {"type": "string", "description": "Short name for the plan in the app, e.g. 'Save CHF 10k a year'."},
             **_LIMIT_PARAMS,
         }, "required": ["goal"]},
     }},
@@ -331,7 +333,7 @@ SCHEMAS += [
         "name": "upgrade_tradeoffs",
         "description": "How up-front cost trades against yearly savings. Returns the best packages from cheapest "
                        "to biggest saving; each saves the most possible for its cost. Use it for 'what are my "
-                       "options' or 'how much does more saving cost'. The app plots them as a chart.",
+                       "options' or 'how much does more saving cost'. The app plots them as a chart and shows the balanced one.",
         "parameters": {"type": "object", "properties": {
             "savings": _SAVINGS_PARAM,
             "budget_chf": {"type": "number", "description": "Largest up-front cost to consider, in CHF."},
@@ -419,7 +421,7 @@ def _changes(changes, full=True):
 
 def find_best_upgrades(goal, savings="running_costs", target=None, target_unit=None, budget_chf=None, years=None,
                        keep=None, only=None, must_change=None, avoid_options=None, events=None,
-                       allow_higher_running_costs=False):
+                       allow_higher_running_costs=False, title=None):
     events = _events(events)
     metric = _savings(savings)[0]
     common = dict(scope=_scope(keep, only, must_change, avoid_options), events=events,
@@ -484,6 +486,18 @@ def upgrade_tradeoffs(savings="running_costs", budget_chf=None, keep=None, only=
                     "saves more for the same cost. knee_index is the balanced choice: past it, each extra franc buys "
                     "less saving. payback_years counts only extra_cost_vs_like_for_like_chf (worn-out units are replaced anyway), so it can be 0 for a costly package; it is null if it never pays back. npv_chf is the gain over the horizon "
                     "in today's money."}
+
+
+def auto_show(name, args, result):
+    """The app scenario for an optimizer tool's result: its plan, or the balanced point of the trade-off curve.
+    This saves the model a separate show_scenario call."""
+    events = _events(args.get("events"))
+    if name == "find_best_upgrades":
+        return app_scenario(args.get("title") or "Best plan for your goal", result["scenario"], events)
+    knee = result["points"][result["knee_index"]] if result["points"] else None
+    if not knee or not knee["scenario"]:
+        return None
+    return app_scenario("Balanced choice from the trade-off curve", knee["scenario"], events)
 
 
 def tradeoff_chart(result):
