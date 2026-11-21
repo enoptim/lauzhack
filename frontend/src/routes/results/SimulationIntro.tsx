@@ -2,7 +2,7 @@ import { Check } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Spinner } from '@/components/ui/spinner';
 import { cn } from '@/lib/utils';
-import Figurine from './Figurine';
+import PixelBuddy from './PixelBuddy';
 
 const STEP_MS = 520;
 
@@ -44,8 +44,8 @@ export default function SimulationIntro({ changes, ready, onDone }: Props) {
       className={cn('fixed inset-0 z-50 grid place-items-center bg-background px-6 transition-[opacity,filter] duration-500 ease-out',
         leaving && 'pointer-events-none opacity-0 blur-sm')}>
       <div className="flex w-full max-w-lg flex-col gap-8">
-        <div className="flex items-center gap-2">
-          <Figurine className="h-56 w-40 shrink-0" />
+        <div className="flex items-center gap-6">
+          <PixelBuddy className="w-32 shrink-0 sm:w-36" />
           {/* Fixed size, so the text can change without moving anything around it. */}
           <p className="flex h-20 flex-1 items-center gap-2.5 rounded-2xl rounded-bl-sm border bg-card px-4 text-base shadow-[0_8px_24px_-12px_oklch(0.3_0.02_60/0.25)]">
             <Spinner className={cn('size-4 shrink-0 text-primary', leaving && 'invisible')} />
