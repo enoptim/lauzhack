@@ -276,18 +276,18 @@ OPTIONS = [
     opt("heating_cooling_premium", "premium", "Lake-water heat pump (campus network)", "kW",
         "Heat pump in the basement on a lake-water loop: stable source temperature all year, cooling mostly "
         "free from the lake; frees the roof for solar panels.",
-        heating_efficiency=5.0, cooling_efficiency=8.0,
+        heating_efficiency=4.0, cooling_efficiency=8.0,
         purchase_chf_per_unit=800, install_chf_per_unit=900, lifetime_years=25, maintenance_chf_per_unit_year=8),
     # servers
     opt("servers_current", "current", "Server racks with room air conditioning", "rack",
         "Research compute running 24/7, cooled by old room AC units; heat is dumped outside.",
         power_on_w=3500, standby_w=0, hours_on_per_day=24, operating_days="all", cooling_efficiency=2.5,
-        purchase_chf_per_unit=25000, install_chf_per_unit=2000, lifetime_years=6, maintenance_chf_per_unit_year=1500),
+        purchase_chf_per_unit=80000, install_chf_per_unit=2000, lifetime_years=6, maintenance_chf_per_unit_year=1500),
     opt("servers_upgrade", "upgrade", "Consolidated servers + hot-aisle containment + free cooling", "rack",
         "Virtualised, newer servers do the same work with less power; contained hot aisle and outside-air "
         "free cooling most of the year.",
         power_on_w=2600, standby_w=0, hours_on_per_day=24, operating_days="all", cooling_efficiency=6.0,
-        purchase_chf_per_unit=30000, install_chf_per_unit=4000, lifetime_years=6, maintenance_chf_per_unit_year=1500),
+        purchase_chf_per_unit=90000, install_chf_per_unit=4000, lifetime_years=6, maintenance_chf_per_unit_year=1500),
     # 3D printers
     opt("printers_3d_current", "current", "Open-frame FDM 3D printers (2019)", "printer",
         "No enclosure, so ultrafine particles and fumes go straight into the room; heated bed often left on "
@@ -343,7 +343,7 @@ OPTIONS = [
     opt("solar_pv_upgrade", "upgrade", "Rooftop solar panels", "kWp",
         "Monocrystalline panels on the roof around the atrium skylight; electricity used on site first, "
         "surplus sold to the grid.",
-        purchase_chf_per_unit=900, install_chf_per_unit=450, lifetime_years=25, maintenance_chf_per_unit_year=15,
+        purchase_chf_per_unit=700, install_chf_per_unit=400, lifetime_years=25, maintenance_chf_per_unit_year=15,
         generation_kwh_per_unit_year=None),  # set from PVGIS in main()
 ]
 
@@ -383,10 +383,10 @@ LITERATURE = [
     dict(key="cognitive_score_ratio_1400_vs_550ppm_co2", value=0.50, low=0.42, high=0.58, unit="ratio",
          description="Cognitive score at ~1400 ppm CO2 relative to ~550 ppm (bounds from the paper's Table 5 CIs)",
          source=ALLEN),
-    dict(key="sick_leave_rr_moderate_vs_high_outdoor_air", value=1.53, low=1.22, high=1.92, unit="relative risk",
+    dict(key="sick_leave_rr_moderate_vs_high_outdoor_air", value=1.53, low=1.0, high=1.92, unit="relative risk",
          description="Relative risk of short-term sick leave with ~12 L/s (43 m3/h) vs ~24 L/s (86 m3/h) outdoor air "
-                     "per person; office workers, 40 buildings, observational (95% CI)", source=MILTON),
-    dict(key="sick_leave_attributable_pct_moderate_outdoor_air", value=35, low=18, high=48, unit="%",
+                     "per person; office workers, 40 buildings, observational (95% CI). Low = 1.0: Mendell 2014 found no link at 14 L/s and above", source=MILTON),
+    dict(key="sick_leave_attributable_pct_moderate_outdoor_air", value=35, low=0, high=48, unit="%",
          description="Share of short-term sick leave among people at ~12 L/s per person that is due to the lower "
                      "ventilation; low/high derived from the relative risk CI as (RR-1)/RR", source=MILTON),
     dict(key="temperature_optimum_performance_c", value=21.75, low=21, high=24, unit="C",
