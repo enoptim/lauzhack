@@ -4,8 +4,8 @@
 // Set VITE_API_URL to call a different host.
 import type {
   Assumption, BandsResult, BreakevenRequest, BreakevenResult, Catalog, ChatRequest, ChatResult, FuturesRequest, FuturesResult,
-  Granularity, OptimizeOptions, OptimizeRequest, OptimizeResult, ParetoRequest, ParetoResult,
-  PreviewRequest, PreviewResult,
+  Evaluation, Metric, OptimizationProblem, OptimizeResult, PreviewRequest, PreviewResult, Scenario,
+  Granularity, ParetoRequest, ParetoResult, SearchOptions, SearchRequest, SearchResult,
   RunRequest, SimulateResult, StressTestResult, TornadoResult,
 } from './types';
 
@@ -31,13 +31,17 @@ export const api = {
   futures: (body: FuturesRequest) => request<FuturesResult>('/api/futures', body),
   assumptions: () => request<Assumption[]>('/api/assumptions'),
   breakeven: (body: BreakevenRequest = {}) => request<BreakevenResult>('/api/breakeven', body),
-  /** The best set of upgrades for a goal. Takes up to ~5 s. */
-  optimize: (body: OptimizeRequest) => request<OptimizeResult>('/api/optimize', body),
-  /** Cost against saving: the packages no other package beats on both. Takes up to ~15 s. */
+  metrics: () => request<Metric[]>('/api/metrics'),
+  /** Best plan for a goal under limits. About 1 s, or a few seconds with per_floor. */
+  optimize: (problem: OptimizationProblem) => request<OptimizeResult>('/api/optimize', { problem }),
+  evaluate: (problem: OptimizationProblem, scenario: Scenario) => request<Evaluation>('/api/evaluate', { problem, scenario }),
+  /** The search's goal presets (cheapest for a target, most savings for a budget, lowest total cost). 1-3 s. */
+  search: (body: SearchRequest) => request<SearchResult>('/api/search', body),
+  /** Cost against saving: the packages no other package beats on both. About 4 s, under 1 s once warmed up. */
   pareto: (body: ParetoRequest = {}) => request<ParetoResult>('/api/pareto', body),
-  /** Metric names and zones, for building optimizer menus. */
-  optimizeOptions: (granularity: Granularity = 'floor') =>
-    request<OptimizeOptions>(`/api/optimize/options?granularity=${granularity}`),
+  /** Metric names and zones, for building search menus. */
+  searchOptions: (granularity: Granularity = 'floor') =>
+    request<SearchOptions>(`/api/search/options?granularity=${granularity}`),
   /** The assistant. Takes 10-30 s: it runs the engine several times before answering. */
   chat: (body: ChatRequest) => request<ChatResult>('/api/chat', body),
 };

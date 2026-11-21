@@ -21,6 +21,7 @@ from pydantic import BaseModel
 import engine
 import montecarlo
 import optimize
+import search
 import viz
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))  # repo root, for chat/
@@ -60,13 +61,17 @@ class Breakeven(BaseModel):
     param: str = "electricity_price_chf_kwh"
 
 
-class Chat(BaseModel):
-    messages: list
+class Optimize(BaseModel):
+    problem: dict
+
+
+class Evaluate(BaseModel):
+    problem: dict
     scenario: list = []
 
 
-class Optimize(BaseModel):
-    """See the Optimizer section in README.md. Fields a goal doesn't use are ignored."""
+class Search(BaseModel):
+    """See the Search section in README.md. Fields a goal doesn't use are ignored."""
     goal: Literal["min_cost_for_target", "max_savings", "min_total_cost", "custom"]
     metric: str | None = None             # min_cost_for_target, max_savings
     target: float | None = None           # min_cost_for_target
@@ -98,6 +103,11 @@ class Pareto(BaseModel):
     discounted: bool = False
     include_residual: bool = True
     max_points: int | None = 15
+
+
+class Chat(BaseModel):
+    messages: list
+    scenario: list = []
 
 
 @app.get("/api/catalog")
@@ -161,7 +171,33 @@ def breakeven(body: Breakeven):
     return viz.clean(engine.breakeven(DATA, body.scenario, body.events, body.overrides, body.param))
 
 
-def _optimize(b: Optimize):
+@app.get("/api/metrics")
+def metrics():
+    """Goals and limits an optimization problem can use (model/optimize.py)."""
+    return [{"metric": k, "unit": u, "sense": sense, "kind": kind, "description": d}
+            for k, (u, sense, kind, d) in optimize.METRICS.items()]
+
+
+@app.post("/api/optimize")
+def optimize_plan(body: Optimize):
+    """Best plan for a goal under limits. The problem format is in model/optimize.py."""
+    try:
+        return viz.clean(optimize.solve(DATA, body.problem))
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.post("/api/evaluate")
+def evaluate(body: Evaluate):
+    """Score one scenario against a problem: metrics, limits missed, objective. For optimizers outside Python."""
+    try:
+        res = optimize.evaluate_scenario(DATA, optimize.normalize(DATA, body.problem), body.scenario)
+    except (ValueError, KeyError) as e:
+        raise HTTPException(400, str(e))
+    return viz.clean({k: v for k, v in res.items() if not k.startswith("_")})
+
+
+def _search(b: Search):
     common = dict(scope=b.scope, events=b.events, overrides=b.overrides, granularity=b.granularity,
                   include_engine_output=b.include_engine_output)
     timeframe = dict(horizon_years=b.horizon_years, discounted=b.discounted, include_residual=b.include_residual)
@@ -169,26 +205,26 @@ def _optimize(b: Optimize):
         if b.metric is None or b.target is None:
             raise ValueError("min_cost_for_target needs a metric and a target.")
         cap = [{"metric": b.cost_metric, "max": b.budget}] if b.budget is not None else []
-        return optimize.min_cost_for_target(DATA, b.metric, b.target, cost_metric=b.cost_metric,
+        return search.min_cost_for_target(DATA, b.metric, b.target, cost_metric=b.cost_metric,
                                             constraints=b.constraints + cap, **common, **timeframe)
     if b.goal == "max_savings":
-        return optimize.max_savings(DATA, metric=b.metric or "operating_cost_saving_chf_year", budget=b.budget,
+        return search.max_savings(DATA, metric=b.metric or "operating_cost_saving_chf_year", budget=b.budget,
                                     cost_metric=b.cost_metric, constraints=b.constraints, **common, **timeframe)
     if b.goal == "min_total_cost":  # years is the timeframe here
         if b.years is None:
             raise ValueError("min_total_cost needs years.")
-        return optimize.min_total_cost(DATA, b.years, basis=b.basis, budget=b.budget, constraints=b.constraints,
+        return search.min_total_cost(DATA, b.years, basis=b.basis, budget=b.budget, constraints=b.constraints,
                                        discounted=b.discounted, include_residual=b.include_residual, **common)
     if not b.objective:
         raise ValueError("custom needs an objective, e.g. {\"metric\": \"upfront_cost_chf\", \"sense\": \"min\"}.")
-    return optimize.solve(DATA, b.objective, constraints=b.constraints, **common, **timeframe)
+    return search.solve(DATA, b.objective, constraints=b.constraints, **common, **timeframe)
 
 
-@app.post("/api/optimize")
-def optimize_plan(body: Optimize):
+@app.post("/api/search")
+def search_plan(body: Search):
     """Search for the best set of upgrades for a goal. ValueError (bad metric, conflicting scope) → 400."""
     try:
-        return viz.clean(_optimize(body))
+        return viz.clean(_search(body))
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -197,15 +233,15 @@ def optimize_plan(body: Optimize):
 def pareto(body: Pareto):
     """The plans no other plan beats on both axes (e.g. up-front cost vs yearly saving), sorted by x."""
     try:
-        return viz.clean(optimize.pareto(DATA, **body.model_dump()))
+        return viz.clean(search.pareto(DATA, **body.model_dump()))
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
 
-@app.get("/api/optimize/options")
-def optimize_options(granularity: Literal["floor", "building"] = "floor"):
+@app.get("/api/search/options")
+def search_options(granularity: Literal["floor", "building"] = "floor"):
     """Metrics and zones (decisions), so a UI can build its menus."""
-    return viz.clean({"metrics": optimize.METRICS, "zones": optimize.zones(DATA, granularity)})
+    return viz.clean({"metrics": search.METRICS, "zones": search.zones(DATA, granularity)})
 
 
 @app.get("/playground", include_in_schema=False)
@@ -219,8 +255,7 @@ def _warm_up():
     The optimizer keeps every plan it has tried, so the first "what are my options?" then takes about
     1 second instead of 4. Set TWIN_WARMUP=0 to skip it."""
     try:
-        optimize.pareto(DATA)                    # POST /api/pareto with the default settings
-        agent.tools.upgrade_tradeoffs()          # the assistant's upgrade_tradeoffs with the default settings
+        search.pareto(DATA)                      # POST /api/pareto with the default settings
     except Exception as e:                       # a failed warm-up only means the first request is slower
         print(f"Optimizer warm-up failed: {e!r}", file=sys.stderr)
 

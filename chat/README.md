@@ -1,6 +1,6 @@
 # Chat with the twin
 
-Ask the building a question in plain words, like "Cut our monthly energy bill by 5%. What does it cost and what's the ROI?" The assistant picks the upgrades, tests them in Oscar's engine, answers with cost, savings, payback and ROI, and hands the app a scenario to show.
+Ask the building a question in plain words, like "Cut our monthly energy bill by 5%. What does it cost and what's the ROI?" or "Lowest running costs for at most CHF 200k, but don't touch the ventilation." The assistant picks the upgrades, tests them in Oscar's engine, answers with cost, savings, payback and ROI, and hands the app a scenario to show.
 
 ## How it works
 
@@ -9,16 +9,16 @@ The language model can't run code. It can only ask for a tool.
 1. Every request to OpenRouter includes a list of tools: a name, a description and the inputs each one takes (`SCHEMAS` in `tools.py`).
 2. The model replies with either a final answer or a request to run a tool with certain inputs.
 3. `agent.py` runs that tool, which runs Oscar's engine (`model/engine.py`), and sends the result back to the model.
-4. This repeats until the model answers in plain text. A goal takes 2 model calls: one to pick the tool and its inputs, one to write the answer. The optimizer tools put their plan in the app themselves, so no extra call is needed for that.
+4. This repeats until the model answers in plain text. A question takes 3 to 8 rounds.
 
 The tools:
 - `get_building_overview`: today's bill, energy use, what's installed and what's worn out, air quality, money limits.
 - `list_options`: the products for one group, with prices and descriptions.
 - `rank_upgrades`: every single upgrade, ranked by payback, for the whole building or floor by floor.
 - `simulate_scenario`: runs the engine on a set of swaps, optionally with events such as a price spike.
-- `find_best_upgrades`: searches every combination of upgrades for a goal (`model/optimize.py`). Goals: the cheapest package that reaches a savings target, the most savings within a budget, or the lowest total cost over some years. It can keep some things as they are, change only some things, or force a change. When savings are counted on the energy bill or in kWh, a package may not raise total running costs (e.g. capsule coffee machines use less electricity but cost more in capsules), unless the user cares only about energy.
-- `upgrade_tradeoffs`: the best packages from cheapest to biggest saving, so people can see what more saving costs. Each package saves the most possible for its cost.
-- `show_scenario`: simulates a package and sends it to the app. The two optimizer tools show their own plan, so the model uses this for a specific change or a different package.
+- `list_metrics`: the goals and limits the optimizer understands, with today's value of each.
+- `optimize`: turns the user's goal and limits (budget, things that must not change, only certain options) into a problem for the optimizer in `model/optimize.py`, and returns the best plan it found next to today.
+- `show_scenario`: the package the model recommends, sent to the app.
 
 The model never does the maths. Every number it gives comes from the engine.
 
@@ -51,12 +51,7 @@ The reply:
   - `events`: any what-if events it used.
   - `item_ids`: the items that change. They match the mesh names, so they can be highlighted in 3D.
   - `summary`: the figures the assistant quoted, such as `upfront_cost_chf`, `energy_bill_chf_month` and `payback_years`.
-- `chart`: `null`, or a chart to draw when the assistant compared packages (`upgrade_tradeoffs`):
-  - `type`: `"pareto"`, meaning every point is a package no other package beats on both cost and saving.
-  - `x_metric`, `x_label`: up-front cost in CHF.
-  - `y_metric`, `y_label`: the yearly saving, e.g. "Running-cost saving (CHF/year)".
-  - `points`: sorted by cost. Each has `x`, `y`, a `label` listing the changes, and the `scenario` (swaps for `/api/simulate`).
-  - `knee_index`: the balanced point. Past it, each extra franc buys less saving.
+- `problem`: `null`, or the goal and limits the assistant optimized for. Show it so the user can check and correct it. The format is in [model/README.md](../model/README.md#optimizer-optimizepy).
 
 ## Files
 

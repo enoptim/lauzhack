@@ -404,37 +404,80 @@ export interface ChatScenario {
   summary: ChatScenarioSummary;
 }
 
-export interface ChatChartPoint {
-  x: number;
-  y: number;
-  /** The changes in words, e.g. "LED panels (floors 1, 2), Heat pump", or "Do nothing". */
-  label: string;
-  scenario: Scenario;
-}
-
-/** Up-front cost (x) against yearly saving (y). Every point is a package no other package beats on both. */
-export interface ChatChart {
-  type: 'pareto';
-  x_metric: string;
-  y_metric: string;
-  x_label: string;
-  y_label: string;
-  /** Sorted by x. */
-  points: ChatChartPoint[];
-  /** The balanced choice: past it, each extra franc buys less saving. */
-  knee_index: number;
-}
-
 export interface ChatResult {
   /** Markdown. */
   reply: string;
   /** Set when the assistant picked a scenario to show. */
   scenario: ChatScenario | null;
-  /** Set when the assistant compared packages (upgrade_tradeoffs). */
-  chart?: ChatChart | null;
+  /** The goal and limits the assistant optimized for, to show (and let the user correct). */
+  problem: OptimizationProblem | null;
 }
 
-// ---------------------------------------------------------------- /api/optimize, /api/pareto (model/README.md)
+// ---------------------------------------------------------------- /api/metrics, /api/optimize, /api/evaluate
+// The problem format and the solver interface are documented in model/optimize.py.
+export type MetricName =
+  | 'upfront_cost_chf' | 'extra_cost_vs_like_for_like_chf' | 'running_cost_chf_year' | 'energy_bill_chf_year'
+  | 'electricity_kwh_year' | 'npv_cash_chf' | 'npv_economic_chf' | 'payback_years' | 'lowest_reserve_chf'
+  | 'office_co2_ppm' | 'meeting_co2_ppm' | 'classroom_co2_ppm' | 'summer_overheating_degc' | 'sick_days'
+  | 'comfort_score' | 'warnings';
+
+export interface Metric {
+  metric: MetricName;
+  unit: string;
+  /** The natural direction: 'min' means lower is better. */
+  sense: 'min' | 'max';
+  kind: NumberKind;
+  description: string;
+}
+
+export interface ProblemConstraint {
+  metric: MetricName;
+  max?: number;
+  min?: number;
+  /** Relative to doing nothing, e.g. -20 = at least 20% lower. Turned into max/min by the server. */
+  max_change_pct?: number;
+  min_change_pct?: number;
+}
+
+export interface OptimizationProblem {
+  objective: { metric: MetricName; sense?: 'min' | 'max' };
+  constraints?: ProblemConstraint[];
+  /** Keep as today. Leave out floor to lock the whole group. */
+  locked?: { group: string; floor?: number }[];
+  /** Per group, the only options the plan may use. */
+  allowed?: Record<string, string[]>;
+  per_floor?: boolean;
+  /** By default a plan may not cause warnings. */
+  allow_warnings?: boolean;
+  events?: string[];
+}
+
+export interface Evaluation {
+  scenario: Scenario;
+  /** Money and energy are yearly averages over the horizon; air and comfort are year 1. payback_years is null if never. */
+  metrics: Record<MetricName, number | null>;
+  violations: ({ metric: MetricName; value: number | null; max?: number; min?: number })[];
+  feasible: boolean;
+  /** Lower is better (max metrics are negated). */
+  objective: number;
+  /** objective plus a large penalty for missed limits. */
+  score: number;
+  flags: Flag[];
+}
+
+export interface OptimizeResult {
+  /** The problem after defaults and relative limits were filled in. */
+  problem: OptimizationProblem;
+  best: Evaluation;
+  /** Doing nothing, for comparison. */
+  today: Evaluation;
+  solver: string;
+  evaluations: number;
+  decisions: number;
+  seconds: number;
+}
+
+// ---------------------------------------------------------------- /api/search, /api/pareto: the search behind optimize.py (model/README.md)
 /** Picks zones (one group in one place). floor and option narrow it; a list means any of them. */
 export interface ZoneSelector {
   group: string;
@@ -443,7 +486,7 @@ export interface ZoneSelector {
 }
 
 /** Hard limits on what may change. */
-export interface OptimizeScope {
+export interface SearchScope {
   /** If given, only these may change. */
   allowed?: ZoneSelector[];
   /** These stay as they are. */
@@ -454,14 +497,14 @@ export interface OptimizeScope {
   excluded_options?: string[];
 }
 
-/** A metric name from GET /api/optimize/options, with a lower and/or upper limit. */
+/** A metric name from GET /api/search/options, with a lower and/or upper limit. */
 export interface MetricConstraint {
   metric: string;
   min?: number;
   max?: number;
 }
 
-export interface OptimizeObjective {
+export interface SearchObjective {
   metric: string;
   /** Default: the metric's "better" direction. */
   sense?: 'min' | 'max';
@@ -469,7 +512,7 @@ export interface OptimizeObjective {
 
 export type Granularity = 'floor' | 'building';
 
-export interface OptimizeRequest {
+export interface SearchRequest {
   goal: 'min_cost_for_target' | 'max_savings' | 'min_total_cost' | 'custom';
   /** min_cost_for_target (the metric to reach) and max_savings (the metric to maximize). */
   metric?: string;
@@ -483,9 +526,9 @@ export interface OptimizeRequest {
   /** min_total_cost: lowest CHF or lowest kWh. */
   basis?: 'chf' | 'kwh';
   /** custom. */
-  objective?: OptimizeObjective;
+  objective?: SearchObjective;
   constraints?: MetricConstraint[];
-  scope?: OptimizeScope;
+  scope?: SearchScope;
   events?: string[];
   overrides?: Record<string, number>;
   granularity?: Granularity;
@@ -502,7 +545,7 @@ export interface ParetoRequest {
   /** Maximized. Default operating_cost_saving_chf_year. */
   y_metric?: string;
   constraints?: MetricConstraint[];
-  scope?: OptimizeScope;
+  scope?: SearchScope;
   events?: string[];
   overrides?: Record<string, number>;
   granularity?: Granularity;
@@ -520,7 +563,7 @@ export interface MetricInfo {
 }
 
 /** One decision: which option one group has in one place. */
-export interface OptimizeZone {
+export interface SearchZone {
   /** e.g. "lighting@2", or the group name for one-place groups. */
   zone: string;
   group: string;
@@ -532,12 +575,12 @@ export interface OptimizeZone {
   item_ids: string[];
 }
 
-export interface OptimizeOptions {
+export interface SearchOptions {
   metrics: Record<string, MetricInfo>;
-  zones: OptimizeZone[];
+  zones: SearchZone[];
 }
 
-export interface OptimizeChange {
+export interface SearchChange {
   zone: string;
   group: string;
   floor: number | null;
@@ -551,7 +594,7 @@ export interface OptimizeChange {
   item_ids: string[];
 }
 
-export interface OptimizeSettings {
+export interface SearchSettings {
   granularity: Granularity;
   horizon_years: number;
   discounted: boolean;
@@ -560,14 +603,14 @@ export interface OptimizeSettings {
   overrides: Record<string, number>;
 }
 
-export interface OptimizeSearch {
+export interface SearchInfo {
   evaluations: number;
   seconds: number;
   zones: number;
   method: string;
 }
 
-export interface OptimizeResult {
+export interface SearchResult {
   /** best_effort: no plan meets every constraint; this is the closest one. */
   status: 'ok' | 'best_effort';
   /** One plain sentence, e.g. why a target is out of reach. */
@@ -577,7 +620,7 @@ export interface OptimizeResult {
   constraints: (MetricConstraint & { value: number | null; met: boolean })[];
   /** Ready for /api/simulate; [] = do nothing. */
   scenario: Scenario;
-  changes: OptimizeChange[];
+  changes: SearchChange[];
   /** Every zone's option after the plan. */
   configuration: Record<string, string>;
   /** Every metric for the plan; null where it doesn't apply (e.g. a payback that never happens). */
@@ -585,17 +628,17 @@ export interface OptimizeResult {
   /** Doing nothing. */
   baseline: Record<string, number | null>;
   flags: Flag[];
-  settings: OptimizeSettings;
+  settings: SearchSettings;
   /** The /api/simulate output for the plan; null when include_engine_output is false. */
   engine: SimulateResult | null;
-  search: OptimizeSearch;
+  search: SearchInfo;
 }
 
 export interface ParetoPoint {
   x: number;
   y: number;
   scenario: Scenario;
-  changes: OptimizeChange[];
+  changes: SearchChange[];
   metrics: Record<string, number | null>;
 }
 
@@ -609,6 +652,6 @@ export interface ParetoResult {
   /** Points before thinning to max_points. */
   total_non_dominated: number;
   baseline: Record<string, number | null>;
-  settings: OptimizeSettings;
-  search: OptimizeSearch;
+  settings: SearchSettings;
+  search: SearchInfo;
 }
