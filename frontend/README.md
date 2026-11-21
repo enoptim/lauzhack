@@ -30,6 +30,6 @@ Keep each route mostly self-contained. For Assistant, work in `src/routes/assist
 
 ## Styling and shadcn/ui
 
-`src/styles.css` carries the theme from the original `global.css`, with Tailwind pointed at this app's source. Use theme classes such as `bg-background`, `text-foreground`, and `text-muted-foreground` instead of hard-coding colors.
+`src/styles.css` carries the theme, with Tailwind pointed at this app's source. Use theme classes such as `bg-background`, `text-foreground`, and `text-muted-foreground` instead of hard-coding colors.
 
-Pi's project-level shadcn MCP server can look up components and examples. Reuse the checked-in UI components first. If you need a new shadcn component, coordinate the addition before changing shared files.
+Use the [shadcn skill](../.claude/skills/shadcn/SKILL.md) when working with shadcn components. Claude Code and Pi discover the same project skill. It is based on [this upstream revision](https://github.com/shadcn-ui/ui/tree/bfa64ff4d1cb7317d2403ecb176df6826d4caffc/skills/shadcn) and uses the frontend's local CLI. Prefer browsing the registry using the MCP server. Add shadcn components from the registry rather than writing them yourself.
