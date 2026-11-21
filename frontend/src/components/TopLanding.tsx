@@ -27,7 +27,7 @@ export default function TopLanding() {
     {/* Room entry: gap in the west wall immediately off the landing. */}
     <CornerToilets/>
     <TieredSeminarRoom/>
-    <group position={[14.65,0,25.7]} scale={[.8,1,.88]}>
+    <group position={[14.35,0,25.7]} scale={[.73,1,.88]}>
       <Box size={[9.5,.04,17]} position={[0,.022,0]} color="#858482"/>
       <Box size={[9.5,3.5,.14]} position={[0,1.75,8.45]} color="#54585a"/>
       <Box size={[9.5,3.5,.14]} position={[0,1.75,-8.45]} color="#dbd8cb"/>

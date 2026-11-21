@@ -3,7 +3,7 @@ import { Box } from './Furniture';
 // Beyond the red-chair room along the same gallery. The front aisle and
 // gallery doorway are at grade; rows rise away from the presenter.
 export default function TieredSeminarRoom() {
-  return <group name="seminar-room-2" position={[14.65,0,10.6]}>
+  return <group name="seminar-room-2" position={[14.35,0,10.6]} scale={[.91,1,1]}>
     <Box size={[7.6,.04,15]} position={[0,.022,0]} color="#888785"/>
     <Box size={[7.6,3.5,.12]} position={[0,1.75,-7.45]} color="#dedbd1"/>
     {/* The adjacent room's end wall closes the presentation end. */}

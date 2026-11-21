@@ -26,11 +26,16 @@ function Floor({ level }: { level: number }) {
       {level > 0 && Array.from({ length: 12 }, (_, i) => {
         const z = -44 + i * 8;
         if (level === 4 && ((side === 1 && z >= -4) || (side === -1 && z < 36))) return null;
+        // The top floor steps back to x=±18 and z=±47. End each bay
+        // just inside the glazing, including the last partial bay.
+        const outer = level === 4 ? 17.8 : 19.85;
+        const inner = 12.35;
+        const depth = level === 4 ? Math.min(8, 46.8-z) : 8;
         return <group key={i}>
-          <Box size={[7.5, 2.7, .12]} color={white} position={[side * 16.1, 1.35, z]}/>
-          <Glass size={[.05, 2.8, 7.8]} position={[side * 12.3, 1.4, z + 4]}/>
+          <Box size={[outer-inner, 2.7, .12]} color={white} position={[side*(outer+inner)/2, 1.35, z]}/>
+          <Glass size={[.05, 2.8, depth-.2]} position={[side * 12.3, 1.4, z + depth/2]}/>
           <Box size={[.1, 3.3, .1]} color={metal} position={[side * 12.3, 1.65, z]}/>
-          <Desk position={[side * 16, 0, z + 3]}/>
+          {depth >= 4 && <Desk position={[side * 16, 0, z + 3]}/>}
         </group>;
       })}
       {level > 0 && <>
