@@ -156,7 +156,7 @@ export default function ResultsPage() {
 
       <section aria-label="Verdict" className="flex flex-col gap-2">
         {finance ? (
-          <p className="text-4xl font-semibold tracking-tight text-balance md:text-5xl">
+          <p className={cn("font-semibold tracking-tight text-balance", endValue >= 0 ? "text-4xl md:text-5xl" : "text-2xl sm:text-3xl")}>
             {endValue >= 0 ? <>After {horizon} years, the upgrade has saved <span className="text-primary">{chfShort(endValue)}</span></>
               : <>After {horizon} years, the upgrade still needs <span className="text-warning">{chfShort(-endValue)}</span> to pay for itself</>}
           </p>
