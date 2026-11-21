@@ -208,6 +208,10 @@ export default function ResultsPage() {
         <SimulationIntro ready={Boolean(plan && engine.catalog.data)} onDone={endIntro}
           changes={chosen.map(swap => `${groupLabels[swap.group] ?? swap.group} → ${optionName(engine.catalog.data, swap.group, swap.option) ?? swap.option}`)} />
       )}
+      <Button asChild variant="outline" size="lg" className="w-fit">
+        <Link to="/"><ArrowLeft data-icon="inline-start" /> Change the plan</Link>
+      </Button>
+
       {multi && (
         <section aria-label="Your plans" className="flex flex-col gap-3">
           <div className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1">
@@ -251,9 +255,6 @@ export default function ResultsPage() {
 
       <section aria-label="What changed" className="flex flex-col gap-4 rounded-xl border bg-card p-4 md:flex-row md:items-center md:justify-between md:p-5">
         <div className="flex flex-col gap-3">
-          <Link to="/" className="flex w-fit items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground">
-            <ArrowLeft className="size-4" /> Change the plan
-          </Link>
           {multi && <h2 className="text-sm font-semibold">{plans[selected]?.name}</h2>}
           {scenario.length === 0 && <p className="text-lg font-semibold">No changes: this is today’s building.</p>}
           <ul className="flex flex-col gap-2">
