@@ -5,6 +5,7 @@ import GroundFloor from './GroundFloor';
 import Staircase from './Staircase';
 import { FLOOR_COUNT, FLOOR_HEIGHT, WIDTH, LENGTH, LAYOUT_WIDTH, LAYOUT_LENGTH, STAIR_CENTER_Z, STAIR_OPENING_HALF } from '../data/building';
 import { Box, Desk, Plant, type FloorEquipmentSelection } from './Furniture';
+import BuildingBoxBatch, { type BuildingBoxPart } from './BuildingBoxBatch';
 
 const white = '#d9ddda';
 const metal = '#9ca8a9';
@@ -77,24 +78,35 @@ function Floor({ level, equipmentSelection, showBanner }: { level: number; equip
   </group>;
 }
 
+const facadeLevels = Array.from({ length: FLOOR_COUNT }, (_, floor) => {
+  const top = floor === FLOOR_COUNT - 1;
+  const xEdge = top ? 18 : 20;
+  const zEdge = top ? 47 : 50;
+  const frames = [-1, 1].flatMap(side => [
+    { size: [.22, .28, zEdge * 2], color: white, position: [side * xEdge, .14, 0] },
+    { size: [xEdge * 2, .28, .22], color: white, position: [0, .14, side * zEdge] },
+    ...Array.from({ length: 33 }, (_, i): BuildingBoxPart => ({
+      size: [.16, 3.5, .18], color: metal, position: [side * xEdge, 1.75, -zEdge + i * zEdge / 16],
+    })),
+    ...Array.from({ length: 17 }, (_, i): BuildingBoxPart => ({
+      size: [.16, 3.5, .18], color: metal, position: [-xEdge + i * xEdge / 8, 1.75, side * zEdge],
+    })),
+  ] satisfies BuildingBoxPart[]);
+  return { xEdge, zEdge, frames };
+});
+
 function Facade({ floors }: { floors: number }) {
   return <group>
-    {Array.from({ length: floors }, (_, f) => {
-      const top = f === 4;
-      const y = f * FLOOR_HEIGHT;
-      const xEdge = top ? 18 : 20;
-      const zEdge = top ? 47 : 50;
-      return <group key={f} position={[0,y,0]} scale={[1,FLOOR_HEIGHT/3.5,1]}><group position={[0,-y,0]}>
+    {facadeLevels.slice(0, floors).map(({ xEdge, zEdge, frames }, floor) => (
+      <group key={floor} position={[0, floor * FLOOR_HEIGHT, 0]} scale={[1, FLOOR_HEIGHT / 3.5, 1]}>
+        <BuildingBoxBatch parts={frames} />
+        {/* Keep glass separate so Three can sort the transparent panes. */}
         {[-1, 1].map(side => <group key={side}>
-          <Glass size={[.08, 3.2, zEdge * 2]} position={[side * xEdge, y + 1.7, 0]}/>
-          <Glass size={[xEdge * 2, 3.2, .08]} position={[0, y + 1.7, side * zEdge]}/>
-          <Box size={[.22, .28, zEdge * 2]} color={white} position={[side * xEdge, y + .14, 0]}/>
-          <Box size={[xEdge * 2, .28, .22]} color={white} position={[0, y + .14, side * zEdge]}/>
-          {Array.from({ length: 33 }, (_, i) => <Box key={i} size={[.16, 3.5, .18]} color={metal} position={[side * xEdge, y + 1.75, -zEdge + i * zEdge / 16]}/>)}
-          {Array.from({ length: 17 }, (_, i) => <Box key={i} size={[.16, 3.5, .18]} color={metal} position={[-xEdge + i * xEdge / 8, y + 1.75, side * zEdge]}/>)}
+          <Glass size={[.08, 3.2, zEdge * 2]} position={[side * xEdge, 1.7, 0]}/>
+          <Glass size={[xEdge * 2, 3.2, .08]} position={[0, 1.7, side * zEdge]}/>
         </group>)}
-      </group></group>;
-    })}
+      </group>
+    ))}
     {/* Red portal and ground-level horizontal louvres from the front reference. */}
     <Box size={[13, .55, .7]} color={red} position={[0, 2.85, 50.35]}/>
     {[-6.25, 6.25].map(x => <Box key={x} size={[.5, 2.85, .7]} color={red} position={[x, 1.425, 50.35]}/>)}

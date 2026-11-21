@@ -1,27 +1,48 @@
-import { Box } from '@/components/Furniture';
+import BuildingBoxBatch, { type BuildingBoxPart } from '@/components/BuildingBoxBatch';
 import { FLOOR_COUNT, FLOOR_HEIGHT, LAYOUT_LENGTH, LAYOUT_WIDTH, LENGTH, WIDTH } from '@/data/building';
 
 const blindWidth = 2.25;
 const blindHeight = 1.25;
+const blind: BuildingBoxPart[] = [
+  { size: [blindWidth, .2, .32], position: [0, .54, 0], color: '#6f7b80' },
+  ...Array.from({ length: 7 }, (_, i): BuildingBoxPart => ({
+    size: [blindWidth - .12, .055, .27], position: [0, .35 - i * .145, 0],
+    rotation: [.36, 0, 0], color: '#a6b0b2',
+  })),
+];
+const rim = [-1, 1].flatMap(side => [
+  { size: [.075, blindHeight, .07], position: [side * blindWidth / 2, 0, .17] },
+  { size: [blindWidth + .075, .075, .07], position: [0, side * blindHeight / 2, .17] },
+] satisfies BuildingBoxPart[]);
 
-function Blind({ outline }: { outline: string }) {
-  return <group>
-    <Box size={[blindWidth, .2, .32]} position={[0, .54, 0]} color="#6f7b80" />
-    {Array.from({ length: 7 }, (_, i) => (
-      <Box key={i} size={[blindWidth - .12, .055, .27]} position={[0, .35 - i * .145, 0]}
-        rotation={[.36, 0, 0]} color="#a6b0b2" />
-    ))}
-    {[-1, 1].map(side => <group key={side}>
-      <mesh position={[side * blindWidth / 2, 0, .17]}>
-        <boxGeometry args={[.075, blindHeight, .07]} />
-        <meshBasicMaterial color={outline} toneMapped={false} />
-      </mesh>
-      <mesh position={[0, side * blindHeight / 2, .17]}>
-        <boxGeometry args={[blindWidth + .075, .075, .07]} />
-        <meshBasicMaterial color={outline} toneMapped={false} />
-      </mesh>
-    </group>)}
-  </group>;
+const blindParts: BuildingBoxPart[] = [];
+const rimParts: BuildingBoxPart[] = [];
+
+function addBlind(x: number, y: number, z: number, yaw: number) {
+  const sin = Math.sin(yaw);
+  const cos = Math.cos(yaw);
+  function place(part: BuildingBoxPart): BuildingBoxPart {
+    const [dx, dy, dz] = part.position;
+    return {
+      ...part,
+      position: [x + dx * cos + dz * sin, y + dy, z - dx * sin + dz * cos],
+      // Tilt each slat in its local frame before turning the blind to face outwards.
+      rotation: [part.rotation?.[0] ?? 0, yaw, 0, 'YXZ'],
+    };
+  }
+  blindParts.push(...blind.map(place));
+  rimParts.push(...rim.map(place));
+}
+
+for (let floor = 0; floor < FLOOR_COUNT; floor++) {
+  const top = floor === FLOOR_COUNT - 1;
+  const y = floor * FLOOR_HEIGHT + 2.8;
+  const xEdge = top ? 18 : 20;
+  const zEdge = top ? 47 : 50;
+  for (const side of [-1, 1]) {
+    for (const bay of [-7.5, 5.5]) addBlind(side * (xEdge + .22), y, bay * zEdge / 16, side * Math.PI / 2);
+    for (const bay of [-4.5, 4.5]) addBlind(bay * xEdge / 8, y, side * (zEdge + .22), side === 1 ? 0 : Math.PI);
+  }
 }
 
 export default function ExteriorBlinds({ outline, onSelect }: { outline: string; onSelect: () => void }) {
@@ -29,24 +50,7 @@ export default function ExteriorBlinds({ outline, onSelect }: { outline: string;
     event.stopPropagation();
     if (event.delta <= 4) onSelect();
   }}>
-    {Array.from({ length: FLOOR_COUNT }, (_, floor) => {
-      const top = floor === FLOOR_COUNT - 1;
-      const xEdge = top ? 18 : 20;
-      const zEdge = top ? 47 : 50;
-      return <group key={floor} position={[0, floor * FLOOR_HEIGHT + 2.8, 0]}>
-        {[-1, 1].map(side => <group key={side}>
-          {[-7.5, 5.5].map(bay => (
-            <group key={bay} position={[side * (xEdge + .22), 0, bay * zEdge / 16]} rotation={[0, side * Math.PI / 2, 0]}>
-              <Blind outline={outline} />
-            </group>
-          ))}
-          {[-4.5, 4.5].map(bay => (
-            <group key={bay} position={[bay * xEdge / 8, 0, side * (zEdge + .22)]} rotation={[0, side === 1 ? 0 : Math.PI, 0]}>
-              <Blind outline={outline} />
-            </group>
-          ))}
-        </group>)}
-      </group>;
-    })}
+    <BuildingBoxBatch parts={blindParts} />
+    <BuildingBoxBatch parts={rimParts} outline={outline} />
   </group>;
 }
