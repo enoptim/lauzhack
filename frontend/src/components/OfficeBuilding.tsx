@@ -24,7 +24,7 @@ function Floor({ level }: { level: number }) {
       {/* Offices, interior glazing, and corridor balustrades. */}
       {level > 0 && Array.from({ length: 12 }, (_, i) => {
         const z = -44 + i * 8;
-        if (level === 4 && side === 1 && z >= 12) return null;
+        if (level === 4 && side === 1 && z >= -4) return null;
         return <group key={i}>
           <Box size={[7.5, 2.7, .12]} color={white} position={[side * 16.1, 1.35, z]}/>
           <Glass size={[.05, 2.8, 7.8]} position={[side * 12.3, 1.4, z + 4]}/>
