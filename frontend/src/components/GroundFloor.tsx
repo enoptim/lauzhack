@@ -1,5 +1,6 @@
 import { useLayoutEffect, useRef } from 'react';
 import { Color, DoubleSide, InstancedMesh, Object3D, SRGBColorSpace } from 'three';
+import { sideRooms } from '../data/sideRooms';
 import { useTexture } from '@react-three/drei';
 
 type Part = [number, number, number, number, number, number, string];
@@ -18,18 +19,34 @@ function chair(x: number, z: number, facing: number, color: string, axis: 'x' | 
   for (const dx of [-.19,.19]) for (const dz of [-.18,.18])
     box(x+dx,.21,z+dz,.035,.42,.035,steel);
 }
-// Two banks of glass-fronted team rooms, each with a doorway onto the aisle.
-for (const side of [-1,1]) for (const z of [-24,-8,8,24]) {
-  const x = side*14;
-  box(x,1.62,z-8,11.8,3.24,.15,'#494d4e');
-  box(x,1.6,z-7.88,3.3,1.2,.06,'#eff1ed');
-  if (z===24) box(x,1.62,32,11.8,3.24,.15,'#bbbdb7');
-  for (const dx of [-2.6,2.6]) for (const dz of [-4,0,4]) {
-    table(x+dx,z+dz,3.4);
-    for (const seat of [-.85,.85]) for (const facing of [-1,1])
-      chair(x+dx+seat,z+dz-facing*.95,facing,'#b83a30');
-    box(x+dx,.81,z+dz,.46,.035,.3,'#aeb4b4');
-    box(x+dx,.97,z+dz+.13,.46,.32,.03,'#333a42');
+const glazing: {x:number; z:number; depth:number}[] = [];
+for (const {ring, seats, lab} of sideRooms) {
+  const xs = ring.map(p=>p[0]), zs = ring.map(p=>p[1]);
+  const left=Math.min(...xs), right=Math.max(...xs), front=Math.min(...zs), back=Math.max(...zs);
+  const entry = left > 0 ? left : right;
+  for (let i=1; i<ring.length; i++) {
+    const [x,z]=ring[i-1], [u,v]=ring[i];
+    if (x === entry && u === entry) {
+      const depth=Math.abs(v-z)-2;
+      glazing.push({x,z:Math.min(z,v)+depth/2,depth}); // leave doorway at aisle end
+    } else if (x===u) {
+      // Exterior glazing already exists; don't hide it behind solid walls.
+      glazing.push({x,z:(z+v)/2,depth:Math.abs(v-z)});
+    } else box((x+u)/2,1.8,(z+v)/2,Math.abs(u-x),3.6,.09,'#b9bcb7');
+  }
+  // Inset rows clear partitions (including BC_01's small facade notch),
+  // with a continuous aisle at the door. Never squeeze in the remaining seats.
+  let placed=0;
+  const width=lab ? 2.3 : 3.1;
+  for (let x=left+1.4+width/2;x+width/2<=right-1.4;x+=width+1.15) {
+    for (let z=front+2;z<=back-2 && placed<seats;z+=lab?2.8:3.8) {
+      table(x,z,width);
+      for (const facing of (lab?[1]:[-1,1])) for (const dx of [-.56,.56]) {
+        if (placed>=seats) break;
+        chair(x+dx,z-facing*.95,facing,'#b83a30'); placed++;
+        if (lab) box(x+dx,1.05,z+.16,.52,.35,.04,'#333a42');
+      }
+    }
   }
 }
 // Back-to-back display boards, with outward-facing booth tables and grey chairs.
@@ -75,5 +92,5 @@ export default function GroundFloor() {
     mesh.current.instanceColor!.needsUpdate = true;
     mesh.current.computeBoundingSphere();
   }, []);
-  return <><mesh position={[0,10.65,-31.8]}><planeGeometry args={[2.8,11.2]}/><meshStandardMaterial map={banner} side={DoubleSide}/></mesh><instancedMesh ref={mesh} args={[undefined,undefined,parts.length]} castShadow receiveShadow><boxGeometry/><meshStandardMaterial roughness={.75}/></instancedMesh></>;
+  return <>{glazing.map(({x,z,depth},i)=><mesh key={i} position={[x,1.8,z]}><boxGeometry args={[.06,3.6,depth]}/><meshStandardMaterial color="#a4c6ce" transparent opacity={.18} depthWrite={false}/></mesh>)}<mesh position={[0,10.65*4/3.5,-31.8]}><planeGeometry args={[2.8,11.2]}/><meshStandardMaterial map={banner} side={DoubleSide}/></mesh><instancedMesh ref={mesh} args={[undefined,undefined,parts.length]} castShadow receiveShadow><boxGeometry/><meshStandardMaterial roughness={.75}/></instancedMesh></>;
 }

@@ -1,7 +1,7 @@
-// Approximate dimensions supplied by the user; not a surveyed architectural model.
-export const FLOOR_HEIGHT = 3.5;
-export const FLOOR_COUNT = 5;
-export const WIDTH = 40;
-export const LENGTH = 70;
-// Interior and facade positions use the original 100-unit layout.
+// The existing procedural shell is authored in 40 × 100 layout units.
+export const LAYOUT_WIDTH = 40;
 export const LAYOUT_LENGTH = 100;
+export const WIDTH = 47;
+export const LENGTH = 65;
+export const FLOOR_HEIGHT = 4;
+export const FLOOR_COUNT = 5;
