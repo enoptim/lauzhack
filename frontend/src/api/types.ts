@@ -360,3 +360,323 @@ export interface BreakevenResult {
   npv_cash: BreakevenPoint;
   npv_economic: BreakevenPoint;
 }
+
+// ---------------------------------------------------------------- /api/chat (chat/README.md)
+export interface ChatMessage {
+  role: 'user' | 'assistant';
+  content: string;
+}
+
+export interface ChatRequest {
+  /** The whole conversation so far; the server keeps no state. */
+  messages: ChatMessage[];
+  /** The scenario the app shows right now, so the assistant can build on it. */
+  scenario?: Scenario;
+}
+
+/** What the assistant said about its scenario. Money in CHF, today vs the scenario in year 1. */
+export interface ChatScenarioSummary {
+  energy_bill_chf_month: { today: number; scenario: number };
+  energy_bill_saving_chf_year: number;
+  energy_bill_saving_pct: number;
+  electricity_kwh_year: { today: number; scenario: number };
+  electricity_saving_pct: number;
+  running_cost_saving_chf_year: number;
+  upfront_cost_chf: number;
+  extra_cost_vs_like_for_like_chf: number;
+  payback_years: number | null;
+  payback_years_with_people_effects: number | null;
+  simple_roi_pct_per_year: number | null;
+  horizon_years: number;
+  npv_chf: number;
+  people_effects_chf: number;
+  people_and_air_year_1: Record<string, { today: number; scenario: number }>;
+  flags: Flag[];
+  changed_items: number;
+  changed_floors: number[];
+}
+
+export interface ChatScenario {
+  title: string;
+  /** Ready for /api/simulate. */
+  scenario: Scenario;
+  events: string[];
+  /** Mesh names of the items that change, to highlight in 3D. */
+  item_ids: string[];
+  summary: ChatScenarioSummary;
+}
+
+export interface ChatResult {
+  /** Markdown. */
+  reply: string;
+  /** Set when the assistant picked a scenario to show. */
+  scenario: ChatScenario | null;
+  /** The goal and limits the assistant optimized for, to show (and let the user correct). */
+  problem: OptimizationProblem | null;
+  /** Set when the assistant compared packages (upgrade_tradeoffs): cost against saving, to plot. */
+  chart?: ChatChart | null;
+}
+
+export interface ChatChartPoint {
+  x: number;
+  y: number;
+  /** The changes in words, e.g. "LED tube retrofit (floors 1, 2), Rooftop solar panels", or "Do nothing". */
+  label: string;
+  scenario: Scenario;
+}
+
+/** Up-front cost (x) against yearly saving (y). Every point is a package no other package beats on both. */
+export interface ChatChart {
+  type: 'pareto';
+  x_metric: string;
+  y_metric: string;
+  x_label: string;
+  y_label: string;
+  /** Sorted by x. */
+  points: ChatChartPoint[];
+  /** The balanced choice: past it, each extra franc buys less saving. */
+  knee_index: number;
+}
+
+// ---------------------------------------------------------------- /api/metrics, /api/optimize, /api/evaluate
+// The problem format and the solver interface are documented in model/optimize.py.
+export type MetricName =
+  | 'upfront_cost_chf' | 'extra_cost_vs_like_for_like_chf' | 'running_cost_chf_year' | 'energy_bill_chf_year'
+  | 'electricity_kwh_year' | 'npv_cash_chf' | 'npv_economic_chf' | 'payback_years' | 'lowest_reserve_chf'
+  | 'office_co2_ppm' | 'meeting_co2_ppm' | 'classroom_co2_ppm' | 'summer_overheating_degc' | 'sick_days'
+  | 'comfort_score' | 'warnings';
+
+export interface Metric {
+  metric: MetricName;
+  unit: string;
+  /** The natural direction: 'min' means lower is better. */
+  sense: 'min' | 'max';
+  kind: NumberKind;
+  description: string;
+}
+
+export interface ProblemConstraint {
+  metric: MetricName;
+  max?: number;
+  min?: number;
+  /** Relative to doing nothing, e.g. -20 = at least 20% lower. Turned into max/min by the server. */
+  max_change_pct?: number;
+  min_change_pct?: number;
+}
+
+export interface OptimizationProblem {
+  objective: { metric: MetricName; sense?: 'min' | 'max' };
+  constraints?: ProblemConstraint[];
+  /** Keep as today. Leave out floor to lock the whole group. */
+  locked?: { group: string; floor?: number }[];
+  /** Per group, the only options the plan may use. */
+  allowed?: Record<string, string[]>;
+  per_floor?: boolean;
+  /** By default a plan may not cause warnings. */
+  allow_warnings?: boolean;
+  events?: string[];
+}
+
+export interface Evaluation {
+  scenario: Scenario;
+  /** Money and energy are yearly averages over the horizon; air and comfort are year 1. payback_years is null if never. */
+  metrics: Record<MetricName, number | null>;
+  violations: ({ metric: MetricName; value: number | null; max?: number; min?: number })[];
+  feasible: boolean;
+  /** Lower is better (max metrics are negated). */
+  objective: number;
+  /** objective plus a large penalty for missed limits. */
+  score: number;
+  flags: Flag[];
+}
+
+export interface OptimizeResult {
+  /** The problem after defaults and relative limits were filled in. */
+  problem: OptimizationProblem;
+  best: Evaluation;
+  /** Doing nothing, for comparison. */
+  today: Evaluation;
+  solver: string;
+  evaluations: number;
+  decisions: number;
+  seconds: number;
+}
+
+// ---------------------------------------------------------------- /api/search, /api/pareto: the search behind optimize.py (model/README.md)
+/** Picks zones (one group in one place). floor and option narrow it; a list means any of them. */
+export interface ZoneSelector {
+  group: string;
+  floor?: number | number[];
+  option?: string | string[];
+}
+
+/** Hard limits on what may change. */
+export interface SearchScope {
+  /** If given, only these may change. */
+  allowed?: ZoneSelector[];
+  /** These stay as they are. */
+  locked?: ZoneSelector[];
+  /** These must change. */
+  required?: ZoneSelector[];
+  /** Never install these option ids. */
+  excluded_options?: string[];
+}
+
+/** A metric name from GET /api/search/options, with a lower and/or upper limit. */
+export interface MetricConstraint {
+  metric: string;
+  min?: number;
+  max?: number;
+}
+
+export interface SearchObjective {
+  metric: string;
+  /** Default: the metric's "better" direction. */
+  sense?: 'min' | 'max';
+}
+
+export type Granularity = 'floor' | 'building';
+
+export interface SearchRequest {
+  goal: 'min_cost_for_target' | 'max_savings' | 'min_total_cost' | 'custom';
+  /** min_cost_for_target (the metric to reach) and max_savings (the metric to maximize). */
+  metric?: string;
+  /** min_cost_for_target. */
+  target?: number;
+  /** The most the plan may cost, in cost_metric (min_total_cost: up-front cost). */
+  budget?: number;
+  cost_metric?: string;
+  /** min_total_cost: the timeframe. */
+  years?: number;
+  /** min_total_cost: lowest CHF or lowest kWh. */
+  basis?: 'chf' | 'kwh';
+  /** custom. */
+  objective?: SearchObjective;
+  constraints?: MetricConstraint[];
+  scope?: SearchScope;
+  events?: string[];
+  overrides?: Record<string, number>;
+  granularity?: Granularity;
+  horizon_years?: number;
+  discounted?: boolean;
+  include_residual?: boolean;
+  /** Default true: also return the regular /api/simulate output for the plan. */
+  include_engine_output?: boolean;
+}
+
+export interface ParetoRequest {
+  /** Minimized. Default upfront_cost_chf. */
+  x_metric?: string;
+  /** Maximized. Default operating_cost_saving_chf_year. */
+  y_metric?: string;
+  constraints?: MetricConstraint[];
+  scope?: SearchScope;
+  events?: string[];
+  overrides?: Record<string, number>;
+  granularity?: Granularity;
+  horizon_years?: number;
+  discounted?: boolean;
+  include_residual?: boolean;
+  /** Default 15; null keeps every point. */
+  max_points?: number | null;
+}
+
+export interface MetricInfo {
+  unit: string;
+  better: 'lower' | 'higher';
+  description: string;
+}
+
+/** One decision: which option one group has in one place. */
+export interface SearchZone {
+  /** e.g. "lighting@2", or the group name for one-place groups. */
+  zone: string;
+  group: string;
+  floor: number | null;
+  current_option: string;
+  /** The alternatives. */
+  options: string[];
+  units: number;
+  item_ids: string[];
+}
+
+export interface SearchOptions {
+  metrics: Record<string, MetricInfo>;
+  zones: SearchZone[];
+}
+
+export interface SearchChange {
+  zone: string;
+  group: string;
+  floor: number | null;
+  from_option: string;
+  to_option: string;
+  from_name: string;
+  to_name: string;
+  units: number;
+  upfront_cost_chf: number;
+  /** Mesh names, to highlight in 3D. */
+  item_ids: string[];
+}
+
+export interface SearchSettings {
+  granularity: Granularity;
+  horizon_years: number;
+  discounted: boolean;
+  include_residual: boolean;
+  events: string[];
+  overrides: Record<string, number>;
+}
+
+export interface SearchInfo {
+  evaluations: number;
+  seconds: number;
+  zones: number;
+  method: string;
+}
+
+export interface SearchResult {
+  /** best_effort: no plan meets every constraint; this is the closest one. */
+  status: 'ok' | 'best_effort';
+  /** One plain sentence, e.g. why a target is out of reach. */
+  message: string;
+  objective: { metric: string; sense: 'min' | 'max'; value: number | null };
+  /** value is what the plan achieves. */
+  constraints: (MetricConstraint & { value: number | null; met: boolean })[];
+  /** Ready for /api/simulate; [] = do nothing. */
+  scenario: Scenario;
+  changes: SearchChange[];
+  /** Every zone's option after the plan. */
+  configuration: Record<string, string>;
+  /** Every metric for the plan; null where it doesn't apply (e.g. a payback that never happens). */
+  metrics: Record<string, number | null>;
+  /** Doing nothing. */
+  baseline: Record<string, number | null>;
+  flags: Flag[];
+  settings: SearchSettings;
+  /** The /api/simulate output for the plan; null when include_engine_output is false. */
+  engine: SimulateResult | null;
+  search: SearchInfo;
+}
+
+export interface ParetoPoint {
+  x: number;
+  y: number;
+  scenario: Scenario;
+  changes: SearchChange[];
+  metrics: Record<string, number | null>;
+}
+
+export interface ParetoResult {
+  x_metric: string;
+  y_metric: string;
+  /** Sorted by x. The first is doing nothing unless the scope forbids it. */
+  points: ParetoPoint[];
+  /** The balanced choice. */
+  knee_index: number;
+  /** Points before thinning to max_points. */
+  total_non_dominated: number;
+  baseline: Record<string, number | null>;
+  settings: SearchSettings;
+  search: SearchInfo;
+}
