@@ -34,6 +34,7 @@ Timing per swap: `"now"` (default), `"end_of_life"`, or `"year": k` to phase it 
 | `option_drivers.csv` | People-effect values per option: lighting, screen and glare quality, daylight, CO2 and humidity control, seconds per drink, amenity, enclosed printers, hot-desking. Where the team's `options.csv` has the fact (`seconds_per_drink`, `humidity_control`, `enclosed_filtered`), the team's value wins. |
 | `events_timing.csv` | Fallback start/end year and kind. Unused now: the team's `events.csv` has these columns, and they win. |
 | `monthly.csv` | Fallback monthly heating, cooling and solar shares. Unused now: the team's `monthly.csv` replaces it. |
+| `scripted_futures.json` | Futures we control for demos of play mode, e.g. `ventilation_failure`. See "Play through one future". |
 
 ## Flags
 Each flag has a `type` and, except `over_budget`, the first `year` it happens:
@@ -80,6 +81,40 @@ Every future is an ordinary `simulate()` run, so all accounting identities hold 
 
 Note: in the deterministic run, overdue units are replaced as planned at year 0. In the futures they keep running until they fail, so upgrading now costs the full price rather than only the premium over a like-for-like replacement.
 
+## Play through one future (`session.py`)
+Instead of running 15 years at once, the player lives through one future. The run pauses whenever something happens, the player can react, and the past never changes. At the end the player's path is compared with doing nothing in the same future.
+
+Time: time t is the end of year t, and t = 0 is today. A decision at a pause at time t has `"year": t`. It is installed and paid at the end of year t, so it is part of year t's cash row, and it is active from year t + 1. Rows for earlier years never change.
+
+A session holds the future, the decisions so far and the current pause time. Every state comes from `engine.simulate` with those decisions in that future; the session only decides when to pause and what to show.
+
+It pauses at the first time after now when:
+- a unit breaks (an install of kind "failure"). Failures at the same time are grouped per group: "Blinds on floors 0–3 reached end of life (470 windows)";
+- an event is announced. An event starting in year Y with a notice period of n years (`event_notice_years_<event>` in `model_assumptions.csv`; the new lab has 1) is announced at time Y − 1 − n, so a player can buy laptops before the lab arrives;
+- an event starts (time Y − 1);
+- a warning appears in year T that was not there in year T − 1: not enough desks, a floor over its ventilation capacity, or the player's reserve below its minimum;
+- the electricity price for the next year rises more than `price_jump_pause_threshold` (20%).
+
+Each state has `t`, `reasons`, `history` (finance rows for years 1 to t only, for the player and doing nothing: never later years), `snapshot` (the building in year t; at t = 0, today's building), `reactions` (for a failure: every option for the broken items, previewed at this time; for other reasons: groups worth looking at) and `situation` (structured facts for an LLM to narrate, all from the engine).
+
+Futures:
+- `montecarlo.load_scripted(data, name)` builds a scripted future from `scripted_futures.json` in the same shape as `draw_future`. Units the script doesn't mention fail at their nominal age if that is still ahead; units already past their life keep running, so the story isn't drowned in failures at time 0. People effects are at their central values.
+- `montecarlo.draw_future_after(data, rng, future, t)` draws a future that keeps everything revealed by time t (price path, announced or started events, failures) and draws the rest as usual. The outlook uses it.
+
+An upgrade planned for the year its old unit breaks goes in as an emergency, with the failure premium, just like a like-for-like replacement at that moment.
+
+Try it:
+```sh
+A=localhost:8000/api/session; J='content-type: application/json'
+SID=$(curl -s -X POST $A/start -H "$J" -d '{"future":"ventilation_failure"}' | python3 -c 'import json,sys; print(json.load(sys.stdin)["session_id"])')
+curl -s -X POST $A/next -H "$J" -d "{\"session_id\":\"$SID\"}"         # t=1: computers fail, the new lab is announced
+curl -s -X POST $A/decide -H "$J" -d "{\"session_id\":\"$SID\",\"swaps\":[{\"group\":\"computers\",\"option\":\"computers_upgrade\",\"year\":\"now\"}]}"
+curl -s -X POST $A/next -H "$J" -d "{\"session_id\":\"$SID\"}"         # t=2: floor 0's ventilation breaks
+curl -s -X POST $A/outlook -H "$J" -d "{\"session_id\":\"$SID\",\"n\":100}"
+```
+
+Tests: `python3 test_session.py` (also run by `make test`).
+
 ## API for the 3D frontend (`server.py`, `viz.py`)
 ```sh
 cd model && uvicorn server:app --reload --port 8000
@@ -97,6 +132,13 @@ Try it by hand at http://localhost:8000/playground (`playground/index.html`, pla
 | `POST /api/bands` | `{scenario, events, overrides}` | economic NPV with weak / central / strong people effects |
 | `POST /api/futures` | `{scenarios: {name: scenario}, n, seed, events, overrides}` | Monte Carlo: P10/P50/P90, probabilities, fan chart per year, A-vs-B, three futures in words. `events` are on in every future; `overrides` are fixed in every future |
 | `POST /api/breakeven` | `{scenario, events, overrides, param}` | the value of `param` (default electricity price) where cash and economic NPV are zero, and whether the plan pays off above or below it |
+| `GET /api/session/futures` | | the scripted futures you can play |
+| `POST /api/session/start` | `{future}`: a scripted name, or `{"seed": 42}` for a sampled one | `session_id` and the opening state (see "Play through one future") |
+| `POST /api/session/next` | `{session_id}` | the state at the next pause, or the end summary (`ended: true`, `result`) |
+| `POST /api/session/decide` | `{session_id, swaps}` | the updated state at the same pause; 400 if a swap's year is before now. `"year": "now"` means the current pause |
+| `POST /api/session/preview` | `{session_id, swap}` | what a swap (or a list) would change in this future with the decisions so far |
+| `POST /api/session/outlook` | `{session_id, n, seed}` | a fresh forecast from now: fan of the gain vs doing nothing from year t+1, P10/P50/P90 NPVs, chance of beating doing nothing |
+| `GET /api/session/{id}` | | the current state |
 
 A snapshot is keyed by the team's ids, which are also the mesh names:
 - `items[item_id]`: `option_id`, `kwh_year`, `kw_avg`, `kw_on` (drive wire thickness or glow from these)

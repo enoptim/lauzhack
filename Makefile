@@ -16,4 +16,4 @@ dev:              ## API and frontend together; Ctrl+C stops both
 	@trap 'kill 0' INT TERM EXIT; $(MAKE) api & $(MAKE) frontend & wait
 
 test:             ## engine validation tests
-	cd model && python3 test_engine.py
+	cd model && python3 test_engine.py && python3 test_session.py
