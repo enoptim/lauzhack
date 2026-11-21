@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef } from 'react';
+import { Suspense, useLayoutEffect, useRef } from 'react';
 import { Color, DoubleSide, InstancedMesh, Object3D, SRGBColorSpace } from 'three';
 import { sideRooms } from '../data/sideRooms';
 import { useTexture } from '@react-three/drei';
@@ -83,9 +83,16 @@ for (const x of [-3,3]) {
   box(x,.8,-23.3,1.55,.72,.15,'#414348');
 }
 
-export default function GroundFloor({ workstationSelection }: { workstationSelection?: WorkstationSelection }) {
+function LauzHackBanner() {
   const banner = useTexture('/lauzhack-banner.svg');
   banner.colorSpace = SRGBColorSpace;
+  return <mesh position={[0, 10.65 * 4 / 3.5, -31.8]}>
+    <planeGeometry args={[2.8, 11.2]} />
+    <meshStandardMaterial map={banner} side={DoubleSide} />
+  </mesh>;
+}
+
+export default function GroundFloor({ workstationSelection, showBanner }: { workstationSelection?: WorkstationSelection; showBanner: boolean }) {
   const mesh = useRef<InstancedMesh>(null!);
   useLayoutEffect(() => {
     const transform = new Object3D();
@@ -97,7 +104,7 @@ export default function GroundFloor({ workstationSelection }: { workstationSelec
     mesh.current.instanceColor!.needsUpdate = true;
     mesh.current.computeBoundingSphere();
   }, []);
-  return <>{glazing.map(({x,z,depth},i)=><mesh key={i} position={[x,1.8,z]}><boxGeometry args={[.06,3.6,depth]}/><meshStandardMaterial color="#a4c6ce" transparent opacity={.18} depthWrite={false}/></mesh>)}<mesh position={[0,10.65*4/3.5,-31.8]}><planeGeometry args={[2.8,11.2]}/><meshStandardMaterial map={banner} side={DoubleSide}/></mesh><instancedMesh ref={mesh} args={[undefined,undefined,parts.length]} castShadow receiveShadow><boxGeometry/><meshStandardMaterial roughness={.75}/></instancedMesh>
+  return <>{glazing.map(({x,z,depth},i)=><mesh key={i} position={[x,1.8,z]}><boxGeometry args={[.06,3.6,depth]}/><meshStandardMaterial color="#a4c6ce" transparent opacity={.18} depthWrite={false}/></mesh>)}{showBanner && <Suspense fallback={null}><LauzHackBanner /></Suspense>}<instancedMesh ref={mesh} args={[undefined,undefined,parts.length]} castShadow receiveShadow><boxGeometry/><meshStandardMaterial roughness={.75}/></instancedMesh>
     {workstations.map(({ monitor, computer }, i) => (
       <group key={i}>
         <Monitor position={monitor} selection={workstationSelection?.monitors} />

@@ -9,9 +9,10 @@ import type { FloorEquipmentSelection } from './Furniture';
 const initialCamera = { position: [95, 80, 125] as [number, number, number], fov: 43, far: 1000 };
 const initialTarget: [number, number, number] = [0, 7, 0];
 
-export default function BuildingScene({ floor, children, equipmentSelection }: {
+export default function BuildingScene({ floor, children, equipmentSelection, showBanner }: {
   floor: number | null;
   children?: ReactNode;
+  showBanner: boolean;
   equipmentSelection?: FloorEquipmentSelection;
 }) {
   return (
@@ -35,7 +36,7 @@ export default function BuildingScene({ floor, children, equipmentSelection }: {
         shadow-camera-far={250}
         shadow-normalBias={.04}
       />
-      <OfficeBuilding floor={floor} equipmentSelection={equipmentSelection} />
+      <OfficeBuilding floor={floor} showBanner={showBanner} equipmentSelection={equipmentSelection} />
       {children}
       {floor !== -1 && <Campus />}
       <MountainHorizon />
