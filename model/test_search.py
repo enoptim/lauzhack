@@ -106,7 +106,11 @@ def _random_plans(space, n, seed):
 # --- zones and evaluation
 def test_zones():
     z = O.zones(D)
-    assert len(z) == 37 and len(O.zones(D, "building")) == 11
+    floors = {}
+    for i in D["items"]:
+        floors.setdefault(i["group"], set()).add(engine.served_floor(i))
+    assert len(z) == sum(len(f) if len(f) > 1 else 1 for f in floors.values())    # 37 before the banner was added
+    assert len(O.zones(D, "building")) == len(floors)
     keys = {x["zone"] for x in z}
     assert {"lighting@2", "lighting@-1", "ventilation@0", "heating_cooling", "solar_pv", "servers"} <= keys
     ids = [i for x in z for i in x["item_ids"]]
@@ -440,7 +444,7 @@ def test_result_shape_and_json():
     r = O.max_savings(D, budget=100_000, events=["new_lab"], horizon_years=10)
     assert set(r) == {"status", "message", "objective", "constraints", "scenario", "changes", "configuration", "metrics",
                       "baseline", "flags", "settings", "engine", "search"}
-    assert set(r["metrics"]) == set(O.METRICS) and len(r["configuration"]) == 37
+    assert set(r["metrics"]) == set(O.METRICS) and len(r["configuration"]) == len(O.zones(D))
     assert r["settings"]["horizon_years"] == 10 and r["settings"]["events"] == ["new_lab"]
     assert set(r["engine"]) == {"finance", "snapshot", "snapshot_baseline"}
     same = viz.run(D, r["scenario"], ["new_lab"], {"horizon_years": 10})
