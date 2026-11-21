@@ -1,5 +1,6 @@
 import { ArrowRight } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router';
 import { api } from '@/api/client';
 import type { Scenario, SimulateResult } from '@/api/types';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
@@ -32,6 +33,13 @@ const metrics: { label: string; value: (result: SimulateResult, isCurrent: boole
 export default function ConfigurationComparison({ saved, draft }: { saved: SavedConfiguration[]; draft: ReadonlyMap<string, EquipmentSwap> }) {
   const [plans, setPlans] = useState<Plan[]>([]);
   const [results, setResults] = useState<(SimulateResult | null)[] | null>(null);
+  const navigate = useNavigate();
+
+  /** Open the full results for the draft, or the newest saved configuration, behind a short simulating screen. */
+  function openResults() {
+    const scenario = draft.size ? Array.from(draft.values()) : saved.at(-1)?.scenario ?? [];
+    navigate(`/results?config=${encodeURIComponent(JSON.stringify({ scenario }))}`, { state: { intro: true } });
+  }
 
   function simulate() {
     setResults(null);
@@ -53,13 +61,18 @@ export default function ConfigurationComparison({ saved, draft }: { saved: Saved
 
   return (
     <Dialog>
-      <DialogTrigger asChild>
-        <button type="button" onClick={simulate}
-          className="flex min-h-10 items-center justify-between gap-2 rounded-lg bg-primary px-4 py-2 text-left text-sm font-semibold text-primary-foreground hover:bg-primary/90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring">
-          {saved.length || draft.size ? 'Simulate and compare' : 'Simulate current setup'}
-          <ArrowRight aria-hidden="true" className="size-4 shrink-0" />
-        </button>
-      </DialogTrigger>
+      <button type="button" onClick={openResults}
+        className="flex min-h-10 items-center justify-between gap-2 rounded-lg bg-primary px-4 py-2 text-left text-sm font-semibold text-primary-foreground hover:bg-primary/90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring">
+        {draft.size ? 'Simulate this plan' : saved.length ? 'Simulate the last saved plan' : 'Simulate current setup'}
+        <ArrowRight aria-hidden="true" className="size-4 shrink-0" />
+      </button>
+      {(saved.length > 0 || draft.size > 0) && (
+        <DialogTrigger asChild>
+          <button type="button" onClick={simulate} className="self-start text-sm text-muted-foreground underline underline-offset-4 hover:text-foreground">
+            Quick table: compare all plans
+          </button>
+        </DialogTrigger>
+      )}
       <DialogContent className="max-h-[calc(100dvh-2rem)] grid-rows-[auto_minmax(0,1fr)] sm:max-w-5xl">
         <DialogHeader className="pr-5">
           <DialogTitle>Simulation results</DialogTitle>

@@ -1,6 +1,6 @@
 import { ArrowLeft, ArrowRight, Pause, Play, TriangleAlert } from 'lucide-react';
 import { useCallback, useMemo, useState } from 'react';
-import { Link, useSearchParams } from 'react-router';
+import { Link, useLocation, useSearchParams } from 'react-router';
 import type { Catalog, Swap } from '@/api/types';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
@@ -14,6 +14,7 @@ import { readConfig } from './config';
 import { chf, chfShort, kwh, pricePerKwh, years } from './format';
 import { flagText, groupLabels, isContextFlag, seriesColor, whatIfDetails, whatIfLabels } from './labels';
 import MoneyBreakdown from './MoneyBreakdown';
+import SimulationIntro from './SimulationIntro';
 import MoneyChart, { crossing, totals } from './MoneyChart';
 import { useEngine, WHAT_IFS, type WhatIf } from './useEngine';
 
@@ -62,6 +63,9 @@ function fanPayback(points: { year: number; value: number }[]): number | null {
 
 export default function ResultsPage() {
   const [params] = useSearchParams();
+  const location = useLocation();
+  // Coming from the building's Simulate button: show the short simulating screen first.
+  const [intro, setIntro] = useState(() => Boolean((location.state as { intro?: boolean } | null)?.intro));
   const read = readConfig(params);
   const [timing, setTiming] = useState<Timing>('now');
   const chosen = useMemo(() => read?.config.scenario ?? [], [params]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -93,6 +97,14 @@ export default function ResultsPage() {
     if (playState === 'idle') { setPlayToken(token => token + 1); setPlayYear(0); }
     setPlayState('playing');
   }
+
+  // After the simulating screen, the chart plays itself once, so the story starts moving straight away.
+  const endIntro = useCallback(() => {
+    setIntro(false);
+    setPlayToken(token => token + 1);
+    setPlayYear(0);
+    setPlayState('playing');
+  }, []);
 
   const onYear = useCallback((year: number | null) => {
     setPlayYear(year);
@@ -153,6 +165,10 @@ export default function ResultsPage() {
 
   return (
     <main className="mx-auto flex w-full max-w-7xl flex-col gap-8 px-4 py-8 md:px-8">
+      {intro && (
+        <SimulationIntro ready={Boolean(plan && engine.catalog.data)} onDone={endIntro}
+          changes={chosen.map(swap => `${groupLabels[swap.group] ?? swap.group} → ${optionName(engine.catalog.data, swap.group, swap.option) ?? swap.option}`)} />
+      )}
       <section aria-label="What changed" className="flex flex-col gap-4 rounded-xl border bg-card p-4 md:flex-row md:items-center md:justify-between md:p-5">
         <div className="flex flex-col gap-3">
           <Link to="/" className="flex w-fit items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground">
