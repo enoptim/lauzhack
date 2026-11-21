@@ -1,7 +1,7 @@
 import { ArrowLeft, ArrowRight, Pause, Play, TriangleAlert } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router';
-import type { Catalog, SimulateResult, Swap } from '@/api/types';
+import type { Catalog, Swap } from '@/api/types';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -13,7 +13,7 @@ import { readConfig } from './config';
 import { chf, chfShort, kwh, pricePerKwh, years } from './format';
 import { flagText, groupLabels, isContextFlag, seriesColor, whatIfLabels } from './labels';
 import MoneyBreakdown from './MoneyBreakdown';
-import MoneyChart, { crossing, moneyPoints, type Note } from './MoneyChart';
+import MoneyChart, { crossing, totals } from './MoneyChart';
 import { useEngine, WHAT_IFS, type WhatIf } from './useEngine';
 
 const PRICE_KEY = 'electricity_price_chf_kwh';
@@ -39,35 +39,17 @@ function installedOption(catalog: Catalog | null, swap: Swap) {
 
 const where = (swap: Swap) => swap.floor === undefined ? 'Whole building' : swap.floor === 0 ? 'Ground floor' : `Floor ${swap.floor}`;
 
-/** Years in which the plan leaves the savings account below its minimum and below doing nothing. */
-function belowMinimumRange(plan: SimulateResult): [number, number] | null {
-  const flag = plan.finance.flags.find(item => item.type === 'reserve_below_minimum');
-  const minimum = typeof flag?.minimum === 'number' ? flag.minimum : null;
-  if (minimum === null) return null;
-  const hit = plan.finance.years.filter(y => y.cash_closing < minimum && y.cash_closing < y.cash_closing_baseline).map(y => y.year);
-  if (!hit.length) return null;
-  let end = hit[0];
-  while (hit.includes(end + 1)) end += 1;
-  return [hit[0], end];
-}
-
-/** Notes on the chart: the years where the money line jumps, in plain words. */
-function chartNotes(plan: SimulateResult): Note[] {
-  const notes: Note[] = [];
-  for (const y of plan.finance.years) {
-    const skipped = y.capex_baseline - y.capex;
-    if (skipped >= 50_000) {
-      notes.push({ year: y.year, title: `Skips a replacement · +${chfShort(skipped).replace('CHF ', 'CHF ')}`,
-        detail: `Without the upgrade, worn-out equipment would need replacing this year. With it, you skip ${chf(skipped)}.` });
+/** First year (with decimals) where a futures percentile line reaches zero, or null. */
+function fanPayback(points: { year: number; value: number }[]): number | null {
+  let previous = { year: 0, value: -Infinity };
+  for (const point of points) {
+    if (previous.value < 0 && point.value >= 0) {
+      if (!Number.isFinite(previous.value)) return point.year;
+      return previous.year + ((0 - previous.value) / (point.value - previous.value)) * (point.year - previous.year);
     }
-    if (Math.abs(y.residual_value ?? 0) >= 50_000) {
-      notes.push({ year: y.year, title: `Leftover value · ${chfShort(y.residual_value)}`,
-        detail: y.residual_value < 0
-          ? `At the end, the replacements you skipped would still be worth ${chf(-y.residual_value)}. That counts against the upgrade.`
-          : `At the end, the new equipment is still worth ${chf(y.residual_value)} more than doing nothing.` });
-    }
+    previous = point;
   }
-  return notes;
+  return null;
 }
 
 export default function ResultsPage() {
@@ -76,14 +58,14 @@ export default function ResultsPage() {
   const scenario = useMemo(() => read?.config.scenario ?? [], [params]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const [price, setPrice] = useState(read?.config.overrides[PRICE_KEY] ?? TODAY_PRICE);
-  const [whatIfs, setWhatIfs] = useState<WhatIf[]>([]);
+  const [whatIf, setWhatIf] = useState<WhatIf | null>(null);
   const [staffEffects, setStaffEffects] = useState(false);
   const [horizon, setHorizon] = useState<number>(15);
   const [playToken, setPlayToken] = useState(0);
   const [playYear, setPlayYear] = useState<number | null>(null);
 
   const overrides = useMemo(() => ({ ...(read?.config.overrides ?? {}), [PRICE_KEY]: price }), [price, params]); // eslint-disable-line react-hooks/exhaustive-deps
-  const engine = useEngine(scenario, overrides, whatIfs);
+  const engine = useEngine(scenario, overrides, useMemo(() => (whatIf ? [whatIf] : []), [whatIf]));
   const runs = engine.runs.data;
   const plan = runs?.plan;
   const playMs = horizon * MS_PER_YEAR;
@@ -102,8 +84,8 @@ export default function ResultsPage() {
     setPlayYear(0);
   }
 
-  const notes = useMemo(() => (plan ? chartNotes(plan) : []), [plan]);
-  const belowMinimum = useMemo(() => (plan ? belowMinimumRange(plan) : null), [plan]);
+  const world = (whatIf && runs?.[whatIf]) || plan;
+  const rows = useMemo(() => (world ? totals(world, horizon, staffEffects) : []), [world, horizon, staffEffects]);
 
   if (read === null) {
     return (
@@ -131,10 +113,13 @@ export default function ResultsPage() {
   }
 
   const finance = plan?.finance;
-  const key = staffEffects ? 'cumulative_economic_cf' : 'cumulative_cash_cf';
-  const points = plan ? moneyPoints(plan, key, horizon) : [];
-  const endValue = points.at(-1)?.[1] ?? 0;
-  const payback = crossing(points);
+  const last = rows.at(-1);
+  const endValue = last ? last.nothing - last.upgrade : 0;
+  const payback = crossing(rows);
+  const residual = world?.finance.years.find(y => y.year === horizon)?.residual_value ?? 0;
+  const fan = engine.futures.data?.summary.plan?.fan.cash.filter(p => p.year <= horizon) ?? null;
+  const goodPayback = fan ? fanPayback(fan.map(p => ({ year: p.year, value: p.p90 }))) : null;
+  const badPayback = fan ? fanPayback(fan.map(p => ({ year: p.year, value: p.p10 }))) : null;
   const breakeven = engine.breakeven.data?.npv_cash;
   const flags = (finance?.flags ?? []).filter(flag => !isContextFlag(flag) && (flag.year === undefined || flag.year <= horizon));
   const contextFlags = (finance?.flags ?? []).filter(flag => isContextFlag(flag) && (flag.year === undefined || flag.year <= horizon));
@@ -176,7 +161,10 @@ export default function ResultsPage() {
             <span className={cn(endValue < 0 ? 'text-warning' : 'text-primary')}>{chfShort(Math.abs(endValue))}</span>
           </p>
         ) : <Skeleton className="h-14 w-full max-w-2xl" />}
-        <p className="text-lg text-muted-foreground">Compared with doing nothing{staffEffects ? ', counting staff effects' : ''}.</p>
+        <p className="text-lg text-muted-foreground text-pretty">
+          Compared with doing nothing{whatIf ? `, if ${whatIfLabels[whatIf].toLowerCase()} happens` : ''}{staffEffects ? ', counting staff effects' : ''}.
+          {Math.abs(residual) >= 50_000 && residual < 0 && ` Doing nothing would also leave you with ${chfShort(-residual)} more equipment value at the end.`}
+        </p>
       </section>
 
       <dl aria-label="Today and after" className="grid grid-cols-2 gap-px overflow-hidden rounded-xl border bg-border md:grid-cols-4">
@@ -200,7 +188,7 @@ export default function ResultsPage() {
         <div className="flex flex-wrap items-center justify-between gap-x-8 gap-y-4">
           <div className="flex flex-col gap-1">
             <h2 className="text-base font-semibold">Money compared with doing nothing</h2>
-            <p className="text-sm text-muted-foreground">Below the line you are behind. Above it, the upgrade has paid for itself.</p>
+            <p className="text-sm text-muted-foreground">Only the costs that depend on your choice, added up year by year.</p>
           </div>
           <div className="flex flex-wrap items-center gap-3">
             <ToggleGroup type="single" variant="outline" value={String(horizon)} aria-label="Years to show"
@@ -215,8 +203,8 @@ export default function ResultsPage() {
         </div>
 
         <div className="flex flex-wrap items-center gap-x-10 gap-y-4 border-y py-4">
-          <ToggleGroup type="multiple" variant="outline" value={whatIfs} aria-label="What if"
-            onValueChange={(value: string[]) => setWhatIfs(WHAT_IFS.filter(id => value.includes(id)))}>
+          <ToggleGroup type="single" variant="outline" value={whatIf ?? ''} aria-label="What if"
+            onValueChange={(value: string) => setWhatIf((WHAT_IFS as readonly string[]).includes(value) ? (value as WhatIf) : null)}>
             {WHAT_IFS.map(id => (
               <ToggleGroupItem key={id} value={id} className="gap-2 px-3">
                 <span className="size-2 rounded-[2px]" style={{ background: seriesColor[id] }} />
@@ -247,19 +235,22 @@ export default function ResultsPage() {
         </div>
 
         {runs ? (
-          <MoneyChart
-            runs={runs} whatIfs={whatIfs} staffEffects={staffEffects}
-            fan={engine.futures.data?.summary.plan?.fan.cash ?? null}
-            horizon={horizon} belowMinimum={belowMinimum} notes={notes}
-            playToken={playToken} playMs={playMs}
-          />
+          <MoneyChart rows={rows} horizon={horizon} staffEffects={staffEffects} playToken={playToken} playMs={playMs} />
         ) : <Skeleton className="h-[28rem] w-full" />}
 
-        <p className="flex flex-wrap gap-x-6 gap-y-1 text-sm text-muted-foreground">
-          <span className="flex items-center gap-2"><svg aria-hidden="true" width="20" height="4" className="text-chart-1"><line x1="0" y1="2" x2="20" y2="2" stroke="currentColor" strokeWidth="3" /></svg>Solid: money only</span>
-          <span className="flex items-center gap-2"><svg aria-hidden="true" width="20" height="4" className="text-chart-1"><line x1="0" y1="2" x2="20" y2="2" stroke="currentColor" strokeWidth="2" strokeDasharray="5 3" /></svg>Dashed: depends on guesses about staff</span>
-          {!staffEffects && <span className="flex items-center gap-2"><span className="h-3 w-5 rounded-sm bg-chart-1/10" />Shaded: 8 in 10 of 200 possible futures fall here{engine.futures.loading && ' (updating…)'}</span>}
-        </p>
+        <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-2 text-sm text-muted-foreground">
+          <p className="flex flex-wrap gap-x-6 gap-y-1">
+            <span className="flex items-center gap-2"><span className="h-3 w-5 rounded-sm bg-chart-3/25" />Green: the upgrade has spent less</span>
+            <span className="flex items-center gap-2"><span className="h-3 w-5 rounded-sm bg-warning/15" />Red: the upgrade has spent more</span>
+            {staffEffects && <span className="flex items-center gap-2"><svg aria-hidden="true" width="20" height="4" className="text-chart-1"><line x1="0" y1="2" x2="20" y2="2" stroke="currentColor" strokeWidth="2" strokeDasharray="5 3" /></svg>Dashed: includes lost staff value, a guess</span>}
+          </p>
+          {fan && !staffEffects && !whatIf && (
+            <p className="text-foreground">
+              Across 200 possible futures: paid for itself by {goodPayback !== null ? `year ${goodPayback.toFixed(1)}` : `—`} in good ones,{' '}
+              {badPayback !== null ? `by year ${badPayback.toFixed(1)} in bad ones` : `not within ${horizon} years in bad ones`}.
+            </p>
+          )}
+        </div>
       </section>
 
       <div className="grid gap-8 lg:grid-cols-2">
