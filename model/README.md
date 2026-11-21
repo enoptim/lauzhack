@@ -31,9 +31,19 @@ Timing per swap: `"now"` (default), `"end_of_life"`, or `"year": k` to phase it 
 | File | What |
 |---|---|
 | `model_assumptions.csv` | Physics and people-effect parameters, plus placeholders for numbers the data team is adding (financial state, solar self-consumption, roof space). A key in the team's `assumptions.csv` always wins. |
-| `option_drivers.csv` | People-effect values per option: lighting, screen and glare quality, daylight, CO2 and humidity control, seconds per drink, amenity, enclosed printers, hot-desking. |
+| `option_drivers.csv` | People-effect values per option: lighting, screen and glare quality, daylight, CO2 and humidity control, seconds per drink, amenity, enclosed printers, hot-desking. Where the team's `options.csv` has the fact (`seconds_per_drink`, `humidity_control`, `enclosed_filtered`), the team's value wins. |
 | `events_timing.csv` | Fallback start/end year and kind. Unused now: the team's `events.csv` has these columns, and they win. |
 | `monthly.csv` | Fallback monthly heating, cooling and solar shares. Unused now: the team's `monthly.csv` replaces it. |
+
+## Values from the literature
+The engine takes these straight from the cited rows in the team's `assumptions.csv` (value, low and high), via `LITERATURE` in `engine.py`:
+- Sick leave and ventilation: Milton et al. 2000. Going from about 12 to 24 L/s of outdoor air per person cuts short-term sick leave by 35% (18–48%).
+- Heat and performance: Seppänen et al. 2006. About 1.4% (1.1–2.0%) of performance is lost per degree of overheating.
+- 3D-printer enclosures: Azimi et al. 2017 and others. An enclosure removes 80% (67–99.95%) of the particles.
+
+Not used directly:
+- CO2 and performance (Allen et al. 2016) measures test scores, not work output. The engine keeps its own 0.3% per 100 ppm, with low = 0 because Zhang et al. 2017 found no effect of CO2 alone.
+- Lighting, screen and glare quality are still our own scores in `option_drivers.csv`. The team's `flicker_free` and `cri`, the flicker study (Wilkins 1989) and the daylight sleep study (Boubekri 2014) aren't wired in yet.
 
 ## Modelling choices
 - Old units are replaced like-for-like when they die (overdue ones at year 0). Upgrades are compared against that "do nothing" path, so an overdue upgrade only costs its premium.

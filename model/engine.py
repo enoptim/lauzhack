@@ -27,6 +27,17 @@ PROFILE = {"office": "office_weekday", "meeting": "meeting_weekday", "teaching":
            "common": "common_weekday", "none": None}
 POPULATION_TYPES = {"office", "makerspace", "seminar", "computer_lab"}   # default if team adds no flag
 STAFF_TYPES = {"office", "makerspace"}
+
+# People effects taken straight from the literature rows in the team's assumptions.csv.
+# engine key: (team key, scale). Value, low and high all follow the team's row, so a change there flows through.
+LITERATURE = {
+    "sick_leave_reduction_at_high_ventilation": ("sick_leave_attributable_pct_moderate_outdoor_air", 0.01),  # Milton 2000
+    "perf_loss_per_degc_discomfort": ("performance_loss_pct_per_c_above_25c", 0.01),                         # Seppanen 2006
+    "printer_enclosure_particle_reduction": ("printer_enclosure_ufp_reduction_pct", 0.01),                    # Azimi 2017
+}
+# Physical facts per option in the team's options.csv that replace our own drivers. driver: options.csv column
+OPTION_FACTS = {"seconds_per_drink": "seconds_per_drink", "humidity_control": "humidity_control",
+                "printer_enclosed": "enclosed_filtered"}
 INDOOR_GROUPS = {"lighting", "monitors", "computers", "printers_3d", "coffee", "water_heater"}
 
 
@@ -65,6 +76,12 @@ def load(team_dir=None, model_dir=None):
             meta[r[key]] = {"unit": r.get("unit", ""), "category": r.get("category", "team"),
                             "source": r.get("source", ""), "description": r.get("description", "")}
 
+    for key, (src, scale) in LITERATURE.items():
+        if src in params:
+            params[key] = params[src] * scale
+            ranges[key] = tuple(x * scale for x in ranges[src])
+            meta[key] = {**meta[src], "category": "coupling", "unit": "share", "source": meta[src]["source"]}
+
     rtypes = {r["type"]: r for r in _read(team / "room_types.csv")}
     rooms = {}
     for r in _read(team / "rooms.csv"):
@@ -94,6 +111,9 @@ def load(team_dir=None, model_dir=None):
         options[r["option_id"]]["drivers"] = {k: _num(v) for k, v in r.items() if k not in ("option_id", "notes") and _num(v) is not None}
     for o in options.values():
         o.setdefault("drivers", {})
+        for drv, col in OPTION_FACTS.items():
+            if o.get(col) is not None:
+                o["drivers"][drv] = o[col]
 
     items = []
     for r in _read(team / "inventory.csv"):
@@ -470,7 +490,8 @@ def outcomes(data, ctx, sel, env):
     gc = _weighted([(r["seats"], drv(r["id"], "blinds", "glare_control", 0.5)) for r in desk_rooms])
     strain = 1 - (0.6 * sq + 0.4 * gc)
     maker = [r for r in desk_rooms if r["type"] == "makerspace"]
-    open_share = _weighted([(r["seats"], 1 - drv(r["id"], "printers_3d", "printer_enclosed", 1)) for r in maker]) \
+    cut = p["printer_enclosure_particle_reduction"]
+    open_share = _weighted([(r["seats"], 1 - cut * drv(r["id"], "printers_3d", "printer_enclosed", 1)) for r in maker]) \
         * sum(r["seats"] for r in maker) / data["desks"]
     loss = {
         "co2": loss_co2,

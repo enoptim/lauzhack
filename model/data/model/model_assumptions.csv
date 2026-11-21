@@ -24,14 +24,15 @@ hackathon_floor0_share,0.9,0.7,1.0,share,people,Share of hackathon participants 
 student_daily_share,0.65,0.5,0.8,share,people,Teaching seats occupied on a typical day (for per-use appliances),model estimate
 hours_per_workday,8,8,8,h,people,Working hours per day,model estimate
 co2_no_effect_below_ppm,600,600,800,ppm,coupling,Performance flat below this CO2 level,model estimate
-perf_loss_per_100ppm_co2,0.003,0.001,0.006,share per 100 ppm,coupling,Performance loss per 100 ppm above threshold,Allen et al. 2016 (COGfx); Wargocki/Seppanen: to verify
-sick_vent_ref_lps,10,10,10,L/s/person,coupling,Ventilation with baseline sick days,model estimate
-sick_vent_high_lps,24,24,24,L/s/person,coupling,Ventilation where the full sick-leave reduction applies,Milton et al. 2000
-sick_leave_reduction_at_high_ventilation,0.2,0.05,0.35,share,coupling,Relative sick-leave reduction from ref to high ventilation,Milton et al. 2000: to verify
-perf_loss_per_degc_discomfort,0.02,0.01,0.03,share per degC,coupling,Performance loss per degC of overheating,Seppanen et al. 2006: to verify
+perf_loss_per_100ppm_co2,0.003,0,0.006,share per 100 ppm,coupling,Performance loss per 100 ppm above threshold,"model estimate. Low = 0: Zhang et al. 2017 found no effect of CO2 alone. Allen et al. 2016 (team assumptions.csv) measures test scores (-21% per 400 ppm), not work output, so it is not used directly"
+sick_vent_ref_lps,12,12,12,L/s/person,coupling,Ventilation with baseline sick days (the 'moderate' level in Milton 2000),Milton et al. 2000 (team assumptions.csv: ~12 vs ~24 L/s)
+sick_vent_high_lps,24,24,24,L/s/person,coupling,Ventilation where the full sick-leave reduction applies,Milton et al. 2000 (team assumptions.csv: ~12 vs ~24 L/s)
+sick_leave_reduction_at_high_ventilation,0.2,0.05,0.35,share,coupling,Relative sick-leave reduction from ref to high ventilation,fallback; engine uses team's sick_leave_attributable_pct_moderate_outdoor_air (Milton 2000)
+perf_loss_per_degc_discomfort,0.02,0.01,0.03,share per degC,coupling,Performance loss per degC of overheating,fallback; engine uses team's performance_loss_pct_per_c_above_25c (Seppanen 2006)
 perf_loss_per_poor_lighting,0.008,0.0,0.02,share per unit,coupling,Loss x (1 - lighting quality),model estimate
 perf_loss_per_eye_strain,0.004,0.0,0.01,share per unit,coupling,Loss x eye strain,model estimate
 perf_loss_open_printers,0.02,0.0,0.04,share,coupling,Loss for makerspace users next to open 3D printers (particles and fumes),model estimate
+printer_enclosure_particle_reduction,0.8,0.67,0.9995,share,coupling,Share of 3D-printer particles an enclosure removes,fallback; engine uses team's printer_enclosure_ufp_reduction_pct (Azimi 2017 and others)
 productive_share_of_time_saved,0.5,0.2,1.0,share,coupling,Saved minutes that become productive,model estimate
 max_total_perf_gain,0.08,0.05,0.1,share,coupling,Cap on combined performance change,model estimate
 infiltration_ach,0.3,0.2,0.5,1/h,physics,Air changes per hour through the building envelope with ventilation off,model estimate
@@ -46,4 +47,4 @@ new_lab_latest_year,5,5,5,year,future,If it comes it arrives in year 1 to this y
 lifetime_spread_low,0.7,0.7,0.7,x nominal,future,Shortest actual lifetime as a share of nominal,model estimate
 lifetime_spread_high,1.4,1.4,1.4,x nominal,future,Longest actual lifetime as a share of nominal,model estimate
 overdue_failure_prob_per_year,0.25,0.15,0.4,prob/yr,future,Chance per year that an overdue unit fails,model estimate
-failure_premium,0.15,0.05,0.3,share,future,Extra cost of an emergency replacement after a failure (rush order, downtime),model estimate
+failure_premium,0.15,0.05,0.3,share,future,"Extra cost of an emergency replacement after a failure (rush order, downtime)",model estimate
