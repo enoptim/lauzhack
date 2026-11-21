@@ -17,11 +17,21 @@ The tools:
 - `rank_upgrades`: every single upgrade, ranked by payback, for the whole building or floor by floor.
 - `simulate_scenario`: runs the engine on a set of swaps, optionally with events such as a price spike.
 - `list_metrics`: the goals and limits the optimizer understands, with today's value of each.
-- `optimize`: turns the user's goal and limits (budget, things that must not change, only certain options) into a problem for the optimizer in `model/optimize.py`, and returns the best plan it found next to today.
-- `upgrade_tradeoffs`: the best packages from cheapest to biggest saving (the cost-vs-savings curve from `model/search.py`), so people can see what more saving costs.
-- `show_scenario`: simulates a package and sends it to the app. `optimize` and `upgrade_tradeoffs` show their own plan, so the model uses this for a specific change or another package.
+- `propose_problem`: turns the user's goal and limits (budget, things that must not change, only certain options) into a problem for the optimizer in `model/optimize.py`. It checks the problem and adds today's values, but runs nothing.
+- `optimize`: runs the optimizer. Only the server calls it, after the user confirms (see below). If the model tries, it is told to propose instead.
+- `upgrade_tradeoffs`: the best packages from cheapest to biggest saving (the cost-vs-savings curve from `model/search.py`), so people can see what more saving costs. It shows the balanced package in the app itself.
+- `show_scenario`: simulates a package and sends it to the app. The confirmed optimization and `upgrade_tradeoffs` show their own plan, so the model uses this for a specific change or another package.
 
 The model never does the maths. Every number it gives comes from the engine.
+
+## Optimizing: propose, confirm, run
+
+For a goal with limits ("lowest running costs for at most CHF 200k, keep the ventilation"), the user checks the problem before anything runs:
+1. The model calls `propose_problem` and replies briefly. The app shows the goal and limits with a "Run optimization" button.
+2. To change something, the user just says so ("the budget is 250k"). The model proposes again.
+3. When the user presses the button, the app sends the proposal's problem as `confirm`. The server runs the optimizer on exactly that problem, so the model can't change it, and then the model explains the plan.
+
+In the terminal chat, type `y` to run a proposal.
 
 ## Run
 
@@ -38,7 +48,8 @@ The default model is Claude Sonnet 5.5, at about 5 US cents and 15 seconds per q
 ```json
 {
   "messages": [{"role": "user", "content": "Cut our bill by 5%"}],
-  "scenario": [{"group": "lighting", "option": "lighting_mid", "floor": 2}]
+  "scenario": [{"group": "lighting", "option": "lighting_mid", "floor": 2}],
+  "confirm": null
 }
 ```
 
@@ -53,10 +64,14 @@ The reply:
   - `item_ids`: the items that change. They match the mesh names, so they can be highlighted in 3D.
   - `summary`: the figures the assistant quoted, such as `upfront_cost_chf`, `energy_bill_chf_month` and `payback_years`.
 - `chart`: `null`, or the cost-vs-savings curve when the assistant compared packages: `x_label`, `y_label`, `points` (each with `x`, `y`, a `label` of the changes and its `scenario`) and `knee_index`, the balanced point.
-- `problem`: `null`, or the goal and limits the assistant optimized for. Show it so the user can check and correct it. The format is in [model/README.md](../model/README.md#optimizer-optimizepy).
+- `proposal`: `null`, or a problem waiting for the user's OK: `problem` (already checked, with relative limits turned into absolute ones and a "no new warnings" limit added) and `today` (today's value of the goal and each limit). To run it, send the next message with `"confirm": proposal.problem`. The format is in [model/README.md](../model/README.md#optimizer-optimizepy).
+- `optimization`: `null`, or after a confirmed run: `problem`, `all_limits_met` and `limits_missed`.
+
+`confirm` is optional: a problem from an earlier `proposal` that the user confirmed.
 
 ## Files
 
-- `agent.py`: the model's instructions (`SYSTEM`), the tool loop and the terminal chat.
+- `agent.py`: the model's instructions (`SYSTEM`), the tool loop, the confirmed-run step and the terminal chat.
+- `test_agent.py`: offline tests of propose, confirm and run, with the model replaced by a script (`make test` runs them).
 - `tools.py`: the tools and the summary of engine results the model sees.
 - The `/api/chat` route is in `model/server.py`.

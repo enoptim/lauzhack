@@ -133,7 +133,7 @@ Try it by hand at http://localhost:8000/playground (`playground/index.html`, pla
 | `POST /api/search` | `{goal, metric, target, budget, years, constraints, scope, events, ...}` | the search's best set of upgrades for a goal: `status`, `message`, `scenario`, `changes`, `metrics`, and the `/api/simulate` output as `engine`; see [Search](#search-searchpy) |
 | `POST /api/pareto` | `{x_metric, y_metric, constraints, scope, events, max_points, ...}` | the plans no other plan beats on both cost and saving, sorted by cost, with a balanced choice `knee_index` |
 | `GET /api/search/options?granularity=floor` | | metrics (unit, which way is better, description) and zones (the decisions), for menus |
-| `POST /api/chat` | `{messages, scenario}` | the assistant's answer and the scenario it recommends, and the goal and limits it optimized for (`problem`); see [chat/README.md](../chat/README.md) |
+| `POST /api/chat` | `{messages, scenario, confirm}` | the assistant's answer, the scenario it recommends, a proposed optimization to confirm (`proposal`), and after a confirmed run the result (`optimization`); see [chat/README.md](../chat/README.md) |
 | `GET /api/metrics` | | goals and limits an optimization problem can use |
 | `POST /api/optimize` | `{problem}` | the best plan for a goal under limits, next to doing nothing; see Optimizer below |
 | `POST /api/evaluate` | `{problem, scenario}` | one scenario scored against a problem: metrics, limits missed, objective, score |

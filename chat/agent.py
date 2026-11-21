@@ -39,17 +39,25 @@ They want to know what to change, what it costs up front, what it saves, and whe
 Rules:
 - Every number you give must come from a tool. Never estimate or do your own sums on savings.
 - For a goal or limits ("cheapest way to cut electricity by 20%", "lowest running costs for at most CHF 200k",
-  "we can't touch the ventilation", "only mid-range coffee machines"), use optimize:
+  "we can't touch the ventilation", "only mid-range coffee machines"), set up an optimization and let the user
+  confirm it before anything runs:
   1. Turn the user's words into one objective and a list of limits. Today's value of every metric is in the
-     optimize tool's description; call list_metrics only if you need units or descriptions. Use max_change_pct / min_change_pct for targets relative to today; never work out
-     the absolute number yourself.
+     propose_problem description; call list_metrics only if you need units or descriptions. Use
+     max_change_pct / min_change_pct for targets relative to today; never work out the absolute number yourself.
   2. "Can't change X" or "keep X" goes in locked (with floor if they name one). "Only consider X" goes in allowed;
-     to force an option, allow only that option. Plans are decided floor by floor by default; set per_floor false only if the user wants one choice for the whole building.
-  3. If the user names limits but no goal, maximise npv_cash_chf (value over 15 years) and say so.
-     If the goal is truly unclear, ask one short question instead.
-  4. Call optimize once. It shows its plan in the app itself, so don't call show_scenario for that plan.
-  5. In your answer, first restate the goal and limits you used in one or two lines, so the user can correct them.
-     If all_limits_met is false, say which limit could not be met and how close the plan gets.
+     to force an option, allow only that option. Plans are decided floor by floor by default; set per_floor false
+     only if the user wants one choice for the whole building.
+  3. If the user names limits but no goal, maximise npv_cash_chf (value over 15 years).
+     If the goal is truly unclear, ask one short question instead of proposing.
+  4. Call propose_problem. The app shows the problem with a "Run optimization" button.
+  5. Reply in at most 60 words. The app shows the goal and limits right below your reply, so don't list them again.
+     Say only which choices you made that the user did not state (e.g. the default goal, no warnings allowed),
+     then ask them to press "Run optimization" or say what to change.
+     Give no plan or savings yet: nothing has run.
+  6. If the user asks for a change, call propose_problem again with the revised problem.
+- When the user confirms, the server runs optimize on exactly that problem and you see the result. The app already
+  shows the plan, so don't call show_scenario for it; just explain it. If all_limits_met is false, say which limit
+  could not be met and how close the plan gets, and offer a revised problem. Never call optimize yourself.
 - For "what are my options" or "how does cost trade against savings", call upgrade_tradeoffs. Describe three
   packages: the cheapest useful one, the balanced one (knee_index) and the biggest saving. The app plots them and
   shows the balanced one; call show_scenario only if the user wants another.
@@ -94,16 +102,20 @@ def _post(payload):
         raise RuntimeError(f"OpenRouter error {e.code}: {e.read().decode()[:500]}") from None
 
 
-def chat(messages, scenario=None, on_tool=None):
+def chat(messages, scenario=None, confirm=None, on_tool=None):
     """Answer the last user message.
 
     messages: [{"role": "user" | "assistant", "content": str}, ...]
     scenario: the swaps the app shows right now (optional), e.g. [{"group": "lighting", "option": "lighting_mid", "floor": 2}]
+    confirm:  a problem the user confirmed (from an earlier `proposal`). The optimizer runs on exactly this problem
+              before the model answers, so the model can't change it.
     on_tool:  optional callback(name, args) for logging
 
-    Returns {"reply": str, "scenario": dict | None, "problem": dict | None}. `scenario` is set when the model
-    picked one to show (see tools.app_scenario). `problem` is the last goal and limits it optimized for
-    (see model/optimize.py), so the app can show them.
+    Returns {"reply", "scenario", "proposal", "optimization", "chart"}:
+    - scenario: the plan the model showed (see tools.app_scenario), or None.
+    - proposal: the problem the model proposed this turn, with today's values, for the user to confirm; or None.
+    - optimization: after a confirmed run, the problem and whether all limits were met; or None.
+    - chart: the cost-vs-savings curve if the model called upgrade_tradeoffs (see tools.tradeoff_chart); or None.
     """
     system = SYSTEM
     if scenario:
@@ -111,34 +123,55 @@ def chat(messages, scenario=None, on_tool=None):
     convo = [{"role": "system", "content": system}] + [
         {"role": m["role"], "content": m["content"]} for m in messages if m.get("role") in ("user", "assistant")
     ]
-    shown = problem = chart = None
+    schemas = tools.SCHEMAS
+    shown = proposal = optimization = chart = None
+
+    def out(reply):
+        return {"reply": reply, "scenario": shown, "proposal": proposal, "optimization": optimization,
+                "chart": chart}
+
+    if confirm:
+        # Run the confirmed problem ourselves and hand the model the result as if it had called optimize.
+        keys = ("objective", "constraints", "locked", "allowed", "per_floor", "allow_warnings", "events")
+        args = {k: confirm[k] for k in keys if k in confirm}
+        if on_tool:
+            on_tool("optimize (confirmed)", args)
+        result = tools.run("optimize", args)
+        optimization = {"problem": result["problem"], "all_limits_met": result["all_limits_met"],
+                        "limits_missed": result["limits_missed"]}
+        shown = tools.app_scenario("Optimized plan", result["scenario"], args.get("events"))
+        schemas = tools.SCHEMAS + [tools.OPTIMIZE_SCHEMA]  # the call below must name a known tool
+        call = {"id": "confirmed_optimize", "type": "function",
+                "function": {"name": "optimize", "arguments": json.dumps(args)}}
+        convo += [{"role": "assistant", "content": "", "tool_calls": [call]},
+                  {"role": "tool", "tool_call_id": call["id"], "content": json.dumps(result)}]
+
     for _ in range(MAX_STEPS):
-        msg = _post({"model": MODEL, "messages": convo, "tools": tools.SCHEMAS})["choices"][0]["message"]
+        msg = _post({"model": MODEL, "messages": convo, "tools": schemas})["choices"][0]["message"]
         calls = msg.get("tool_calls") or []
         convo.append({"role": "assistant", "content": msg.get("content") or "", **({"tool_calls": calls} if calls else {})})
         if not calls:
-            return {"reply": msg.get("content") or "", "scenario": shown, "problem": problem, "chart": chart}
+            return out(msg.get("content") or "")
         for call in calls:
             name = call["function"]["name"]
             try:
+                if name == "optimize":
+                    raise ValueError("Don't run optimize yourself: call propose_problem and let the user confirm.")
                 args = json.loads(call["function"].get("arguments") or "{}")
                 if on_tool:
                     on_tool(name, args)
                 result = tools.run(name, args)
                 if name == "show_scenario":
                     shown = tools.app_scenario(**args)
-                if name == "optimize":  # optimize and upgrade_tradeoffs show their plan themselves
-                    problem = result["problem"]
-                    shown = tools.app_scenario(args.get("title") or "Best plan for your goal", result["scenario"],
-                                               args.get("events"))
-                if name == "upgrade_tradeoffs":
+                if name == "propose_problem":
+                    proposal = {"problem": result["problem"], "today": result["today"]}
+                if name == "upgrade_tradeoffs":  # shows its balanced package itself
                     chart = tools.tradeoff_chart(result)
                     shown = tools.knee_scenario(result, args.get("events")) or shown
             except Exception as e:  # the model sees the error and can fix its call
                 result = {"error": str(e)}
             convo.append({"role": "tool", "tool_call_id": call["id"], "content": json.dumps(result)})
-    return {"reply": "Sorry, I couldn't finish that. Try a simpler question.", "scenario": shown, "problem": problem,
-            "chart": chart}
+    return out("Sorry, I couldn't finish that. Try a simpler question.")
 
 
 def _log(name, args):
@@ -147,18 +180,23 @@ def _log(name, args):
 
 def main():
     history = []
+    pending = None  # a proposed problem waiting for confirmation
     once = " ".join(sys.argv[1:])
     while True:
-        q = once or input("\nYou: ").strip()
+        q = once or input("\nYou (y = run the proposed optimization): ").strip()
         if not q:
             break
-        history.append({"role": "user", "content": q})
-        out = chat(history, on_tool=_log)
+        confirm = pending if q.lower() in ("y", "yes", "run") else None
+        history.append({"role": "user", "content": "Looks good, run the optimization." if confirm else q})
+        out = chat(history, confirm=confirm, on_tool=_log)
+        pending = out["proposal"]["problem"] if out["proposal"] else None
         history.append({"role": "assistant", "content": out["reply"]})
         print(f"\nTwin: {out['reply']}")
         if out["scenario"]:
             s = out["scenario"]
             print(f"\n[App shows: {s['title']}, {len(s['item_ids'])} items highlighted]")
+        if pending:
+            print(f"\n[Proposed optimization: {json.dumps(pending)}. Type y to run it.]")
         if once:
             break
 

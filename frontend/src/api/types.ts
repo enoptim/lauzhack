@@ -372,6 +372,8 @@ export interface ChatRequest {
   messages: ChatMessage[];
   /** The scenario the app shows right now, so the assistant can build on it. */
   scenario?: Scenario;
+  /** A proposal's problem the user confirmed: the server runs the optimizer on exactly this, then the assistant explains. */
+  confirm?: OptimizationProblem;
 }
 
 /** What the assistant said about its scenario. Money in CHF, today vs the scenario in year 1. */
@@ -406,13 +408,28 @@ export interface ChatScenario {
   summary: ChatScenarioSummary;
 }
 
+export interface ChatProposal {
+  /** Already checked and filled in: relative limits are absolute (from_change_pct keeps the %), warnings <= 0 added. */
+  problem: OptimizationProblem;
+  /** Today's value (doing nothing) of the goal and of each limited metric. */
+  today: Partial<Record<MetricName, number | null>>;
+}
+
+export interface ChatOptimization {
+  problem: OptimizationProblem;
+  all_limits_met: boolean;
+  limits_missed: Evaluation['violations'];
+}
+
 export interface ChatResult {
   /** Markdown. */
   reply: string;
   /** Set when the assistant picked a scenario to show. */
   scenario: ChatScenario | null;
-  /** The goal and limits the assistant optimized for, to show (and let the user correct). */
-  problem: OptimizationProblem | null;
+  /** The goal and limits the assistant proposes, for the user to confirm or correct. Nothing has run yet. */
+  proposal: ChatProposal | null;
+  /** After a confirmed run: the problem and whether the plan meets every limit. */
+  optimization: ChatOptimization | null;
   /** Set when the assistant compared packages (upgrade_tradeoffs): cost against saving, to plot. */
   chart?: ChatChart | null;
 }
@@ -444,7 +461,7 @@ export type MetricName =
   | 'upfront_cost_chf' | 'extra_cost_vs_like_for_like_chf' | 'running_cost_chf_year' | 'energy_bill_chf_year'
   | 'electricity_kwh_year' | 'npv_cash_chf' | 'npv_economic_chf' | 'payback_years' | 'lowest_reserve_chf'
   | 'office_co2_ppm' | 'meeting_co2_ppm' | 'classroom_co2_ppm' | 'summer_overheating_degc' | 'sick_days'
-  | 'comfort_score' | 'warnings';
+  | 'comfort_score' | 'warnings' | 'new_warnings';
 
 export interface Metric {
   metric: MetricName;
@@ -462,6 +479,8 @@ export interface ProblemConstraint {
   /** Relative to doing nothing, e.g. -20 = at least 20% lower. Turned into max/min by the server. */
   max_change_pct?: number;
   min_change_pct?: number;
+  /** Set by the server when it turned a *_change_pct into max/min, so the % can still be shown. */
+  from_change_pct?: number;
 }
 
 export interface OptimizationProblem {
