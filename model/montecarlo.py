@@ -76,7 +76,7 @@ def describe(future):
     ev = sorted(future["events"], key=lambda e: e["start_year"])
     parts = []
     for e in ev:
-        name = {"heatwave_summer": "heatwave", "energy_price_spike": "price spike", "new_lab": "new lab"}[e["id"]]
+        name = {"heatwave_summer": "heatwave", "energy_price_spike": "price spike", "new_lab": "new lab"}.get(e["id"], e["id"])
         parts.append(f"{name} in year {e['start_year']}")
     parts.append(f"price ends at {future['price_path'][-1]:.2f}x today")
     return ", ".join(parts) if parts else "a quiet future"
@@ -92,11 +92,18 @@ def _pct(xs, q):
     return xs[f] + (xs[c] - xs[f]) * (k - f)
 
 
-def run(data, scenarios, n=300, seed=2026):
+def run(data, scenarios, n=300, seed=2026, events=(), overrides=None):
     """scenarios: {name: scenario list}. Returns per-scenario summaries, pairwise comparisons,
-    and the futures themselves (so any run can be replayed with engine.simulate(..., future=...))."""
+    and the futures themselves (so any run can be replayed with engine.simulate(..., future=...)).
+    events: event ids switched on in every future, on top of the random ones (with their fixed timing).
+    overrides: assumptions fixed in every future; they win over the drawn people-effect strengths."""
     rng = random.Random(seed)
     futures = [draw_future(data, rng) for _ in range(n)]
+    if events or overrides:
+        fixed = [{"id": e, "start_year": data["events"][e]["start_year"], "end_year": data["events"][e]["end_year"]}
+                 for e in events if data["events"][e]["kind"] == "annual"]
+        futures = [{**f, "events": f["events"] + fixed, "params": {**f["params"], **(overrides or {})}}
+                   for f in futures]
     H = int(data["params"]["horizon_years"])
     results = {}
     for name, sc in scenarios.items():

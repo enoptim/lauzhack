@@ -767,23 +767,55 @@ def stress_test(data, scenario=None, event_id="hackathon_weekend", overrides=Non
             "hours_over_capacity_per_day": sum(x["over_capacity"] for x in hours), "hours": hours}
 
 
-def bands(data, scenario=None, events_on=(), metric="npv_economic"):
+def bands(data, scenario=None, events_on=(), metric="npv_economic", overrides=None):
+    base = dict(overrides or {})
     coupling = [k for k, m in data["param_meta"].items() if m["category"] == "coupling"]
-    lo = {k: data["ranges"][k][0] for k in coupling}
-    hi = {k: data["ranges"][k][1] for k in coupling}
+    lo = {**base, **{k: data["ranges"][k][0] for k in coupling}}
+    hi = {**base, **{k: data["ranges"][k][1] for k in coupling}}
     return {"weak": simulate(data, scenario, events_on, lo)[metric],
-            "central": simulate(data, scenario, events_on)[metric],
+            "central": simulate(data, scenario, events_on, base)[metric],
             "strong": simulate(data, scenario, events_on, hi)[metric]}
 
 
-def tornado(data, scenario=None, events_on=(), metric="npv_economic", top=None):
-    central = simulate(data, scenario, events_on)[metric]
+def tornado(data, scenario=None, events_on=(), metric="npv_economic", top=None, overrides=None):
+    base = dict(overrides or {})
+    central = simulate(data, scenario, events_on, base)[metric]
     rows = []
     for k, (lo, hi) in data["ranges"].items():
-        if lo is None or hi is None or lo == hi or data["param_meta"][k]["category"] == "future":
+        if lo is None or hi is None or lo == hi or data["param_meta"][k]["category"] == "future" or k in base:
             continue
-        a = simulate(data, scenario, events_on, {k: lo})[metric]
-        b = simulate(data, scenario, events_on, {k: hi})[metric]
+        a = simulate(data, scenario, events_on, {**base, k: lo})[metric]
+        b = simulate(data, scenario, events_on, {**base, k: hi})[metric]
         rows.append({"parameter": k, "low": lo, "high": hi, "at_low": a, "at_high": b, "swing": abs(b - a)})
     rows.sort(key=lambda x: -x["swing"])
     return {"central": central, "rows": rows[:top] if top else rows}
+
+
+def breakeven(data, scenario=None, events_on=(), overrides=None, param="electricity_price_chf_kwh",
+              lo=0.0, hi=None, tol=1e-4):
+    """The value of one assumption at which the plan stops or starts paying off (NPV = 0), for cash and economic NPV.
+    Returns, per metric, the value and whether the plan pays off above or below it; None if NPV keeps one sign in [lo, hi]."""
+    base = dict(overrides or {})
+    current = base.get(param, data["params"][param])
+    hi = hi if hi is not None else max(current * 5, data["ranges"][param][1] * 3)
+
+    def npv(v, metric):
+        return simulate(data, scenario, events_on, {**base, param: v}, detail_years=())[metric]
+
+    out = {"param": param, "current": current, "search_range": [lo, hi]}
+    for metric in ("npv_cash", "npv_economic"):
+        f_lo, f_hi = npv(lo, metric), npv(hi, metric)
+        if (f_lo > 0) == (f_hi > 0):
+            out[metric] = {"value": None, "pays_off": "always" if f_lo > 0 else "never"}
+            continue
+        a, b, fa = lo, hi, f_lo
+        while b - a > tol:
+            m = (a + b) / 2
+            fm = npv(m, metric)
+            if (fm > 0) == (fa > 0):
+                a, fa = m, fm
+            else:
+                b = m
+        out[metric] = {"value": (a + b) / 2, "pays_off": "above" if f_hi > 0 else "below",
+                       "npv_at_current": npv(current, metric)}
+    return out
