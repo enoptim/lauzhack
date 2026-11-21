@@ -7,6 +7,7 @@ In the repo this folder sits at `model/`, next to the team's `data/`; the engine
 
 ```sh
 python test_engine.py        # 41 validation tests
+python test_search.py        # search: brute-force checks on small problems
 ```
 
 ```python
@@ -80,6 +81,38 @@ Every future is an ordinary `simulate()` run, so all accounting identities hold 
 
 Note: in the deterministic run, overdue units are replaced as planned at year 0. In the futures they keep running until they fail, so upgrading now costs the full price rather than only the premium over a like-for-like replacement.
 
+## Optimizer (`optimize.py`)
+
+Finds the best plan for one goal under limits. The chat assistant writes the problem from the user's words; the search itself is a black box we can swap.
+
+A problem:
+```json
+{
+  "objective":   {"metric": "running_cost_chf_year"},
+  "constraints": [{"metric": "upfront_cost_chf", "max": 200000},
+                  {"metric": "electricity_kwh_year", "max_change_pct": -20}],
+  "locked":      [{"group": "ventilation"}, {"group": "lighting", "floor": 2}],
+  "allowed":     {"coffee": ["coffee_current", "coffee_mid"]},
+  "per_floor":   false
+}
+```
+- `objective`: one metric to make as small or large as possible. Each metric has a natural direction; `sense` overrides it.
+- `constraints`: limits. `max_change_pct` and `min_change_pct` are relative to doing nothing (-20 = at least 20% lower).
+- `locked`: things that stay as they are. `allowed`: the only options a group may use; one option forces it.
+- `per_floor`: choose floor by floor instead of once per group for the whole building.
+- By default a plan may not cause new warnings (over budget, reserve too low, and so on). Warnings doing nothing already has, such as too few desks once the new lab arrives, do not count against a plan. `allow_warnings: true` turns this off.
+- The metrics are listed in `METRICS` and at `GET /api/metrics`. Money and energy are yearly averages over the horizon; air quality and comfort are year 1. Every metric comes from `engine.simulate`.
+- Upgrades are bought now. "When it breaks" is not part of the search yet.
+
+To plug in another search, write a function `solve(problem, slots, evaluate) -> plan`:
+- `slots`: the decisions, e.g. `{"key": "lighting@2", "group": "lighting", "floor": 2, "options": [null, "lighting_budget", ...]}`. `null` means keep what is there.
+- `plan`: `{slot key: option id or null}`.
+- `evaluate(plan)` runs the engine and returns the metrics, the limits missed, `feasible`, `objective` (lower is better) and `score` (objective plus a large penalty for missed limits, for solvers that want one number).
+- Then start the API with `OPTIMIZER=package.module:function`. Without it, the full search in `search.py` runs (see Search below); `OPTIMIZER=greedy` runs the simple greedy search instead, which changes one decision at a time while that helps.
+- An optimizer outside Python can call `POST /api/evaluate` instead.
+
+Tests: `python3 test_optimize.py` (also run by `make test`).
+
 ## API for the 3D frontend (`server.py`, `viz.py`)
 ```sh
 cd model && uvicorn server:app --reload --port 8000
@@ -97,6 +130,13 @@ Try it by hand at http://localhost:8000/playground (`playground/index.html`, pla
 | `POST /api/bands` | `{scenario, events, overrides}` | economic NPV with weak / central / strong people effects |
 | `POST /api/futures` | `{scenarios: {name: scenario}, n, seed, events, overrides}` | Monte Carlo: P10/P50/P90, probabilities, fan chart per year, A-vs-B, three futures in words. `events` are on in every future; `overrides` are fixed in every future |
 | `POST /api/breakeven` | `{scenario, events, overrides, param}` | the value of `param` (default electricity price) where cash and economic NPV are zero, and whether the plan pays off above or below it |
+| `POST /api/search` | `{goal, metric, target, budget, years, constraints, scope, events, ...}` | the search's best set of upgrades for a goal: `status`, `message`, `scenario`, `changes`, `metrics`, and the `/api/simulate` output as `engine`; see [Search](#search-searchpy) |
+| `POST /api/pareto` | `{x_metric, y_metric, constraints, scope, events, max_points, ...}` | the plans no other plan beats on both cost and saving, sorted by cost, with a balanced choice `knee_index` |
+| `GET /api/search/options?granularity=floor` | | metrics (unit, which way is better, description) and zones (the decisions), for menus |
+| `POST /api/chat` | `{messages, scenario}` | the assistant's answer and the scenario it recommends, and the goal and limits it optimized for (`problem`); see [chat/README.md](../chat/README.md) |
+| `GET /api/metrics` | | goals and limits an optimization problem can use |
+| `POST /api/optimize` | `{problem}` | the best plan for a goal under limits, next to doing nothing; see Optimizer below |
+| `POST /api/evaluate` | `{problem, scenario}` | one scenario scored against a problem: metrics, limits missed, objective, score |
 
 A snapshot is keyed by the team's ids, which are also the mesh names:
 - `items[item_id]`: `option_id`, `kwh_year`, `kw_avg`, `kw_on` (drive wire thickness or glow from these)
@@ -105,3 +145,50 @@ A snapshot is keyed by the team's ids, which are also the mesh names:
 - `building`: totals, kWh by group, costs, staff outcomes (performance, sick days, comfort, CO2 by room kind), desk capacity
 
 `finance.kind` says how to style each kind of number: `calculated` (data and physics), `estimate` (depends on uncertain people effects), `index` (a score, never money). Plant-room and roof equipment (ventilation, heat pumps, solar) sits in `BC_991.0` / `BC_ROOF`; use `serves_floor` to draw its wires to the floor it serves.
+
+## Search (`search.py`)
+A full search over combinations of upgrades, with goal presets and the cost-vs-savings frontier. Every number comes from the engine.
+
+A zone is one decision: which option one group has in one place. `lighting@2` is the lighting on floor 2. By default a group gets one zone per floor it serves (`granularity: "floor"`); `"building"` gives one zone per group. All changes happen now.
+
+Goals (`POST /api/search`):
+- `min_cost_for_target`: the cheapest plan whose `metric` reaches `target`, e.g. 10% off the energy bill. `budget` is optional.
+- `max_savings`: the plan with the highest `metric` that costs at most `budget` up front. No budget means no limit. Ties go to the cheaper plan.
+- `min_total_cost`: the lowest purchase plus running cost over `years` (`basis: "chf"`), or the least electricity used (`basis: "kwh"`). `budget` is optional.
+- `custom`: any `objective` (`{"metric", "sense"}`) with any `constraints` (`[{"metric", "min" | "max"}]`).
+
+The frontier (`POST /api/pareto`) shows what each extra franc buys. It returns the plans that no other plan beats on both axes. By default x is the up-front cost (lower is better) and y the yearly running-cost saving (higher is better). `knee_index` is the balanced choice: past it, savings grow slowly for the money. `max_points` (default 15) thins the curve: it keeps both ends and the knee, and spaces the rest evenly along the curve. The search tries a fixed number of plans, so the same request always gives the same answer. It takes about 4 seconds, and under 1 second when the same settings were used before. `time_limit` is only a safety stop. When the server starts, it works out the default curve in the background, so the first request takes about 1 second (set `TWIN_WARMUP=0` to skip this).
+
+How good is the answer? The full building has about 10^20 possible plans, too many to try them all. On small problems the search finds the same best plan as trying every combination (checked in `test_search.py`). On the full building it matched or beat a much longer random search. A goal takes 1 to 3 seconds.
+
+Metrics. Savings are versus doing nothing, in year 1. Each saving also has a `_pct` version: the share of doing nothing's value. `GET /api/search/options` lists them all with units.
+- `upfront_cost_chf`: what the changes cost to buy and install now, after the solar subsidy.
+- `net_upfront_cost_chf`: the extra cost over like-for-like replacements that are due now anyway.
+- `operating_cost_saving_chf_year`: all running costs saved: energy bill, maintenance, supplies and extra rent.
+- `energy_cost_saving_chf_year`: the electricity bill saved.
+- `energy_saving_kwh_year`: less electricity used.
+- `grid_energy_saving_kwh_year`: less electricity bought from the grid (counts our own solar).
+- `total_cost_chf`, `total_cost_saving_chf`, `total_energy_kwh`, `total_energy_saving_kwh`: totals over `horizon_years` (default 15). `discounted` counts future francs in today's money. `include_residual` subtracts what the equipment is still worth at the end.
+- `npv_cash_chf`, `npv_economic_chf`, `payback_years`, and people and air in year 1: `comfort_score`, `office_co2_ppm`, `meeting_co2_ppm`, `sick_days`.
+
+Scope sets hard limits on what may change. Every result respects it, even a best-effort one. A selector picks zones: `{"group", "floor", "option"}`, where `floor` and `option` are optional and may be lists.
+- `allowed`: only these may change (and only to the given options, if any).
+- `locked`: these stay as they are.
+- `required`: these must change (to the given option, if any).
+- `excluded_options`: never install these.
+
+Unknown names, a scope that contradicts itself, or a `floor` with `granularity: "building"` give HTTP 400 with a plain message.
+
+Status:
+- `ok`: the plan meets every constraint.
+- `best_effort`: no plan meets them all, e.g. the target is out of reach. The result is the closest plan, and `message` says what is reachable.
+
+The result also has `scenario` (swaps ready for `/api/simulate`), `changes` (per zone: from, to, units, cost, item ids), `metrics` and `baseline` (doing nothing). `engine` is the `/api/simulate` output for the plan; send `include_engine_output: false` to skip it.
+
+Examples:
+```
+POST /api/search  {"goal": "min_cost_for_target", "metric": "energy_cost_saving_pct", "target": 10,
+                     "scope": {"locked": [{"group": "servers"}]}}
+POST /api/pareto    {"y_metric": "energy_saving_kwh_year", "constraints": [{"metric": "upfront_cost_chf", "max": 300000}]}
+GET  /api/search/options?granularity=building
+```
