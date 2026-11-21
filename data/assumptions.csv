@@ -1,0 +1,21 @@
+key,value,low,high,unit,description,source
+floor_area_m2,14099,,,m2,"Net room area, all floors (rooms.csv)",derived from EPFL plan
+heated_area_m2,10973,,,m2,"Area of heated room types (excludes car park, plant, technical, server room)",derived
+cooled_area_m2,5768,,,m2,"Area of cooled room types (offices, meeting, teaching, makerspace)",derived
+desks,268,,,desks,Desks in offices and the makerspace,derived
+headcount_staff,241,214,268,people,Researchers and staff with a desk in the building,made up
+teaching_seats,407,,,seats,"Seats in classrooms, lecture rooms and computer rooms",derived
+floor_height_m,4.0,3.6,4.4,m,Floor-to-floor height,estimate
+workdays_per_year,250,,,days,260 weekdays minus ~9-10 public holidays in Vaud,estimate
+daily_attendance_share,0.7,0.55,0.85,share,"Share of staff in the building on a workday (remote work, travel, vacation, sickness); equals the peak of office_weekday in schedule.csv",estimate
+heating_demand_kwh_m2_year,50,35,70,kWh/m2/yr,"Useful heat per heated m2, including ventilation losses with today's AHUs (50% heat recovery) and the glass atrium roof",estimate
+cooling_demand_kwh_m2_year,20,10,35,kWh/m2/yr,"Useful cooling per cooled m2, excluding the server room",estimate
+other_electricity_kwh_m2_year,8,5,12,kWh/m2/yr,"Loads not modelled as options: lifts, fridges, network, printers, lab equipment",estimate
+fresh_air_m3h_per_person,36,25,40,m3/h/person,Outdoor air per occupant for good air quality; sets how many people the ventilation supports,estimate
+electricity_price_chf_kwh,0.2,0.15,0.28,CHF/kWh,Large-consumer price incl. grid fees and taxes,estimate
+pv_feed_in_chf_kwh,0.08,0.05,0.12,CHF/kWh,Price received for surplus solar electricity sold to the grid,estimate
+pv_subsidy_chf_per_kwp,300,150,450,CHF/kWp,One-off federal subsidy for new solar installations,estimate
+salary_cost_chf_year,110000,80000,140000,CHF/yr/person,"Fully loaded cost per staff member (mix of PhD students, postdocs, professors, admin)",estimate
+rent_chf_m2_year,290,220,380,CHF/m2/yr,Market rent for comparable space in Lausanne (opportunity cost of space),estimate
+sick_days_per_employee_year,7,5,10,days/yr,Absence days due to illness per full-time employee,estimate
+green_loan_rate_pct,2.5,1.5,4.0,%/yr,Interest on a green loan for energy upgrades,estimate

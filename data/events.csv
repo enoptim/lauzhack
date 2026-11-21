@@ -1,0 +1,5 @@
+event_id,name,parameter,change,value,start_month,duration_days,description,source
+hackathon_weekend,Hackathon weekend,event_people,set,300,11,2,"LauzHack: ~300 people use the whole building day and night for a weekend (cafe, halls, classrooms and computer rooms as hacking space); occupancy follows the hackathon column of schedule.csv.",team (LauzHack 2026 attendance)
+new_lab,New research lab moves in,headcount_staff,add,60,3,,"A new lab brings 60 people: more desks, plug loads, coffee and hot water, and more air needed per floor.",made up
+energy_price_spike,Energy price spike,electricity_price_chf_kwh,multiply,1.8,1,365,"Electricity prices jump for a year, similar to the 2022-23 European energy crisis.",estimate
+heatwave_summer,Heatwave summer,cooling_demand_kwh_m2_year,multiply,1.5,6,92,A hot summer like 2003 or 2022: cooling demand up ~50% in June-August; the glass atrium and rooms without automatic blinds overheat.,estimate
