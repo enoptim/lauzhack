@@ -1,10 +1,9 @@
 import { Check } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import { Spinner } from '@/components/ui/spinner';
 import { cn } from '@/lib/utils';
-import PixelBuddy from './PixelBuddy';
+import CornerChase from './CornerChase';
 
-const STEP_MS = 520;
+const STEP_MS = 950;
 
 type Props = {
   /** One plain line per change, e.g. "Ventilation → New AHUs with heat recovery". */
@@ -45,10 +44,9 @@ export default function SimulationIntro({ changes, ready, onDone }: Props) {
         leaving && 'pointer-events-none opacity-0 blur-sm')}>
       <div className="flex w-full max-w-lg flex-col gap-8">
         <div className="flex items-center gap-6">
-          <PixelBuddy className="w-32 shrink-0 sm:w-36" />
-          {/* Fixed size, so the text can change without moving anything around it. */}
-          <p className="flex h-20 flex-1 items-center gap-2.5 rounded-2xl rounded-bl-sm border bg-card px-4 text-base shadow-[0_8px_24px_-12px_oklch(0.3_0.02_60/0.25)]">
-            <Spinner className={cn('size-4 shrink-0 text-primary', leaving && 'invisible')} />
+          <CornerChase className="size-14 shrink-0" />
+          {/* Fixed height, so the text can change without moving anything around it. */}
+          <p className="flex h-16 flex-1 items-center text-xl font-medium tracking-tight">
             <span className="line-clamp-2">{saying}</span>
           </p>
         </div>

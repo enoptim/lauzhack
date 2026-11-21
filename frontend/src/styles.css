@@ -397,13 +397,15 @@
 .debug-error { color: #b3261e; }
 
 
-/* Bitsy, the pixel building on the simulating screen: walks in place, bobs one pixel, blinks. */
+/* Corner chase loader on the simulating screen: each cell glows in turn around the square. */
+.corner-chase-cell { opacity: 0.15; }
 @media (prefers-reduced-motion: no-preference) {
-  .buddy-body { animation: buddy-bob 0.5s steps(1) infinite; }
-  .buddy-leg-a { animation: buddy-step 0.5s steps(1) infinite; }
-  .buddy-leg-b { animation: buddy-step 0.5s steps(1) infinite reverse; }
-  .buddy-eyes { transform-box: fill-box; transform-origin: center; animation: buddy-blink 3.2s steps(1) infinite; }
+  .corner-chase-cell { animation: corner-chase 1.6s ease-in-out infinite; }
 }
-@keyframes buddy-bob { 0% { transform: translateY(0); } 50% { transform: translateY(-0.5px); } }
-@keyframes buddy-step { 0% { transform: translateY(0); } 50% { transform: translateY(-1px); } }
-@keyframes buddy-blink { 0%, 92% { transform: scaleY(1); } 94% { transform: scaleY(0.25); } 97% { transform: scaleY(1); } }
+@media (prefers-reduced-motion: reduce) {
+  .corner-chase-cell { opacity: 0.6; }
+}
+@keyframes corner-chase {
+  0%, 30% { opacity: 1; }
+  100% { opacity: 0.15; }
+}
