@@ -1,7 +1,11 @@
-import { defineConfig } from 'vite';
+import { fileURLToPath, URL } from 'node:url';
+import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
-// /api goes to the engine (cd model && uvicorn server:app --port 8000) in development.
+import { defineConfig } from 'vite';
+
 export default defineConfig({
-  plugins: [react()],
-  server: { proxy: { '/api': 'http://localhost:8000' } },
+  plugins: [react(), tailwindcss()],
+  resolve: {
+    alias: { '@': fileURLToPath(new URL('./src', import.meta.url)) },
+  },
 });

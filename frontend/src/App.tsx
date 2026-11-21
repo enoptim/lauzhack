@@ -1,24 +1,32 @@
-import { useEffect, useState } from 'react';
-import BuildingScene from './components/BuildingScene';
-import DebugPanel from './components/DebugPanel';
-import { api } from './api/client';
-import type { Catalog, Scenario } from './api/types';
+import { lazy, Suspense } from 'react';
+import { BrowserRouter, Route, Routes } from 'react-router';
+import AppHeader from './components/AppHeader';
+import AssistantPage from './routes/assistant/AssistantPage';
+import NotFoundPage from './routes/not-found/NotFoundPage';
+import ResultsPage from './routes/results/ResultsPage';
+
+const BuildingPage = lazy(() => import('./routes/building/BuildingPage'));
+
+const pages = [
+  { path: '/', label: 'Building', Page: BuildingPage },
+  { path: '/assistant', label: 'Assistant', Page: AssistantPage },
+  { path: '/results', label: 'Results', Page: ResultsPage },
+];
 
 export default function App() {
-  const [catalog, setCatalog] = useState<Catalog | null>(null);
-  const [catalogError, setCatalogError] = useState<string | null>(null);
-  // The current plan: a list of swaps, and which events are switched on.
-  const [scenario] = useState<Scenario>([]);
-  const [events] = useState<string[]>([]);
-
-  useEffect(() => {
-    api.catalog().then(setCatalog).catch(e => setCatalogError(String(e)));
-  }, []);
-
   return (
-    <>
-      <BuildingScene />
-      <DebugPanel catalog={catalog} catalogError={catalogError} scenario={scenario} events={events} />
-    </>
+    <BrowserRouter>
+      <div className="flex h-dvh flex-col">
+        <AppHeader pages={pages} />
+        <div className="min-h-0 flex-1 overflow-auto">
+          <Suspense fallback={<p role="status" className="p-6">Loading the building…</p>}>
+            <Routes>
+              {pages.map(({ path, Page }) => <Route key={path} path={path} element={<Page />} />)}
+              <Route path="*" element={<NotFoundPage />} />
+            </Routes>
+          </Suspense>
+        </div>
+      </div>
+    </BrowserRouter>
   );
 }
