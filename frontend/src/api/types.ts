@@ -1,0 +1,312 @@
+// Shapes of the engine API (model/server.py). See model/README.md.
+// Every number shown in the UI must come from one of these responses.
+// Infinite or undefined numbers (e.g. a payback that never happens) arrive as null.
+
+// ---------------------------------------------------------------- requests
+export type Timing = 'now' | 'end_of_life';
+
+/** One swap. Narrow it with floor, room_id or item_id; later swaps win. */
+export interface Swap {
+  group: string;
+  option: string;
+  floor?: number;
+  room_id?: string;
+  item_id?: string;
+  timing?: Timing;
+  /** Phase the swap in this year instead of now. */
+  year?: number;
+}
+
+export type Scenario = Swap[];
+
+export interface RunRequest {
+  scenario?: Scenario;
+  events?: string[];
+  overrides?: Record<string, number>;
+  /** Year the snapshots describe (1 = first year). */
+  year?: number;
+}
+
+export interface PreviewRequest {
+  scenario?: Scenario;
+  swap: Swap;
+  events?: string[];
+}
+
+export interface FuturesRequest {
+  scenarios: Record<string, Scenario>;
+  n?: number;
+  seed?: number;
+}
+
+// ---------------------------------------------------------------- /api/catalog
+export interface CatalogOption {
+  option_id: string;
+  name: string;
+  tier: string;
+  unit: string;
+  price_chf_per_unit: number;
+  lifetime_years: number | null;
+  power_on_w: number | null;
+  description: string;
+  source: string;
+}
+
+export interface CatalogRoom {
+  room_id: string;
+  floor: number;
+  type: string;
+  area_m2: number;
+  seats: number;
+}
+
+export interface CatalogItem {
+  item_id: string;
+  room_id: string;
+  group: string;
+  option_id: string;
+  units: number;
+  age_years: number | null;
+  serves: string;
+  /** Floor the item serves (ventilation and plant sit in BC_991.0 or BC_ROOF). */
+  serves_floor: number;
+}
+
+export interface CatalogEvent {
+  event_id: string;
+  name: string;
+  description: string;
+  kind: 'annual' | 'stress_test';
+  start_year: number | null;
+  end_year: number | null;
+}
+
+export interface Catalog {
+  groups: Record<string, CatalogOption[]>;
+  rooms: CatalogRoom[];
+  items: CatalogItem[];
+  events: CatalogEvent[];
+  horizon_years: number;
+}
+
+// ---------------------------------------------------------------- /api/simulate
+/** How to style a number: from data and physics, depends on people effects, or a score (never money). */
+export type NumberKind = 'calculated' | 'estimate' | 'index';
+
+export interface NpvBreakdown {
+  capex_and_residual: number;
+  energy: number;
+  pv_export: number;
+  maintenance: number;
+  consumables: number;
+  rent: number;
+  productivity: number;
+  sick_days: number;
+  time_saved: number;
+}
+
+export interface Flag {
+  type: 'ventilation_over_capacity' | 'desk_shortfall' | 'over_budget' | 'reserve_below_minimum' | string;
+  year?: number;
+  [detail: string]: unknown;
+}
+
+export interface FinanceYear {
+  year: number;
+  cash_cf: number;
+  economic_cf: number;
+  cumulative_cash_cf: number;
+  cumulative_economic_cf: number;
+  cash_closing: number;
+  cash_closing_baseline: number;
+  capex: number;
+  capex_baseline: number;
+  operating_cost: number;
+  operating_cost_baseline: number;
+  kwh: number;
+  kwh_baseline: number;
+  price_chf_kwh: number;
+  staff: number;
+  desk_capacity: number;
+  people_value: { perf_change: number; productivity_chf: number; sick_days_chf: number; time_saved_chf: number };
+  savings: { energy: number; pv_export: number; maintenance: number; consumables: number; rent: number };
+  comfort_score: number;
+  comfort_score_baseline: number;
+  meeting_co2_ppm: number;
+  meeting_co2_ppm_baseline: number;
+}
+
+export interface Finance {
+  npv_cash: number;
+  npv_economic: number;
+  payback_cash: number | null;
+  payback_economic: number | null;
+  capex_year0: number;
+  npv_breakdown: NpvBreakdown;
+  flags: Flag[];
+  years: FinanceYear[];
+  kind: Record<string, NumberKind>;
+}
+
+export interface SnapshotItem {
+  room_id: string;
+  group: string;
+  option_id: string;
+  units: number;
+  kwh_year: number;
+  kw_avg: number;
+  kw_on: number;
+}
+
+export interface SnapshotRoom {
+  kwh_year: number;
+  /** 24 values, approximate typical workday load in kW. */
+  kw_hourly: number[];
+  items: string[];
+  // Only for occupied heated rooms:
+  co2_ppm?: number;
+  people_peak?: number;
+  lps_per_person?: number;
+  overheat_degc?: number;
+}
+
+export interface SnapshotFloor {
+  capacity_people: number;
+  population_peak: number;
+  over_capacity: boolean;
+}
+
+export interface Outcomes {
+  perf_index: number;
+  perf_losses: Record<string, number>;
+  sick_days: number;
+  coffee_minutes_per_day: number;
+  comfort_score: number;
+  office_co2_ppm: number;
+  meeting_co2_ppm: number;
+  classroom_co2_ppm: number;
+  office_lps_per_person: number;
+  summer_overheating_degc: number;
+  lighting_quality: number;
+  screen_quality: number;
+  glare_control: number;
+  eye_strain: number;
+  [other: string]: number | Record<string, number>;
+}
+
+export interface SnapshotBuilding {
+  kwh_year: number;
+  grid_kwh_year: number;
+  pv_kwh_year: number;
+  kwh_by_group: Record<string, number>;
+  costs_chf: { energy: number; pv_export: number; maintenance: number; consumables: number; rent: number };
+  outcomes: Outcomes;
+  desk_capacity: number;
+  desk_shortfall: number;
+  staff: number;
+}
+
+/** State of the building in one year, keyed by room_id / item_id (the mesh names). */
+export interface Snapshot {
+  year: number;
+  items: Record<string, SnapshotItem>;
+  rooms: Record<string, SnapshotRoom>;
+  /** Keyed by floor number as a string ("-1" … "4"). */
+  floors: Record<string, SnapshotFloor>;
+  building: SnapshotBuilding;
+}
+
+export interface SimulateResult {
+  finance: Finance;
+  snapshot: Snapshot;
+  snapshot_baseline: Snapshot;
+}
+
+// ---------------------------------------------------------------- /api/preview
+export interface PreviewResult {
+  swap: Swap;
+  extra_capex_year0: number;
+  delta_npv_cash: number;
+  delta_npv_economic: number;
+  delta_kwh_year1: number;
+  delta_perf_change: number;
+  delta_comfort: number;
+  delta_meeting_co2_ppm: number;
+  new_flags: Flag[];
+}
+
+// ---------------------------------------------------------------- /api/stress_test
+export interface StressHour {
+  hour: number;
+  people: number;
+  co2_ppm: number;
+  over_capacity: boolean;
+}
+
+export interface StressTestResult {
+  ventilation_running: boolean;
+  capacity_people: number;
+  peak_people: number;
+  peak_co2_ppm: number;
+  hours_over_capacity_per_day: number;
+  hours: StressHour[];
+}
+
+// ---------------------------------------------------------------- /api/tornado, /api/bands
+export interface TornadoRow {
+  parameter: string;
+  low: number;
+  high: number;
+  at_low: number;
+  at_high: number;
+  swing: number;
+}
+
+export interface TornadoResult {
+  central: number;
+  rows: TornadoRow[];
+}
+
+export interface BandsResult {
+  weak: number;
+  central: number;
+  strong: number;
+}
+
+// ---------------------------------------------------------------- /api/futures
+export interface Percentiles {
+  p10: number;
+  p50: number;
+  p90: number;
+}
+
+export interface FanPoint extends Percentiles {
+  year: number;
+}
+
+export interface FuturesSummary {
+  npv_cash: Percentiles;
+  npv_economic: Percentiles;
+  prob_cash_positive: number;
+  prob_economic_positive: number;
+  payback_cash_p50: number | null;
+  prob_no_cash_payback: number;
+  flag_probability: Record<string, number>;
+  fan: { cash: FanPoint[]; economic: FanPoint[] };
+}
+
+export interface FutureStory {
+  run: number;
+  what_happened: string;
+  npv_economic: number;
+}
+
+export interface FuturesResult {
+  n: number;
+  seed: number;
+  summary: Record<string, FuturesSummary>;
+  /** Keyed "A vs B": share of futures where A beats B. */
+  compare: Record<string, { prob_better_cash: number; prob_better_economic: number }>;
+  stories: { bad: FutureStory; typical: FutureStory; good: FutureStory };
+  method: string;
+}
