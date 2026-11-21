@@ -5,7 +5,7 @@
 - `office-building.blend` — editable source, including preview camera/lighting.
 - Regenerate: `blender -b -t 6 --python assets/generate_office.py` (no third-party Python dependencies).
 
-Three-storey cutaway, 18 × 12 metres, 3.5 m storeys. Front and right walls and most roof panels are deliberately omitted to expose the interior. Includes 18 furnished workstations with monitors and computer towers, conference tables, chairs, sofas, plants, six toilets, sinks, 12 emissive pendant fixtures, and a rooftop twin-fan heat pump. No stairs or enclosed circulation core; this is a demo asset, not a construction model.
+Three-storey cutaway, 18 × 12 metres,e 3.5 m storeys. Front and right walls and most roof panels are deliberately omitted to expose the interior. Includes 18 furnished workstations with monitors and computer towers, conference tables, chairs, sofas, plants, six toilets, sinks, 12 emissive pendant fixtures, and a rooftop twin-fan heat pump. No stairs or enclosed circulation core; this is a demo asset, not a construction model.
 
 GLB uses Y up, ground centred around the origin; front is +Z. Suggested Three.js camera position: `[24, 24, 32]`, controls target `[0, 5, 0]`. Add environment/scene lights; fixture surfaces are emissive, not exported punctual lights.
 
