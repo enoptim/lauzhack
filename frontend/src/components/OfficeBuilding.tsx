@@ -61,9 +61,9 @@ function Floor({ level }: { level: number }) {
   </group>;
 }
 
-function Facade() {
+function Facade({ floors }: { floors: number }) {
   return <group>
-    {Array.from({ length: 5 }, (_, f) => {
+    {Array.from({ length: floors }, (_, f) => {
       const top = f === 4;
       const y = f * FLOOR_HEIGHT;
       const xEdge = top ? 18 : 20;
@@ -86,19 +86,20 @@ function Facade() {
   </group>;
 }
 
-export default function OfficeBuilding() {
+export default function OfficeBuilding({ floor }: { floor: number | null }) {
+  const visibleFloors = floor === null ? FLOOR_COUNT : floor + 1;
   return <group scale={[WIDTH / LAYOUT_WIDTH, 1, LENGTH / LAYOUT_LENGTH]}>
     <Box size={[48, .4, 108]} color="#bfc5bc" position={[0, -.5, 0]}/>
-    {Array.from({ length: FLOOR_COUNT }, (_, level) => <Floor key={level} level={level}/>)}
-    <Staircase/>
-    <Facade/>
+    {Array.from({ length: visibleFloors }, (_, level) => <Floor key={level} level={level}/>)}
+    <Staircase floors={visibleFloors}/>
+    {floor !== 0 && <Facade floors={floor ?? FLOOR_COUNT}/>}
     {/* Broad canopy frames the long transparent atrium skylight. */}
-    <group position={[0, FLOOR_COUNT * FLOOR_HEIGHT + .3, 0]}>
+    {floor === null && <group position={[0, FLOOR_COUNT * FLOOR_HEIGHT + .3, 0]}>
       {[-16, 16].map(x => <Box key={x} size={[14, .35, 106]} color="#aeb5b2" position={[x, 0, 0]}/>)}
       {[-44, 44].map(z => <Box key={z} size={[18, .35, 18]} color="#aeb5b2" position={[0, 0, z]}/>)}
       <Glass size={[18, .08, 70]} position={[0, .12, 0]}/>
       {Array.from({ length: 18 }, (_, i) => <Box key={i} size={[18, .15, .09]} color={white} position={[0, .2, -34 + i * 4]}/>)}
       {[-6, -3, 0, 3, 6].map(x => <Box key={x} size={[.08, .15, 70]} color={white} position={[x, .2, 0]}/>)}
-    </group>
+    </group>}
   </group>;
 }

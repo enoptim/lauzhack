@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { BufferGeometry, DoubleSide, Float32BufferAttribute } from 'three';
-import { FLOOR_COUNT, FLOOR_HEIGHT } from '../data/building';
+import { FLOOR_HEIGHT } from '../data/building';
 import { Box } from './Furniture';
 
 const INNER = .7;
@@ -69,11 +69,11 @@ function Flight() {
   </group>;
 }
 
-export default function Staircase() {
+export default function Staircase({ floors }: { floors: number }) {
   return <group position={[0, 0, 27]}>
-    {Array.from({ length: FLOOR_COUNT - 1 }, (_, level) => <group key={level} position={[0, level * FLOOR_HEIGHT, 0]}><Flight/></group>)}
+    {Array.from({ length: floors - 1 }, (_, level) => <group key={level} position={[0, level * FLOOR_HEIGHT, 0]}><Flight/></group>)}
     {/* Landings reach past the atrium edge (world Z=32), flush with floor tops. */}
-    {Array.from({ length: FLOOR_COUNT }, (_, level) => <group key={level} position={[0, level * FLOOR_HEIGHT, 0]}>
+    {Array.from({ length: floors }, (_, level) => <group key={level} position={[0, level * FLOOR_HEIGHT, 0]}>
       <Box size={[1.8, .22, 4.7]} color="#d0cec5" position={[0, -.11, 2.95]}/>
       {[-.9, .9].map(x => <Box key={x} size={[.06, 1.05, 2.35]} color="#d9ddda" position={[x, .525, 4.125]}/>)}
     </group>)}
