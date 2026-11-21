@@ -19,9 +19,15 @@ How the search works:
    every budget at once.
 3. Reality: run the candidates through the engine. Then re-measure the single-zone effects around the
    best plan, solve the surrogate again from there (and try the most promising two-zone changes),
-   and repeat until nothing better turns up.
+   and repeat. When the best plan stops improving, restart from the best plans not yet explored.
+   The search stops when those run out or after a fixed number of plans (SOLVE_PLANS, PARETO_PLANS),
+   never on the clock, so the same inputs always give the same answer.
 Plans are compared by: smallest shortfall on the constraints first, then the objective, then the tie-break,
-then fewer changed zones. Tiny sub-problems (EXHAUSTIVE_LIMIT plans or fewer) are simply tried in full.
+then fewer changed zones. Small sub-problems (EXHAUSTIVE_LIMIT plans or fewer, within the budget) are
+simply tried in full.
+
+Payback is not additive, so the surrogate adds up the yearly cash flows instead and computes payback
+from them the way the engine does; a payback limit P becomes "cumulative cash at year P is not negative".
 
 Plans are evaluated with the engine's own building blocks (see _Ctx), which give exactly the numbers of
 engine.simulate (tested); every returned plan is re-run through engine.simulate itself.
@@ -168,23 +174,25 @@ def _check_selector(data, gopts, sel, granularity, where):
     if extra:
         raise ValueError(f"Unknown key(s) {sorted(extra)} in a scope[{where!r}] selector.")
     g = sel["group"]
-    if g not in gopts:
+    if not isinstance(g, str) or g not in gopts:
         raise ValueError(f"Unknown group {g!r}. Groups: {', '.join(gopts)}.")
     floors = None
     if sel.get("floor") is not None:
         if granularity == "building":
             raise ValueError("A selector can't name a floor when granularity is 'building'.")
-        floors = set(_as_list(sel["floor"]))
+        floors = _as_list(sel["floor"])
         if not all(isinstance(f, int) and not isinstance(f, bool) for f in floors):
             raise ValueError(f"Floors must be whole numbers, got {sel['floor']!r}.")
+        floors = set(floors)
     opts = None
     if sel.get("option") is not None:
-        opts = set(_as_list(sel["option"]))
+        opts = _as_list(sel["option"])
         for o in opts:
-            if o not in data["options"]:
+            if not isinstance(o, str) or o not in data["options"]:
                 raise ValueError(f"Unknown option {o!r}.")
             if data["options"][o]["group"] != g:
                 raise ValueError(f"Option {o!r} belongs to group {data['options'][o]['group']!r}, not {g!r}.")
+        opts = set(opts)
     return g, floors, opts
 
 
@@ -205,10 +213,11 @@ class _Space:
         known = {"allowed", "locked", "required", "excluded_options"}
         if not isinstance(scope, dict) or set(scope) - known:
             raise ValueError(f"scope keys must be among {sorted(known)}.")
-        excluded = set(_as_list(scope.get("excluded_options") or []))
+        excluded = _as_list(scope.get("excluded_options") or [])
         for o in excluded:
-            if o not in data["options"]:
+            if not isinstance(o, str) or o not in data["options"]:
                 raise ValueError(f"Unknown option {o!r} in excluded_options.")
+        excluded = set(excluded)
         parsed = {k: [_check_selector(data, gopts, s, self.granularity, k) for s in _as_list(scope.get(k) or [])]
                   for k in ("allowed", "locked", "required")}
 
@@ -460,8 +469,10 @@ class _Ctx:
             if t == 1:
                 sav1 = sum(saving.values())
         s, b = ys[0], yb[0]
-        return _raw(s, b, sav1, capex_s, cb, op, self.op_b, kwh, self.kwh_b, book_s, self.book_b,
-                    npv_c, npv_e, engine.payback(cums_c))
+        raw = _raw(s, b, sav1, capex_s, cb, op, self.op_b, kwh, self.kwh_b, book_s, self.book_b,
+                   npv_c, npv_e, engine.payback(cums_c))
+        raw["cash"] = [c[2] for c in cums_c]
+        return raw
 
 
 def _raw(s, b, sav1, capex_s, capex_b, op, op_b, kwh, kwh_b, book_s, book_b, npv_c, npv_e, payback):
@@ -489,6 +500,7 @@ def _raw_from_sim(ctx, res, upfront):
                Y[-1]["book_value"], Y[-1]["book_value"] - Y[-1]["residual_value"],
                res["npv_cash"], res["npv_economic"], res["payback_cash"])
     raw["upfront"] = upfront
+    raw["cash"] = [r["cash_cf"] for r in Y]
     return raw
 
 
@@ -533,19 +545,24 @@ _CTX = {}
 
 
 def _check_events(data, events):
+    if isinstance(events, (str, dict)) or not isinstance(events, (list, tuple, type(None))):
+        raise ValueError("events must be a list of event ids, e.g. ['new_lab'].")
     events = tuple(events or ())
     for e in events:
-        if e not in data["events"]:
+        if not isinstance(e, str) or e not in data["events"]:
             raise ValueError(f"Unknown event {e!r}. Events: {', '.join(data['events'])}.")
     return events
 
 
 def _horizon(data, overrides, horizon_years):
-    if horizon_years is None:
-        return int({**data["params"], **overrides}["horizon_years"])
-    if not isinstance(horizon_years, (int, float)) or horizon_years < 1 or int(horizon_years) != horizon_years:
-        raise ValueError(f"horizon_years must be a whole number of years >= 1, not {horizon_years!r}.")
-    return int(horizon_years)
+    h = {**data["params"], **overrides}["horizon_years"] if horizon_years is None else horizon_years
+    if not _is_number(h) or h < 1 or int(h) != h:
+        raise ValueError(f"horizon_years must be a whole number of years >= 1, not {h!r}.")
+    return int(h)
+
+
+def _is_number(x):
+    return isinstance(x, (int, float)) and not isinstance(x, bool) and math.isfinite(x)
 
 
 def _ctx(data, events, overrides, horizon):
@@ -559,24 +576,47 @@ def _ctx(data, events, overrides, horizon):
 
 def _settings(data, events, overrides, horizon_years):
     events = _check_events(data, events)
+    if not isinstance(overrides, (dict, type(None))):
+        raise ValueError("overrides must be a dict of {parameter: number}.")
     overrides = dict(overrides or {})
-    for k in overrides:
-        if k not in data["params"]:
+    for k, v in overrides.items():
+        if not isinstance(k, str) or k not in data["params"]:
             raise ValueError(f"Unknown parameter {k!r} in overrides.")
+        if not _is_number(v):
+            raise ValueError(f"The override for {k} must be a number, not {v!r}.")
     H = _horizon(data, overrides, horizon_years)
     used = {**overrides, "horizon_years": horizon_years} if horizon_years is not None else overrides
     return events, overrides, H, used
 
 
+def _check_scenario(data, scenario):
+    """Each swap names a known option of its group and matches at least one piece of equipment."""
+    if not isinstance(scenario, (list, tuple, type(None))):
+        raise ValueError("scenario must be a list of swaps like {'group': 'lighting', 'option': 'lighting_mid'}.")
+    for sw in scenario or []:
+        if not isinstance(sw, dict) or not isinstance(sw.get("option"), str) or not isinstance(sw.get("group"), str):
+            raise ValueError(f"Each swap needs a 'group' and an 'option' (strings), got {sw!r}.")
+        o = data["options"].get(sw["option"])
+        if not o:
+            raise ValueError(f"Unknown option {sw['option']!r}.")
+        if o["group"] != sw["group"]:
+            raise ValueError(f"{o['option_id']} belongs to group {o['group']!r}, not {sw['group']!r}.")
+        if "floor" in sw and not (isinstance(sw["floor"], int) and not isinstance(sw["floor"], bool)):
+            raise ValueError(f"A swap's floor must be a whole number, got {sw['floor']!r}.")
+        timing = sw.get("year", sw.get("timing", "now"))
+        if timing not in ("now", "end_of_life") and not (_is_number(timing) and timing >= 0 and int(timing) == timing):
+            raise ValueError(f"A swap's timing must be 'now', 'end_of_life' or a year, got {timing!r}.")
+        if not any(i["group"] == sw["group"] and ("floor" not in sw or engine.served_floor(i) == sw["floor"])
+                   and ("room_id" not in sw or i["room"] == sw["room_id"]) and ("item_id" not in sw or i["id"] == sw["item_id"])
+                   for i in data["items"]):
+            where = ", ".join(f"{k} {sw[k]!r}" for k in ("floor", "room_id", "item_id") if k in sw)
+            raise ValueError(f"No {sw['group']} equipment matches {where}.")
+
+
 def evaluate(data, scenario, events=(), overrides=None, horizon_years=None, discounted=False, include_residual=True):
     """Every metric for one scenario (engine swaps), from engine.simulate."""
     events, overrides, H, used = _settings(data, events, overrides, horizon_years)
-    for sw in scenario or []:
-        o = data["options"].get(sw.get("option"))
-        if not o:
-            raise ValueError(f"Unknown option {sw.get('option')!r}.")
-        if o["group"] != sw.get("group"):
-            raise ValueError(f"{o['option_id']} belongs to group {o['group']!r}, not {sw.get('group')!r}.")
+    _check_scenario(data, scenario)
     ctx = _ctx(data, events, overrides, H)
     res = engine.simulate(data, list(scenario or []), list(events), ctx.over)
     raw = _raw_from_sim(ctx, res, _upfront_of_choices(data, res["choices"]))
@@ -589,7 +629,7 @@ _INF = float("inf")
 
 
 def _metric(name):
-    if name not in METRICS:
+    if not isinstance(name, str) or name not in METRICS:
         raise ValueError(f"Unknown metric {name!r}. Metrics: {', '.join(METRICS)}.")
     return name
 
@@ -601,12 +641,14 @@ def _parse_objective(objective):
         raise ValueError("objective must look like {'metric': 'upfront_cost_chf', 'sense': 'min'}.")
     m = _metric(objective.get("metric"))
     sense = objective.get("sense") or ("min" if METRICS[m]["better"] == "lower" else "max")
-    if sense not in ("min", "max"):
+    if not isinstance(sense, str) or sense not in ("min", "max"):
         raise ValueError(f"sense must be 'min' or 'max', not {sense!r}.")
     return m, sense
 
 
 def _parse_constraints(constraints):
+    if not isinstance(constraints, (list, tuple, type(None))):
+        raise ValueError("constraints must be a list like [{'metric': 'energy_cost_saving_pct', 'min': 10}].")
     out = []
     for c in constraints or ():
         if not isinstance(c, dict) or "metric" not in c:
@@ -619,7 +661,7 @@ def _parse_constraints(constraints):
         if not kinds:
             raise ValueError(f"The constraint on {m} needs a 'min' or a 'max'.")
         for k in kinds:
-            if not isinstance(c[k], (int, float)) or isinstance(c[k], bool) or math.isnan(c[k]):
+            if not _is_number(c[k]):
                 raise ValueError(f"The {k} of the constraint on {m} must be a number.")
             out.append((m, k, float(c[k])))
     return out
@@ -645,19 +687,17 @@ def _dot(spec, idx, row):
 def _frontier(units, cap=1500):
     """Pareto frontier of sums: pick one vector (x, y1, y2, ...) per unit; minimise x, maximise every y.
 
-    Exact while the frontier stays under `cap` points; above that it keeps the best points in
-    each cost bucket. Returns picks (one choice index per unit), sorted by x."""
+    Exact while the frontier stays under `cap` points; above that it keeps the best points in each
+    x bucket (see _thin). Returns picks (one choice index per unit), sorted by x."""
     dims = len(units[0][0]) - 1
-    lo = sum(min(c[0] for c in ch) for ch in units)
-    hi = sum(max(c[0] for c in ch) for ch in units)
     spread = [sum(max(c[j] for c in ch) - min(c[j] for c in ch) for ch in units) or 1.0 for j in range(dims + 1)]
     front, levels = [((0.0,) * (dims + 1), -1, -1)], []
     for ch in units:
         cand = [(tuple(a + b for a, b in zip(p, c)), i, k) for i, (p, _, _) in enumerate(front) for k, c in enumerate(ch)]
         cand.sort(key=lambda t: (t[0][0],) + tuple(-v for v in t[0][1:]))
         new = _nondominated(cand, dims)
-        if len(new) > cap and hi > lo:
-            new = _thin(new, cap, lo, hi, spread)
+        if len(new) > cap:
+            new = _thin(new, cap, spread)
         levels.append(new)
         front = new
     out = []
@@ -701,15 +741,19 @@ def _nondominated(cand, dims):
     return out
 
 
-def _thin(points, cap, lo, hi, spread):
-    """Keep the best points per cost bucket: best in each y and in their (scaled) sum."""
+def _thin(points, cap, spread):
+    """Keep the best points per x bucket: best in each y and in their (scaled) sum.
+
+    The surrogate is built around the current plan, which sits at x = 0 at every level. So buckets are
+    narrow near 0 and widen geometrically away from it: fine detail where the search is looking."""
     dims = len(points[0][0]) - 1
     per = dims + 1 if dims > 1 else 1
-    nb = max(1, cap // per)
-    w = (hi - lo) / nb
+    w0 = spread[0] / 20000
+    step = 2 * math.log1p(20000) / max(1, cap // per)          # about cap // per buckets over the whole range
     buckets = {}
     for p in points:
-        buckets.setdefault(int((p[0][0] - lo) / w), []).append(p)
+        x = p[0][0]
+        buckets.setdefault(int(math.copysign(math.log1p(abs(x) / w0) / step, x)), []).append(p)
     out = []
     for ps in buckets.values():
         best = [max(ps, key=lambda p, j=j: p[0][j]) for j in range(1, dims + 1)]
@@ -735,8 +779,11 @@ class _Search:
         self.true = {}
         names = [self.obj] + [c[0] for c in self.cons] + [self.tb]
         self.payback = "payback_years" in names
+        # Payback is not additive, but the yearly cash flows behind it nearly are: the surrogate adds up the
+        # cumulative cash at each year ("cum@t") and computes payback from them the way the engine does.
+        extra = ["net_upfront_cost_chf", "operating_cost_saving_chf_year"] + [f"cum@{t}" for t in range(ctx.H + 1)]
         lin = []
-        for n in names + (["net_upfront_cost_chf", "operating_cost_saving_chf_year"] if self.payback else []):
+        for n in names + (extra if self.payback else []):
             if n != "payback_years" and n not in lin:
                 lin.append(n)
         self.lin = lin
@@ -746,7 +793,13 @@ class _Search:
     # --- true values
     def m(self, cfg):
         if cfg not in self.true:
-            self.true[cfg] = _metrics(self.ctx.run(self.space, cfg), self.ctx.r, self.disc, self.resid)[0]
+            raw = self.ctx.run(self.space, cfg)
+            m = _metrics(raw, self.ctx.r, self.disc, self.resid)[0]
+            if self.payback:                      # cumulative cash flow by year, as in engine.simulate
+                c = m["cum@0"] = -m["net_upfront_cost_chf"]
+                for t, cf in enumerate(raw["cash"], 1):
+                    c = m[f"cum@{t}"] = c + cf
+            self.true[cfg] = m
         return self.true[cfg]
 
     def shortfalls(self, m, slack=None):
@@ -786,8 +839,8 @@ class _Search:
         vals = [b + sum(col) for b, col in zip(base, zip(*(D[u][k] for u, k in enumerate(picks))))] if picks else list(base)
         m = dict(zip(self.lin, vals))
         if self.payback:
-            npu, sav = m["net_upfront_cost_chf"], m["operating_cost_saving_chf_year"]
-            m["payback_years"] = max(npu, 0.0) / sav if sav > 0 else (0.0 if npu <= 0 else _INF)
+            cum = [m[f"cum@{t}"] for t in range(self.ctx.H + 1)]
+            m["payback_years"] = engine.payback([(a, b, b - a) for a, b in zip(cum, cum[1:])])
         return m
 
     def cfg_of(self, picks):
@@ -805,9 +858,14 @@ class _Search:
 
     def cons_spec(self, j):
         name, kind, b = self.cons[j]
-        if name == "payback_years":          # payback <= b  ~  b * yearly saving - extra cost >= 0
+        if name == "payback_years":          # payback <= b  ~  cumulative cash at time b >= 0 (linear within a year)
             sgn = 1.0 if kind == "max" else -1.0
-            return {"operating_cost_saving_chf_year": sgn * b, "net_upfront_cost_chf": -sgn}
+            a = min(max(int(math.floor(b)), 0), self.ctx.H)
+            frac = b - a if 0 <= b and a < self.ctx.H else 0.0
+            spec = {f"cum@{a}": sgn * (1.0 - frac)}
+            if frac:
+                spec[f"cum@{a + 1}"] = sgn * frac
+            return spec
         return {name: 1.0 if kind == "min" else -1.0}
 
     def axes(self):
@@ -872,34 +930,46 @@ class _Search:
     def size(self):
         return math.prod(len(u["choices"]) for u in self.space.units)
 
-    def run(self, time_limit=4.0, max_rounds=40):
-        if self.size() <= EXHAUSTIVE_LIMIT:
+    def run(self, budget, time_limit=60.0):
+        """Search until nothing better turns up around the best few plans, or `budget` plans have been tried.
+
+        The budget makes the answer deterministic; time_limit is only a safety stop for a slow machine."""
+        if self.size() <= min(EXHAUSTIVE_LIMIT, budget):
             return self.best(self.exhaustive()), "exhaustive"
         scale = [max(abs(b), 1.0) for (_, _, b) in self.cons]
         slack = [0.02 * s for s in scale]
-        center = self.space.base()
-        for _ in range(max_rounds):
+        center, used = self.space.base(), set()
+        while center is not None and len(self.true) < budget and time.time() - self.t0 < time_limit:
+            used.add(center)
             base, D = self.linearize(center)
             cands = self.generate(base, D, slack)
             err = [0.0] * len(self.cons)
             for cfg, sm in cands:
                 m = self.m(cfg)
                 for j, (name, _, _) in enumerate(self.cons):
-                    if name in sm and math.isfinite(_val(m, name)) and math.isfinite(sm[name]):
+                    if math.isfinite(_val(m, name)) and math.isfinite(_val(sm, name)):
                         err[j] = max(err[j], abs(m[name] - sm[name]))
             slack = [max(1.5 * e, 1e-6 * s) for e, s in zip(err, scale)]
             if self.best(self.true) == center:          # nothing better yet: try two-zone changes
                 for cfg in self.pairs(center, base, D, slack):
                     self.m(cfg)
-            best = self.best(self.true)
-            if best == center or time.time() - self.t0 > time_limit:
-                center = best
-                break
-            center = best
-        return center, "screening + surrogate DP + local search"
+            ranked = sorted(self.true, key=self.key)
+            # Move to the best plan found; when it was already a centre, restart from the best one that wasn't.
+            center = next((c for c in ranked[:ELITE] if c not in used), None)
+        return self.best(self.true), "screening + surrogate DP + local search"
 
 
-EXHAUSTIVE_LIMIT = 256     # plans; below this the search simply tries them all
+EXHAUSTIVE_LIMIT = 1024    # plans; a space this small (and within the budget) is simply tried in full
+ELITE = 5                  # restart the search from the best plans found that were not yet a centre
+SOLVE_PLANS = 1500         # plans solve() may try (fewer when events add year states); about 1-3 s
+PARETO_PLANS = 2200        # plans pareto() may try (fewer with events); about 4 s
+
+
+def _budget(ctx, plans, power=0.5):
+    """Plan budget: fewer plans when events make each plan slower to evaluate (each distinct year state
+    costs about as much as a whole plan without events). power 1 keeps the run time about constant."""
+    states = len({(c["staff"], c["cooling_mult"], c["heating_mult"]) for c in ctx.ctxs})
+    return int(plans / states ** power)
 
 
 # ------------------------------------------------------------------ results
@@ -988,7 +1058,7 @@ def solve(data, objective, constraints=(), scope=None, events=(), overrides=None
     space = _Space(data, granularity, scope)
     ctx = _ctx(data, events, overrides, H)
     search = _Search(space, ctx, obj, cons, tb, discounted, include_residual)
-    cfg, method = search.run()
+    cfg, method = search.run(_budget(ctx, SOLVE_PLANS))
     scenario = space.scenario(cfg)
     ev = evaluate(data, scenario, events, overrides, horizon_years, discounted, include_residual)
     names = [obj[0], tb[0]] + [c[0] for c in cons]
@@ -997,7 +1067,7 @@ def solve(data, objective, constraints=(), scope=None, events=(), overrides=None
         ctx.use_engine = True
         ctx.cache.clear()
         search = _Search(space, ctx, obj, cons, tb, discounted, include_residual)
-        cfg, method = search.run(time_limit=30.0)
+        cfg, method = search.run(_budget(ctx, SOLVE_PLANS), time_limit=300.0)
         method += " (engine.simulate)"
         scenario = space.scenario(cfg)
         ev = evaluate(data, scenario, events, overrides, horizon_years, discounted, include_residual)
@@ -1105,10 +1175,12 @@ _PARETO_FIRST, _PARETO_LOCAL = 800, 60      # plans tried from the first surroga
 
 def pareto(data, x_metric="upfront_cost_chf", y_metric="operating_cost_saving_chf_year", constraints=(),
            scope=None, events=(), overrides=None, granularity="floor", horizon_years=None, discounted=False,
-           include_residual=True, max_points=15, time_limit=10.0):
+           include_residual=True, max_points=15, time_limit=30.0):
     """The trade-off curve: plans where x (minimised) can't get lower without y (maximised) getting lower too.
 
-    Values are true engine values. `constraints` decide which plans may appear."""
+    Values are true engine values. `constraints` decide which plans may appear. The search stops after a
+    fixed number of plans (PARETO_PLANS, fewer with events), so the same inputs give the same curve.
+    time_limit is only a safety stop: if it is ever what stops the search, results can vary between runs."""
     t0 = time.time()
     x, y = _metric(x_metric), _metric(y_metric)
     if x == y:
@@ -1155,9 +1227,14 @@ def pareto(data, x_metric="upfront_cost_chf", y_metric="operating_cost_saving_ch
             for p in near[::step]:
                 s.m(s.cfg_of(p))
 
-        local(space.base(), None, _PARETO_FIRST)
+        budget = _budget(ctx, PARETO_PLANS, power=1.0)
+
+        def more():
+            return len(s.true) < budget and time.time() - t0 < time_limit
+
+        local(space.base(), None, min(_PARETO_FIRST, int(0.4 * budget)))
         visited = set()
-        while time.time() - t0 < time_limit:
+        while more():
             nd = front()
             todo = [it[3] for it in nd if it[3] not in visited]
             if not todo:
@@ -1166,7 +1243,7 @@ def pareto(data, x_metric="upfront_cost_chf", y_metric="operating_cost_saving_ch
             pick = [todo[round(i * (len(todo) - 1) / max(1, n_new - 1))] for i in range(min(n_new, len(todo)))]
             span = (nd[-1][0] - nd[0][0]) or 1.0
             for c in dict.fromkeys(pick):
-                if time.time() - t0 >= time_limit:
+                if not more():
                     break
                 visited.add(c)
                 local(c, span / max(4, len(nd) ** 0.5), _PARETO_LOCAL)

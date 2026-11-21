@@ -2,7 +2,9 @@
 
 The brute-force tests try every plan of a small sub-problem and check that the optimizer finds the
 true best one. They enumerate with the optimizer's fast evaluator, which test_fast_path_matches_engine
-pins to engine.simulate, and re-check each brute-force winner with engine.simulate itself."""
+pins to engine.simulate, and re-check each brute-force winner with engine.simulate itself. They switch
+off the optimizer's own full enumeration of small spaces (forced_search), so they test the search."""
+import functools
 import json
 import math
 import random
@@ -24,19 +26,38 @@ SUB_A = {"allowed": [{"group": "lighting", "floor": [1, 2, 3]}, {"group": "venti
 SUB_B = {"allowed": [{"group": "blinds", "floor": [1, 2]}, {"group": "monitors", "floor": [1, 2]},
                      {"group": "coffee", "floor": [0, 1]}]}                                   # 2*2*4*4*4*4 = 1024 plans
 SUBS = (SUB_A, SUB_B)
+# Payback cases an independent check found (events reshape the yearly cash flows behind payback).
+P1 = {"allowed": [{"group": "heating_cooling"}, {"group": "solar_pv"}, {"group": "ventilation", "floor": 1},
+                  {"group": "monitors", "floor": 3}, {"group": "lighting", "floor": -1}]}         # 384 plans
+P1_EVENTS = ("energy_price_spike", "new_lab", "heatwave_summer")
+P2 = {"allowed": [{"group": "heating_cooling"}, {"group": "coffee"}, {"group": "monitors"}, {"group": "ventilation"},
+                  {"group": "lighting", "option": ["lighting_mid"]}, {"group": "printers_3d"}]}    # 768 plans, whole building
 _PLANS = {}
+
+
+def forced_search(test):
+    """Run a test with the optimizer's full enumeration of small spaces switched off."""
+    @functools.wraps(test)
+    def run():
+        old = O.EXHAUSTIVE_LIMIT
+        O.EXHAUSTIVE_LIMIT = 0
+        try:
+            test()
+        finally:
+            O.EXHAUSTIVE_LIMIT = old
+    return run
 
 
 def close(a, b, rel=REL):
     return abs(a - b) <= rel * max(1.0, abs(b))
 
 
-def all_plans(scope, horizon=None, discounted=False, include_residual=True):
+def all_plans(scope, horizon=None, discounted=False, include_residual=True, events=(), granularity="floor"):
     """Every plan of a sub-problem with its metrics: [(scenario, metrics)]."""
-    key = (repr(scope), horizon, discounted, include_residual)
+    key = (repr(scope), horizon, discounted, include_residual, tuple(events), granularity)
     if key not in _PLANS:
-        events, over, H, _ = O._settings(D, (), None, horizon)
-        space = O._Space(D, "floor", scope)
+        events, over, H, _ = O._settings(D, events, None, horizon)
+        space = O._Space(D, granularity, scope)
         s = O._Search(space, O._ctx(D, events, over, H), ("upfront_cost_chf", "min"), [],
                       ("operating_cost_saving_chf_year", "max"), discounted, include_residual)
         _PLANS[key] = [(space.scenario(c), s.m(c)) for c in s.exhaustive()]
@@ -63,10 +84,11 @@ def brute(plans, metric, sense, cons, tie):
 
 
 def check(res, plans, metric, sense, cons, tie=("upfront_cost_chf", "min"), horizon=None, discounted=False,
-          include_residual=True):
+          include_residual=True, events=()):
     """The optimizer's plan is as good as the best of all plans (same shortfall, same objective)."""
     sc, m = brute(plans, metric, sense, cons, tie)
-    truth = O.evaluate(D, sc, horizon_years=horizon, discounted=discounted, include_residual=include_residual)["metrics"]
+    truth = O.evaluate(D, sc, events, horizon_years=horizon, discounted=discounted,
+                       include_residual=include_residual)["metrics"]
     assert all(close(truth[k], m[k]) for k in m if m[k] is not None)            # brute force agrees with the engine
     assert abs(shortfall(res["metrics"], cons) - shortfall(m, cons)) < 1e-9, (metric, cons, res["metrics"][metric], m[metric])
     got, best = res["objective"]["value"], m[metric]
@@ -143,6 +165,7 @@ def test_total_cost_identities():
 
 
 # --- brute force on small sub-problems
+@forced_search
 def test_min_cost_for_target_matches_brute_force():
     for scope in SUBS:
         plans = all_plans(scope)
@@ -154,6 +177,7 @@ def test_min_cost_for_target_matches_brute_force():
                   ("operating_cost_saving_chf_year", "max"))
 
 
+@forced_search
 def test_unreachable_target_gives_cheapest_max_saving_plan():
     plans = all_plans(SUB_A)
     top = max(m["operating_cost_saving_chf_year"] for _, m in plans)
@@ -165,6 +189,7 @@ def test_unreachable_target_gives_cheapest_max_saving_plan():
     assert "out of reach" in r["message"] and "save" in r["message"]
 
 
+@forced_search
 def test_energy_targets_match_brute_force():
     for scope in SUBS:
         plans = all_plans(scope)
@@ -175,6 +200,7 @@ def test_energy_targets_match_brute_force():
                 check(r, plans, "upfront_cost_chf", "min", [(metric, "min", frac * top)], ("operating_cost_saving_chf_year", "max"))
 
 
+@forced_search
 def test_max_savings_matches_brute_force():
     for scope in SUBS:
         plans = all_plans(scope)
@@ -187,6 +213,7 @@ def test_max_savings_matches_brute_force():
             check(r, plans, "energy_cost_saving_chf_year", "max", cons)
 
 
+@forced_search
 def test_min_total_cost_matches_brute_force():
     for scope in SUBS:
         top = max(m["upfront_cost_chf"] for _, m in all_plans(scope))
@@ -202,6 +229,7 @@ def test_min_total_cost_matches_brute_force():
     check(r, plans, "total_cost_chf", "min", [], horizon=12, discounted=True)
 
 
+@forced_search
 def test_two_constraints_match_brute_force():
     for scope in SUBS:
         plans = all_plans(scope)
@@ -218,6 +246,7 @@ def test_two_constraints_match_brute_force():
             check(r, plans, "operating_cost_saving_chf_year", "max", cons)
 
 
+@forced_search
 def test_pareto_covers_brute_force():
     for scope in SUBS:
         plans = all_plans(scope)
@@ -230,6 +259,52 @@ def test_pareto_covers_brute_force():
                 if by > best + 1e-9 * (1 + abs(best)):                  # a brute-force non-dominated point
                     best = by
                     assert any(px <= bx + 1e-6 * max(1, abs(bx)) and py >= by - 1e-6 * max(1, abs(by)) for px, py in pts), (x, y, bx, by)
+
+
+@forced_search
+def test_payback_constraints_match_brute_force():
+    plans = all_plans(P1, events=P1_EVENTS)
+    r = O.solve(D, {"metric": "comfort_score", "sense": "max"}, [{"metric": "payback_years", "max": 3.9}], scope=P1,
+                events=list(P1_EVENTS), **NO_UI)
+    check(r, plans, "comfort_score", "max", [("payback_years", "max", 3.9)], events=P1_EVENTS)
+    for cons in ([("energy_cost_saving_pct", "min", 20), ("payback_years", "max", 2)],      # out of reach: best effort
+                 [("energy_cost_saving_pct", "min", 35), ("payback_years", "max", 3)],
+                 [("comfort_score", "min", 53.5), ("payback_years", "max", 3)]):
+        r = O.solve(D, {"metric": "upfront_cost_chf"}, [{"metric": n, k: b} for n, k, b in cons], scope=P1,
+                    events=list(P1_EVENTS), **NO_UI)
+        assert r["status"] == "best_effort"
+        check(r, plans, "upfront_cost_chf", "min", cons, ("operating_cost_saving_chf_year", "max"), events=P1_EVENTS)
+    plans = all_plans(P2, discounted=True, events=("energy_price_spike",), granularity="building")
+    cons = [("energy_cost_saving_pct", "min", 21.55), ("payback_years", "max", 3.546)]
+    r = O.min_cost_for_target(D, "energy_cost_saving_pct", 21.55, constraints=[{"metric": "payback_years", "max": 3.546}],
+                              granularity="building", events=["energy_price_spike"], discounted=True, scope=P2, **NO_UI)
+    check(r, plans, "upfront_cost_chf", "min", cons, ("operating_cost_saving_chf_year", "max"), discounted=True,
+          events=("energy_price_spike",))
+
+
+def test_full_building_regressions():
+    """Plans an independent 30-restart local search found; the optimizer must do at least as well."""
+    r = O.min_cost_for_target(D, "energy_cost_saving_pct", 15, constraints=[{"metric": "payback_years", "max": 4}], **NO_UI)
+    assert r["status"] == "ok" and r["objective"]["value"] <= 194_810 + 1e-6
+    r = O.solve(D, {"metric": "upfront_cost_chf", "sense": "min"},
+                [{"metric": "energy_cost_saving_pct", "min": 25}, {"metric": "office_co2_ppm", "max": 700}], **NO_UI)
+    assert r["status"] == "ok" and r["objective"]["value"] <= 216_705 + 1e-6
+    r = O.solve(D, {"metric": "npv_economic_chf", "sense": "max"}, [{"metric": "payback_years", "max": 5}], **NO_UI)
+    assert r["status"] == "ok" and r["objective"]["value"] >= 3_333_907
+
+
+def test_pareto_is_deterministic():
+    old = O.PARETO_PLANS
+    O.PARETO_PLANS = 600                                   # small budget: the stopping rule, not the curve, is tested
+    try:
+        O._CTX.clear()
+        a = O.pareto(D, max_points=None)
+        O._CTX.clear()
+        b = O.pareto(D, max_points=None)
+    finally:
+        O.PARETO_PLANS = old
+    assert a["search"]["evaluations"] == b["search"]["evaluations"]
+    assert [(p["x"], p["y"], len(p["changes"])) for p in a["points"]] == [(p["x"], p["y"], len(p["changes"])) for p in b["points"]]
 
 
 # --- scope
@@ -294,6 +369,37 @@ def test_scope_errors():
         raise AssertionError("expected ValueError")
 
 
+def test_malformed_input_raises_value_error():
+    """The API turns ValueError into a 400; anything else would be a 500."""
+    sel = lambda **kw: O.solve(D, {"metric": "upfront_cost_chf"}, scope=kw, **NO_UI)          # noqa: E731
+    calls = [
+        lambda: O.max_savings(D, overrides={"electricity_price_chf_kwh": "0.3"}, **NO_UI),
+        lambda: O.max_savings(D, overrides={"horizon_years": 0}, **NO_UI),
+        lambda: O.evaluate(D, [], overrides={"horizon_years": -3}),
+        lambda: O.evaluate(D, [], horizon_years=0),
+        lambda: sel(allowed=[{"group": ["lighting"]}]),
+        lambda: sel(locked=[{"group": {"a": 1}}]),
+        lambda: sel(allowed=[{"group": "lighting", "option": [["lighting_mid"]]}]),
+        lambda: sel(allowed=[{"group": "lighting", "floor": [[1]]}]),
+        lambda: sel(excluded_options=[["coffee_budget"]]),
+        lambda: O.max_savings(D, events=[["new_lab"]], **NO_UI),
+        lambda: O.max_savings(D, events=[{"id": "new_lab"}], **NO_UI),
+        lambda: O.solve(D, {"metric": ["upfront_cost_chf"]}, **NO_UI),
+        lambda: O.solve(D, {"metric": "upfront_cost_chf"}, [{"metric": {"x": 1}, "min": 1}], **NO_UI),
+        lambda: O.solve(D, {"metric": "upfront_cost_chf"}, tie_break={"metric": [1]}, **NO_UI),
+        lambda: O.evaluate(D, [{"group": "lighting", "option": "lighting_mid", "floor": 9}]),
+        lambda: O.evaluate(D, [{"group": "lighting", "option": ["lighting_mid"]}]),
+        lambda: O.pareto(D, x_metric=["upfront_cost_chf"]),
+        lambda: O.min_cost_for_target(D, "energy_cost_saving_pct", "10", **NO_UI),
+    ]
+    for k, call in enumerate(calls):
+        try:
+            call()
+        except ValueError:
+            continue
+        raise AssertionError(f"call {k}: no ValueError")
+
+
 # --- full building
 def test_budgets_respected_on_full_building():
     for budget in (50_000, 150_000, 400_000):
@@ -323,7 +429,7 @@ def test_full_building_runtime_and_pareto():
     p = O.pareto(D)
     dt = time.time() - t
     print(f"  pareto: {dt:.2f} s, {p['search']['evaluations']} plans, {p['total_non_dominated']} non-dominated")
-    assert dt < 20
+    assert dt < 10 and p["search"]["evaluations"] >= O.PARETO_PLANS          # stopped by its plan budget, not the clock
     pts = p["points"]
     assert 2 < len(pts) <= 15 and 0 <= p["knee_index"] < len(pts)
     assert pts[0]["scenario"] == [] and pts[0]["x"] == 0 and abs(pts[0]["y"]) < 1e-9
@@ -360,6 +466,10 @@ def test_small_scope_is_exhaustive():
     r = O.max_savings(D, budget=20_000, scope=scope, **NO_UI)
     assert r["search"]["method"] == "exhaustive"
     check(r, plans, "operating_cost_saving_chf_year", "max", [("upfront_cost_chf", "max", 20_000)])
+    r = O.solve(D, {"metric": "comfort_score", "sense": "max"}, [{"metric": "payback_years", "max": 3.9}], scope=P1,
+                events=list(P1_EVENTS), **NO_UI)                       # 384 plans: within the budget, so tried in full
+    assert r["search"]["method"] == "exhaustive"
+    check(r, all_plans(P1, events=P1_EVENTS), "comfort_score", "max", [("payback_years", "max", 3.9)], events=P1_EVENTS)
 
 
 if __name__ == "__main__":

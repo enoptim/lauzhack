@@ -473,7 +473,7 @@ def upgrade_tradeoffs(savings="running_costs", budget_chf=None, keep=None, only=
     cons += [{"metric": "upfront_cost_chf", "max": budget_chf}] if budget_chf is not None else []
     res = optimize.pareto(DATA, x_metric="upfront_cost_chf", y_metric=metric, constraints=cons,
                           scope=_scope(keep, only, must_change, avoid_options), events=events,
-                          max_points=min(15, max(3, int(max_points or 8))), time_limit=5.0)   # 5 s is as good as 10 s here
+                          max_points=min(15, max(3, int(max_points or 8))), time_limit=5.0)   # safety stop; the plan budget ends it in ~4 s
     points = [{"upfront_cost_chf": _r(p["x"]),
                "extra_cost_vs_like_for_like_chf": _r(p["metrics"]["net_upfront_cost_chf"]),
                "saving_per_year": _r(p["y"]), "saving_pct": _r(p["metrics"][pct], 1),
