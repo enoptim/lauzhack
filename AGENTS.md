@@ -27,3 +27,19 @@ Outputs per scenario:
 - Financials: investment cost, monthly/yearly savings, payback time, ROI
 
 Scope: the only interactions are moving the camera and changing the components (type, power draw, efficiency, etc.). The building's geometry itself is not editable.
+
+## Enoptim context
+- For Enoptim-specific context (product, customers, pilots, competitors, past pitches), read Alexandria, Enoptim's Obsidian vault. It's cloned at different paths on different machines: look for an `alexandria` folder next to this repo (`../alexandria`), and ask the user if it isn't there.
+- Alexandria's own `AGENTS.md` and safety rules apply when you read or change it.
+
+## Wiki
+- `wiki/` holds the team's research, decisions and pitch material. One topic per note.
+- Read `wiki/decisions.md` before you start. Don't go against a numbered decision. To change one, add a new decision that replaces it.
+- Don't use tables in the wiki. Use headings and short lists.
+- `wiki/index.md` lists every note in `wiki/` with a one-line summary. Keep it up to date: whenever you add, rename or delete a wiki note, update the index in the same change.
+
+## Writing style
+Everything in this repo (wiki, pitch, app text) must be easy to understand for someone outside energy, finance and software.
+- Use a technical word only where it earns its place, i.e. where a plain word would be less precise. Explain it in plain words the first time. Avoid jargon that only sounds clever.
+- Main point first. One idea per sentence. Short sentences.
+- Short lists, not long paragraphs. No tables in the wiki.
