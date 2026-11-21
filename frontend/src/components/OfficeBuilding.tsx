@@ -1,6 +1,6 @@
 import GroundFloor from './GroundFloor';
 import Staircase from './Staircase';
-import { FLOOR_COUNT, FLOOR_HEIGHT, WIDTH, LENGTH } from '../data/building';
+import { FLOOR_COUNT, FLOOR_HEIGHT, WIDTH, LENGTH, LAYOUT_LENGTH } from '../data/building';
 import { Box, Desk, Plant } from './Furniture';
 
 const white = '#d9ddda';
@@ -15,7 +15,7 @@ function Floor({ level }: { level: number }) {
   const y = level * FLOOR_HEIGHT;
   return <group position={[0, y, 0]}>
     {/* Ring slabs leave a genuine open atrium through all upper floors. */}
-    {level === 0 ? <Box size={[WIDTH, .25, LENGTH]} color="#d7d2c7" position={[0, -.125, 0]}/> : <>
+    {level === 0 ? <Box size={[WIDTH, .25, LAYOUT_LENGTH]} color="#d7d2c7" position={[0, -.125, 0]}/> : <>
       {[-14, 14].map(x => <Box key={x} size={[12, .22, 100]} color="#e0ded5" position={[x, -.11, 0]}/>)}
       {[-41, 41].map(z => <Box key={z} size={[16, .22, 18]} color="#e0ded5" position={[0, -.11, z]}/>)}
     </>}
@@ -79,7 +79,7 @@ function Facade() {
 }
 
 export default function OfficeBuilding() {
-  return <group>
+  return <group scale={[1, 1, LENGTH / LAYOUT_LENGTH]}>
     <Box size={[48, .4, 108]} color="#bfc5bc" position={[0, -.5, 0]}/>
     {Array.from({ length: FLOOR_COUNT }, (_, level) => <Floor key={level} level={level}/>)}
     <Staircase/>
