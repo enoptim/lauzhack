@@ -12,7 +12,7 @@ pnpm dev
 
 Open the URL printed by Vite. Use the page picker in the header or enter a route directly in the address bar.
 
-- `/` — 3D building viewer. It requires WebGL. Left-drag to orbit, scroll to zoom, and right-drag to pan.
+- `/` — 3D building viewer. It requires WebGL. Left-drag to orbit, scroll to zoom, and right-drag to pan. Pick equipment upgrades and use **Save & start new** to keep a configuration in this browser and clear the draft. **Simulate and compare** runs the saved configurations and any unsaved draft against the current setup.
 - `/assistant` — Assistant placeholder.
 - `/results` — Results placeholder.
 
