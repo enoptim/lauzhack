@@ -48,6 +48,13 @@ web
 - Writing style: plain English for someone outside energy, finance and software (`AGENTS.md`).
 - Undecided: the product name and brand. Keep the app neutral for now.
 
+## Brand Commitments
+
+- Look and feel: a clean modern product platform, like Linear, Claude and GitHub. The user chose this over themed directions on 2026-11-21. Their craft level is the bar.
+- Charts are soft: smooth curves, gentle filled areas, thin lines, quiet axes. Not hard, poster-like or signage-like.
+- Light theme. The 3D building view keeps its current look until we restyle it after the Results page.
+- shadcn/ui stays the component base, restyled through the theme.
+
 ## Evidence on Hand
 
 - Real room outlines from plan.epfl.ch, and real Lausanne weather and solar data (`data/`).
