@@ -1,9 +1,8 @@
 import { useLayoutEffect, useRef } from 'react';
 import { Color, DoubleSide, InstancedMesh, Object3D, SRGBColorSpace } from 'three';
 import { sideRooms } from '../data/sideRooms';
-import { Edges, useTexture } from '@react-three/drei';
-
-export type MonitorSelection = { outline: string; onSelect: () => void };
+import { useTexture } from '@react-three/drei';
+import { Monitor, type MonitorSelection } from './Furniture';
 
 type Part = [number, number, number, number, number, number, string];
 const parts: Part[] = [];
@@ -97,14 +96,7 @@ export default function GroundFloor({ monitorSelection }: { monitorSelection?: M
   }, []);
   return <>{glazing.map(({x,z,depth},i)=><mesh key={i} position={[x,1.8,z]}><boxGeometry args={[.06,3.6,depth]}/><meshStandardMaterial color="#a4c6ce" transparent opacity={.18} depthWrite={false}/></mesh>)}<mesh position={[0,10.65*4/3.5,-31.8]}><planeGeometry args={[2.8,11.2]}/><meshStandardMaterial map={banner} side={DoubleSide}/></mesh><instancedMesh ref={mesh} args={[undefined,undefined,parts.length]} castShadow receiveShadow><boxGeometry/><meshStandardMaterial roughness={.75}/></instancedMesh>
     {monitors.map((position, i) => (
-      <mesh key={i} position={position} castShadow receiveShadow onClick={monitorSelection && (event => {
-        event.stopPropagation();
-        if (event.delta <= 4) monitorSelection.onSelect();
-      })}>
-        <boxGeometry args={[.52, .35, .04]} />
-        <meshStandardMaterial color="#333a42" roughness={.75} />
-        {monitorSelection && <Edges lineWidth={2} color={monitorSelection.outline} />}
-      </mesh>
+      <Monitor key={i} position={position} selection={monitorSelection} />
     ))}
   </>;
 }

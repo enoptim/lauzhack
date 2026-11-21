@@ -31,7 +31,7 @@ export default function BuildingPage() {
   return (
     <main aria-label="Building viewer" className="grid min-h-full grid-rows-[minmax(20rem,55dvh)_auto] md:h-full md:grid-cols-[minmax(0,1fr)_20rem] md:grid-rows-[minmax(0,1fr)]">
       <div className="min-h-0">
-        <BuildingScene floor={floor} monitorSelection={floor === 0 ? {
+        <BuildingScene floor={floor} monitorSelection={floor !== null ? {
           outline: selectedGroup === 'monitors' ? selectedOutline : selectableOutline,
           onSelect: () => setSelectedGroup('monitors'),
         } : undefined}>
@@ -90,9 +90,8 @@ export default function BuildingPage() {
           </section>
         ) : (
           <p className="text-sm text-muted-foreground">
-            {floor === null ? 'Choose a floor to see its equipment.' : floor === 0
-              ? 'Click an outlined light or computer screen to configure it for the whole floor.'
-              : 'Click any outlined light to configure lighting for the whole floor.'}
+            {floor === null ? 'Choose a floor to see its equipment.'
+              : 'Click an outlined light or monitor to configure that equipment for the whole floor.'}
           </p>
         )}
         <div className="mt-auto flex flex-col gap-2 border-t border-border pt-4">

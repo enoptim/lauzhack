@@ -4,7 +4,7 @@ import { OrbitControls } from '@react-three/drei';
 import Campus from './Campus';
 import MountainHorizon from './MountainHorizon';
 import OfficeBuilding from './OfficeBuilding';
-import type { MonitorSelection } from './GroundFloor';
+import type { MonitorSelection } from './Furniture';
 
 const initialCamera = { position: [95, 80, 125] as [number, number, number], fov: 43, far: 1000 };
 const initialTarget: [number, number, number] = [0, 7, 0];

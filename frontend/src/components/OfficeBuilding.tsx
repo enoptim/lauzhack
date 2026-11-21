@@ -1,9 +1,9 @@
 import TopCantina from './TopCantina';
 import TopLanding from './TopLanding';
-import GroundFloor, { type MonitorSelection } from './GroundFloor';
+import GroundFloor from './GroundFloor';
 import Staircase from './Staircase';
 import { FLOOR_COUNT, FLOOR_HEIGHT, WIDTH, LENGTH, LAYOUT_WIDTH, LAYOUT_LENGTH } from '../data/building';
-import { Box, Desk, Plant } from './Furniture';
+import { Box, Desk, Plant, type MonitorSelection } from './Furniture';
 
 const white = '#d9ddda';
 const metal = '#9ca8a9';
@@ -35,7 +35,7 @@ function Floor({ level, monitorSelection }: { level: number; monitorSelection?: 
           <Box size={[outer-inner, 2.7, .12]} color={white} position={[side*(outer+inner)/2, 1.35, z]}/>
           <Glass size={[.05, 2.8, depth-.2]} position={[side * 12.3, 1.4, z + depth/2]}/>
           <Box size={[.1, 3.3, .1]} color={metal} position={[side * 12.3, 1.65, z]}/>
-          {depth >= 4 && <Desk position={[side * 16, 0, z + 3]}/>}
+          {depth >= 4 && <Desk position={[side * 16, 0, z + 3]} monitorSelection={monitorSelection}/>}
         </group>;
       })}
       {level > 0 && <>
@@ -90,7 +90,7 @@ export default function OfficeBuilding({ floor, monitorSelection }: { floor: num
   const visibleFloors = floor === null ? FLOOR_COUNT : floor + 1;
   return <group scale={[WIDTH / LAYOUT_WIDTH, 1, LENGTH / LAYOUT_LENGTH]}>
     <Box size={[48, .4, 108]} color="#bfc5bc" position={[0, -.5, 0]}/>
-    {Array.from({ length: visibleFloors }, (_, level) => <Floor key={level} level={level} monitorSelection={monitorSelection}/>)}
+    {Array.from({ length: visibleFloors }, (_, level) => <Floor key={level} level={level} monitorSelection={level === floor ? monitorSelection : undefined}/>)}
     <Staircase floors={visibleFloors}/>
     {floor !== 0 && <Facade floors={floor ?? FLOOR_COUNT}/>}
     {/* Broad canopy frames the long transparent atrium skylight. */}
