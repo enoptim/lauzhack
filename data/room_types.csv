@@ -1,20 +1,20 @@
-type,description,m2_per_seat,schedule,lighting_hours_per_workday,lighting_days,m2_per_fixture,heated,cooled,has_blinds,source
-office,Offices with 1-6 desks,10,office,10,workdays,8,1,1,1,made up
-meeting,Meeting rooms,2.5,meeting,6,workdays,8,1,1,1,made up
-seminar,Classrooms and lecture rooms,1.8,teaching,9,workdays,8,1,1,1,made up
-computer_lab,Student computer rooms,3.5,teaching,10,workdays,8,1,1,1,made up
-makerspace,Prototyping lab with 3D printers,8,office,10,workdays,8,1,1,1,made up
-kitchen,Kitchenette with coffee machine,4,common,11,workdays,8,1,0,1,made up
-lounge,Informal lounge zones along the corridors,4,common,11,workdays,10,1,0,0,made up
-cafe,Atrium cafe under the glass roof,6,common,12,workdays,12,1,0,0,made up
-hall,Atrium galleries and large halls,,common,13,workdays,12,1,0,0,made up
-circulation,Corridors and lobbies,,common,13,workdays,12,1,0,0,made up
-stairs,Staircases,,common,13,workdays,12,1,0,0,made up
-elevator,Lift shafts,,none,0,workdays,,0,0,0,made up
-wc,Toilets,,common,11,workdays,6,1,0,0,made up
-storage,Storage,,none,1,workdays,15,1,0,0,made up
-technical,Shafts and technical rooms,,none,1,workdays,15,0,0,0,made up
-plant_room,"Plant room: heat pump buffer tanks, pumps, air handling units, water heater",,none,2,workdays,15,0,0,0,made up
-server_room,Server room (own cooling),,none,2,workdays,15,0,0,0,made up
-parking,Underground car park (lights on around the clock),,none,24,all,25,0,0,0,made up
-roof,"Roof: heat pump outdoor units, air handling units for floors 2-4, room for solar panels",,none,0,workdays,,0,0,0,made up
+type,description,m2_per_seat,counts_toward_population,schedule,lighting_hours_per_workday,lighting_days,m2_per_fixture,heated,cooled,has_blinds,source
+office,Offices with 1-6 desks,10,1,office,10,workdays,8,1,1,1,made up
+meeting,Meeting rooms,2.5,0,meeting,6,workdays,8,1,1,1,made up
+seminar,Classrooms and lecture rooms,1.8,1,teaching,9,workdays,8,1,1,1,made up
+computer_lab,Student computer rooms,3.5,1,teaching,10,workdays,8,1,1,1,made up
+makerspace,Prototyping lab with 3D printers,8,1,office,10,workdays,8,1,1,1,made up
+kitchen,Kitchenette with coffee machine,4,0,common,11,workdays,8,1,0,1,made up
+lounge,Informal lounge zones along the corridors,4,0,common,11,workdays,10,1,0,0,made up
+cafe,Atrium cafe under the glass roof,6,0,common,12,workdays,12,1,0,0,made up
+hall,Atrium galleries and large halls,,0,common,13,workdays,12,1,0,0,made up
+circulation,Corridors and lobbies,,0,common,13,workdays,12,1,0,0,made up
+stairs,Staircases,,0,common,13,workdays,12,1,0,0,made up
+elevator,Lift shafts,,0,none,0,workdays,,0,0,0,made up
+wc,Toilets,,0,common,11,workdays,6,1,0,0,made up
+storage,Storage,,0,none,1,workdays,15,1,0,0,made up
+technical,Shafts and technical rooms,,0,none,1,workdays,15,0,0,0,made up
+plant_room,"Plant room: heat pump buffer tanks, pumps, air handling units, water heater",,0,none,2,workdays,15,0,0,0,made up
+server_room,Server room (own cooling),,0,none,2,workdays,15,0,0,0,made up
+parking,Underground car park (lights on around the clock),,0,none,24,all,25,0,0,0,made up
+roof,"Roof: heat pump outdoor units, air handling units for floors 2-4, room for solar panels",,0,none,0,workdays,,0,0,0,made up

@@ -7,7 +7,7 @@ headcount_staff,241,214,268,people,Researchers and staff with a desk in the buil
 teaching_seats,407,,,seats,"Seats in classrooms, lecture rooms and computer rooms",derived
 floor_height_m,4.0,3.6,4.4,m,Floor-to-floor height,estimate
 workdays_per_year,250,,,days,260 weekdays minus ~9-10 public holidays in Vaud,estimate
-daily_attendance_share,0.7,0.55,0.85,share,"Share of staff in the building on a workday (remote work, travel, vacation, sickness); equals the peak of office_weekday in schedule.csv",estimate
+daily_attendance_share,0.7,0.55,0.85,share,"Share of staff in the building on a workday. Already includes all absence: remote work, travel, vacation and today's sick days (sick_days_per_employee_year, ~3% of workdays). Peak of office_weekday in schedule.csv = this x staff per desk",estimate
 heating_demand_kwh_m2_year,50,35,70,kWh/m2/yr,"Useful heat per heated m2, including ventilation losses with today's AHUs (50% heat recovery) and the glass atrium roof",estimate
 cooling_demand_kwh_m2_year,20,10,35,kWh/m2/yr,"Useful cooling per cooled m2, excluding the server room",estimate
 other_electricity_kwh_m2_year,8,5,12,kWh/m2/yr,"Loads not modelled as options: lifts, fridges, network, printers, lab equipment",estimate
@@ -15,6 +15,15 @@ fresh_air_m3h_per_person,36,25,40,m3/h/person,Outdoor air per occupant for good 
 electricity_price_chf_kwh,0.2,0.15,0.28,CHF/kWh,Large-consumer price incl. grid fees and taxes,estimate
 pv_feed_in_chf_kwh,0.08,0.05,0.12,CHF/kWh,Price received for surplus solar electricity sold to the grid,estimate
 pv_subsidy_chf_per_kwp,300,150,450,CHF/kWp,One-off federal subsidy for new solar installations,estimate
+pv_self_consumption_share,0.8,0.65,0.95,share,Share of solar output used in the building (worth electricity_price_chf_kwh); the rest is sold at pv_feed_in_chf_kwh. High because servers and ventilation run at midday,estimate
+pv_max_kwp_with_roof_heat_pumps,250,200,300,kWp,Largest solar array that fits next to today's rooftop heat pump units and AHUs (around the atrium skylight),estimate
+pv_max_kwp_without_roof_heat_pumps,290,240,340,kWp,Largest solar array if the lake-water heat pump (heating_cooling_premium) frees the roof,estimate
+discount_rate_real,0.03,0.02,0.05,1/yr,"Real discount rate for NPV (all prices are in real 2026 CHF, no inflation)",estimate
+horizon_years,15,10,25,years,Evaluation horizon; year 1 is the first simulated year,made up
+capex_budget_chf,1500000,1000000,2500000,CHF,What facilities can spend on upgrades up front in year 1,made up
+opening_reserve_chf,2500000,2000000,3500000,CHF,Building reserve at the start of year 1; upgrades are paid from it,made up
+min_reserve_chf,1000000,500000,1500000,CHF,Floor the reserve must not fall below (emergency repairs),made up
+other_operating_cf_chf_year,350000,300000,450000,CHF/yr,"Yearly budget EPFL allocates to the building, net of costs not modelled (cleaning, security); pays energy, maintenance and consumables, the rest goes into the reserve. Salaries are not paid from it; people effects are valued with salary_cost_chf_year",made up
 salary_cost_chf_year,110000,80000,140000,CHF/yr/person,"Fully loaded cost per staff member (mix of PhD students, postdocs, professors, admin)",estimate
 rent_chf_m2_year,290,220,380,CHF/m2/yr,Market rent for comparable space in Lausanne (opportunity cost of space),estimate
 sick_days_per_employee_year,7,5,10,days/yr,Absence days due to illness per full-time employee,estimate
