@@ -162,6 +162,12 @@ def _futures_pool():
         return _POOL or None
 
 
+@app.on_event("shutdown")
+def _stop_futures_pool():
+    if _POOL:
+        _POOL.shutdown(wait=False, cancel_futures=True)
+
+
 @app.post("/api/futures")
 def futures(body: Futures):
     if len(body.scenarios) > 6:

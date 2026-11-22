@@ -630,7 +630,7 @@ def _year_state(data, ctx, sel, ref):
     key = (id(data), tuple(sel.values()), ctx["staff"], ctx["cooling_mult"], ctx["heating_mult"],
            tuple(sorted(ctx["params"].items())), ref["internal_gains_kwh"])
     if key not in _MEMO:
-        if len(_MEMO) > 20000:
+        if len(_MEMO) > 500:     # futures rarely repeat a state; a big cache only costs memory (about 0.3 MB each)
             _MEMO.clear()
         _MEMO[key] = _physical_state(data, ctx, sel, ref)
     st = _MEMO[key]

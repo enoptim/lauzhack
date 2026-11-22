@@ -20,6 +20,8 @@ known real-world probabilities.
 import math
 import os
 import random
+import threading
+import time
 from concurrent.futures import ProcessPoolExecutor
 
 import engine
@@ -114,6 +116,14 @@ _WORKER_DATA = None
 def _worker_init():
     global _WORKER_DATA
     _WORKER_DATA = engine.load()
+    # Stop when the engine that started this worker stops, so no orphan processes keep using memory.
+    parent = os.getppid()
+
+    def watch():
+        while os.getppid() == parent:
+            time.sleep(2)
+        os._exit(0)
+    threading.Thread(target=watch, daemon=True).start()
 
 
 def _worker_run(job):
@@ -123,7 +133,9 @@ def _worker_run(job):
 
 def make_pool(workers=None):
     """Worker processes that each load the data once. Use one pool for many run() calls."""
-    return ProcessPoolExecutor(max_workers=workers or max(1, (os.cpu_count() or 2) - 1), initializer=_worker_init)
+    # 3 workers: about 3x faster than one process, for about 250 MB more memory. More workers gain little and
+    # can push a laptop into swapping when the app, the browser and the engine all run at once.
+    return ProcessPoolExecutor(max_workers=workers or min(3, max(1, (os.cpu_count() or 2) - 1)), initializer=_worker_init)
 
 
 def _failures(data, future, horizon):
@@ -163,7 +175,7 @@ def run(data, scenarios, n=300, seed=2026, events=(), overrides=None, pool=None,
         for name, sc in scenarios.items():
             results[name] = [_slim(engine.simulate(data, sc, future=f, detail_years=())) for f in futures]
     else:
-        size = max(1, math.ceil(n / ((os.cpu_count() or 2) * 2)))
+        size = max(1, math.ceil(n / 12))
         chunks = [futures[k:k + size] for k in range(0, n, size)]
         jobs = [(sc, c) for sc in scenarios.values() for c in chunks]
         out = list(pool.map(_worker_run, jobs))
