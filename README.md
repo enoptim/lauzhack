@@ -29,20 +29,20 @@ Inputs: the plan is `[{"group": "ventilation", "option": "ventilation_mid"}]`, t
 ```text
 1. The building today (EPFL building BC, fictional finances, real 2026 CHF)
   Savings reserve:         2,500,000 CHF (must stay above 1,000,000 CHF)
-  Upgrade budget:          1,500,000 CHF
+  Upgrade budget:          1,500,000 CHF (for the extra cost over like-for-like replacements)
   Electricity price:       0.20 CHF/kWh
   Yearly electricity use:  1,103,217 kWh
   Yearly running cost:     306,115 CHF (energy 220,643 CHF)
   Meeting-room CO2:        1346 ppm
 
 2. Plan: upgrade ventilation to 'New AHUs with heat recovery + CO2 control' (the app's demo plan)
-  Purchase cost:           760,500 CHF
+  Purchase cost:           760,500 CHF (extra over like-for-like replacements, counted against the budget: 760,500 CHF)
   Year-1 running-cost saving: 19,709 CHF
   Year-1 electricity use:  998,824 kWh (today 1,103,217 kWh)
   Meeting-room CO2:        1346 ppm -> 1000 ppm
   Net present value (cash only, 15 years, 3%/yr real): -102,656 CHF
   Payback (cash only):     10.7 years
-  Flags:                   reserve_below_minimum, reserve_below_minimum_without_upgrades
+  Flags:                   needs_financing, reserve_below_minimum, reserve_below_minimum_without_upgrades
   Floor 2 only (engine option 'floor': 2): purchase 156,000 CHF, year-1 saving 4,106 CHF
 
 3. Change one assumption: electricity price 0.20 -> 0.30 CHF/kWh (+50%)
@@ -65,9 +65,12 @@ Inputs: the plan is `[{"group": "ventilation", "option": "ventilation_mid"}]`, t
   [ok] year-15 cash gap vs doing nothing equals the plan's cumulative cash flow (less the book value left in the new equipment)
 
 5. 200 possible futures (seed 2026): cumulative cash gain vs doing nothing, year 15
+  Counting the difference in what the equipment is still worth at year 15:
   Median 97,152 CHF; 10th to 90th percentile 226 CHF to 211,348 CHF
   The 10th-90th range holds the middle 8 of 10 futures drawn from our assumed distributions; it is not a real-world probability.
   [ok] percentiles are ordered
+  Payback, worked out future by future: 100% of futures pay back within 15 years; median 10.3 years, 10th to 90th percentile 7.3 years to 10.6 years
+  [ok] per-future payback share and percentiles are consistent
 
 RESULT: all identities hold
 ```
@@ -76,13 +79,17 @@ The numbers may shift a little if we tune the model. The checks must still pass.
 
 ### How we checked the numbers
 
-Run all of them with `make test`.
+Run all of them with `make test` (after `make setup`).
 - `model/test_judge_check.py`: the command above runs, and every identity in it holds.
 - `model/test_engine.py`: the cash ledger adds up in every year, the baseline matches the data team's hand check, a plan compared with itself is zero, higher prices raise savings, and random futures keep every identity.
+- `model/test_validation.py`: the challenge's validation checklist. Net worth equals cash plus equipment value, NPV equals the discounted yearly cash flows, changing one assumption moves only what it should, zero price and zero discount rate work, and bad input gets a clear error instead of a crash.
+- `model/test_limits.py`: the reserve is checked on day one and every year, a plan that empties it is flagged as needing financing, and the budget warning fires exactly at the limit.
+- `model/test_payback.py`: payback is worked out for each future on its own, on the same basis as the chart, and a fixed seed gives the same result.
 - `model/test_session.py`: play mode never changes the past, and the same choices give the same game.
 - `model/test_optimize.py`: the optimizer's costs add up and match the engine.
 - `model/test_search.py`: the plan search matches brute force on small problems.
-- `chat/test_agent.py`: the assistant's tool calls and answers behave as expected.
+- `chat/test_agent.py`: the assistant's tool calls work, and every figure it writes is checked against the engine's results (a made-up figure is caught and rewritten or flagged).
+- `chat/test_live.py` (optional, needs an OpenRouter key): asks the real model three questions and checks every figure in its answers against the engine.
 
 ### Assumptions, data and limitations
 
@@ -90,6 +97,7 @@ Run all of them with `make test`.
 - Public data: room outlines (plan.epfl.ch), Lausanne weather (Open-Meteo) and solar yield (PVGIS). Fictional data: room uses, people, equipment, prices of upgrades and the building's finances (reserve, budget, yearly cash).
 - Results are explorations, not forecasts and not financial, legal or engineering advice. Percentiles come from our assumed distributions, not from the real world.
 - Limits: one building, one electricity price path model, equipment and people effects are simplified, and the literature values are averages from other buildings.
+- Money limits: prices are in real 2026 CHF before tax (EPFL owns and uses the building). When the reserve would go below zero, the engine flags that the plan needs financing, but it does not model a loan or its interest.
 
 ### Licenses and sources
 

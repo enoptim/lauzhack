@@ -103,11 +103,23 @@ def main():
 
     print(f"\n5. {N_FUTURES} possible futures (seed {SEED}): cumulative cash gain vs doing nothing, year {int(p['horizon_years'])}")
     res = montecarlo.run(d, {"Upgrade ventilation": PLAN}, n=N_FUTURES, seed=SEED, samples=1)
-    last = res["summary"]["Upgrade ventilation"]["fan"]["cash"][-1]
+    summary = res["summary"]["Upgrade ventilation"]
+    last = summary["fan"]["cash"][-1]
+    print(f"  Counting the difference in what the equipment is still worth at year 15:")
     print(f"  Median {chf(last['p50'])}; 10th to 90th percentile {chf(last['p10'])} to {chf(last['p90'])}")
     print(f"  The 10th-90th range holds the middle 8 of 10 futures drawn from our assumed distributions; "
           f"it is not a real-world probability.")
     check(res["n"] == N_FUTURES and last["p10"] <= last["p50"] <= last["p90"], "percentiles are ordered")
+
+    # Payback is worked out for each future on its own (the chart's basis: without the leftover equipment value),
+    # never read off the percentile lines, which are computed separately for each year.
+    pb = summary["payback"]["cash_running"][-1]
+    years_ = lambda v: "not within the horizon" if v is None else f"{v:.1f} years"
+    print(f"  Payback, worked out future by future: {pb['share']:.0%} of futures pay back within "
+          f"{int(p['horizon_years'])} years; median {years_(pb['p50'])}, "
+          f"10th to 90th percentile {years_(pb['p10'])} to {years_(pb['p90'])}")
+    check(0.0 <= pb["share"] <= 1.0 and (pb["p10"] is None or pb["p50"] is None or pb["p10"] <= pb["p50"]),
+          "per-future payback share and percentiles are consistent")
 
     print("\nRESULT:", "all identities hold" if not failures else f"{len(failures)} check(s) failed")
     return 0 if not failures else 1
