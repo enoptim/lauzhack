@@ -70,7 +70,7 @@ export const lightingItems = inventory.flatMap(item => {
 
 
 /** What the plan sets for one kind of equipment, as the inspector shows it. */
-export type Planned = Swap | 'mixed' | { some: Swap } | undefined;
+export type Planned = Swap | 'mixed' | { some: Swap; floors: number[] } | undefined;
 
 /** The option a plan sets, if one is set everywhere or on some floors; undefined when none or when floors differ. */
 export const optionOf = (planned: Planned) =>
@@ -96,7 +96,7 @@ export function plannedFor(scenario: Swap[], floor: number | null, group: Equipm
     const last = swaps.at(-1)!;
     if (swaps.some(swap => swap.floor === undefined)) return last;
     const covered = new Set(swaps.map(swap => swap.floor));
-    return servedFloors(group).every(level => covered.has(level)) ? last : { some: last };
+    return servedFloors(group).every(level => covered.has(level)) ? last : { some: last, floors: [...covered] as number[] };
   }
   return scenario.filter(swap => swap.group === group && (swap.floor === floor || swap.floor === undefined)).at(-1);
 }

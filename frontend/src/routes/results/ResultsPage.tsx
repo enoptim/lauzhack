@@ -384,7 +384,7 @@ export default function ResultsPage() {
         </div>
         <div className="flex flex-col gap-0.5 md:items-end">
           <span className="text-sm text-muted-foreground">{boughtIn === 0 ? 'Paid today' : boughtIn ? `Bought in year ${boughtIn}` : 'Cost'}{read.isDemo && ' · demo plan'}</span>
-          <span className="text-2xl font-semibold tracking-tight tabular-nums">{finance ? chf(purchase) : '…'}</span>
+          <span className="text-2xl font-semibold tracking-tight whitespace-nowrap tabular-nums">{finance ? chf(purchase) : '…'}</span>
         </div>
       </section>
 

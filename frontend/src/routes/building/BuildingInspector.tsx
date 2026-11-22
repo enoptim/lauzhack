@@ -9,7 +9,7 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/
 import { Button } from '@/components/ui/button';
 import { FLOOR_COUNT } from '@/data/building';
 import { cn } from '@/lib/utils';
-import { groupedChanges, PLAN_COLORS, planColor, resultsHref } from '@/twin/plans';
+import { groupedChanges, levelsText, PLAN_COLORS, planColor, resultsHref } from '@/twin/plans';
 import { useTwin } from '@/twin/TwinProvider';
 import { equipmentForFloor, equipmentLabels, isBuildingWide, type EquipmentGroup, type Planned } from './equipment';
 import BuildingToday from './BuildingToday';
@@ -177,7 +177,7 @@ export default function BuildingInspector({ floor, selectedGroup, planned, onFlo
               const current = change === 'mixed' || (change && 'some' in change) ? null
                 : change && change.option !== installed?.option_id ? change.option : keepCurrent;
               const plannedName = change === 'mixed' ? 'Different on each floor'
-                : change && 'some' in change ? `${nameOf(change.some.option)}, some floors`
+                : change && 'some' in change ? `${nameOf(change.some.option)}, ${levelsText(change.floors).toLowerCase()} only`
                 : current && current !== keepCurrent ? nameOf(current) : null;
               const scope = isBuildingWide(group) ? 'the whole building' : levelName(floor).toLowerCase();
               return (
@@ -188,10 +188,10 @@ export default function BuildingInspector({ floor, selectedGroup, planned, onFlo
                       <span className="flex min-w-0 flex-col">
                         <span>{equipmentLabels[group]}</span>
                         {plannedName && (
-                          <span className="flex min-w-0 items-center gap-1.5 text-xs font-normal text-muted-foreground">
-                            <span aria-hidden="true" className="size-1.5 shrink-0 rounded-full" style={{ background: color }} />
+                          <span className="flex min-w-0 items-baseline gap-1.5 text-xs font-normal text-muted-foreground">
+                            <span aria-hidden="true" className="size-1.5 shrink-0 translate-y-[-1px] rounded-full" style={{ background: color }} />
                             <span className="sr-only">, change planned:</span>
-                            <span className="truncate">{plannedName}</span>
+                            <span className="text-pretty">{plannedName}</span>
                           </span>
                         )}
                       </span>
