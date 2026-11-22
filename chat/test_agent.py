@@ -208,6 +208,27 @@ def test_a_grounded_reply_needs_no_repair():
     assert len(sent) == 2 and out["verification"]["ok"] and not out["verification"]["repaired"]
 
 
+def _plan_cards(*calls):
+    post, _ = _script(*calls, {"content": "Here they are."})
+    solve, _ = _counting_solve()
+    return _with(post, solve, lambda: agent.chat([{"role": "user", "content": "give us plans"}]))
+
+
+def test_research_cards_are_dropped_when_the_model_shows_its_own_plans():
+    solar = {"title": "Solar", "scenario": [{"group": "solar_pv", "option": "solar_pv_upgrade"}]}
+    lights = {"title": "Lights", "scenario": [{"group": "lighting", "option": "lighting_mid"}]}
+    out = _plan_cards(_call("upgrade_tradeoffs", {}, "c1"), _call("show_scenario", solar, "c2"),
+                      _call("show_scenario", lights, "c3"))
+    assert [p["title"] for p in out["scenarios"]] == ["Solar", "Lights"]
+    assert out["scenario"]["title"] == "Lights" and out["chart"] is None
+
+
+def test_tradeoffs_alone_still_shows_its_balanced_card_and_chart():
+    out = _plan_cards(_call("upgrade_tradeoffs", {}))
+    assert [p["title"] for p in out["scenarios"]] == ["Balanced choice from the trade-off curve"]
+    assert out["chart"] is not None
+
+
 if __name__ == "__main__":
     tests = [v for k, v in dict(globals()).items() if k.startswith("test_")]
     failed = 0

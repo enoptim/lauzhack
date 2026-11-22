@@ -249,16 +249,24 @@ def chat(messages, scenario=None, confirm=None, on_tool=None, context=None, on_e
     verification = None
     repaired = []  # figures the first draft stated without a source
 
-    def show(plan):
+    research = []  # balanced cards from upgrade_tradeoffs; dropped if the model shows plans of its own
+
+    def show(plan, from_tradeoffs=False):
         nonlocal shown
         if plan:
             shown = plan
             shown_all[:] = [p for p in shown_all if p["scenario"] != plan["scenario"]] + [plan]
+            if from_tradeoffs:
+                research.append(plan)
 
     def out(reply):
-        return {"reply": reply, "scenario": shown, "scenarios": list(shown_all), "proposal": proposal, "optimization": optimization,
+        plans_out, last, chart_out = list(shown_all), shown, chart
+        own = [p for p in plans_out if not any(p is r for r in research)]
+        if own and len(own) < len(plans_out):  # "give us 3 plans" shows 3 cards, not 3 plus the research
+            plans_out, last, chart_out = own, own[-1], None
+        return {"reply": reply, "scenario": last, "scenarios": plans_out, "proposal": proposal, "optimization": optimization,
                 "removed_plan_ids": list(removed),
-                "chart": chart, "verification": verification}
+                "chart": chart_out, "verification": verification}
 
     emit = on_event or (lambda event: None)
 
@@ -346,7 +354,7 @@ def chat(messages, scenario=None, confirm=None, on_tool=None, context=None, on_e
                     proposal = {"problem": result["problem"], "today": result["today"]}
                 if name == "upgrade_tradeoffs":  # shows its balanced package itself
                     chart = tools.tradeoff_chart(result)
-                    show(tools.knee_scenario(result, args.get("events")))
+                    show(tools.knee_scenario(result, args.get("events")), from_tradeoffs=True)
             except Exception as e:  # the model sees the error and can fix its call
                 result = {"error": str(e)}
             convo.append({"role": "tool", "tool_call_id": call["id"], "content": json.dumps(result)})
