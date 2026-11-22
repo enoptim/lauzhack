@@ -14,6 +14,24 @@
         "value": "geist mono",
         "createdAt": "2026-11-21T20:15:02.650Z",
         "reason": "Claude's choice: pairs with Geist for tabular numbers on an Operate screen"
+      },
+      {
+        "rule": "cream-palette",
+        "value": "*",
+        "files": [
+          "pitch/energy-bill/bill.template.html"
+        ],
+        "createdAt": "2026-11-22T09:22:28.065Z",
+        "reason": "Claude: the design brief written in this session asks for a warm paper background, so the printed prop looks like a paper bill"
+      },
+      {
+        "rule": "tiny-text",
+        "value": "*",
+        "files": [
+          "pitch/energy-bill/bill.template.html"
+        ],
+        "createdAt": "2026-11-22T09:22:28.081Z",
+        "reason": "user brief: print bill, 'everything else can be small, like a real bill'"
       }
     ]
   }
