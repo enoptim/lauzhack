@@ -38,7 +38,7 @@ export default function PulseBar({ className }: { className?: string }) {
   // Results shows one plan in detail; everywhere else the pulse follows the plan being edited.
   const shown = focus?.plan ?? { name: activePlan.name, scenario: activePlan.scenario, color: planColor(plans, activePlan.id) };
   const changed = shown.scenario.length > 0;
-  const pulse = usePulse(shown.scenario);
+  const pulse = usePulse(shown.scenario, focus?.plan?.overrides, focus?.plan?.buy);
   const bill = useTween(pulse.plan?.bill ?? null);
   const co2 = useTween(pulse.plan?.co2 ?? null);
   const upfront = useTween(changed ? pulse.upfront : null);

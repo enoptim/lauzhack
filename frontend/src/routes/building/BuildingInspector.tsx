@@ -11,7 +11,7 @@ import { FLOOR_COUNT } from '@/data/building';
 import { cn } from '@/lib/utils';
 import { groupedChanges, PLAN_COLORS, planColor, resultsHref } from '@/twin/plans';
 import { useTwin } from '@/twin/TwinProvider';
-import { draftKey, equipmentForFloor, equipmentLabels, isBuildingWide, type EquipmentGroup, type EquipmentSwap } from './equipment';
+import { equipmentForFloor, equipmentLabels, isBuildingWide, type EquipmentGroup, type Planned } from './equipment';
 import BuildingToday from './BuildingToday';
 import { levelName, pinLevel } from './PlanPins';
 
@@ -24,7 +24,18 @@ const icons = {
   lighting: Lightbulb, monitors: Monitor, computers: PcCase, coffee: Coffee, lauzhack_banner: Flag,
 };
 
-function equipmentGroups(floor: number | null): EquipmentGroup[] {
+/** What can be changed here, plus anything the plan already changes on this floor (e.g. the assistant's basement lighting). */
+function equipmentGroups(floor: number | null, scenario: { group: string; floor?: number }[]): EquipmentGroup[] {
+  const groups = defaultGroups(floor);
+  if (floor === null) return groups;
+  for (const swap of scenario) {
+    const group = swap.group as EquipmentGroup;
+    if (swap.floor === floor && group in equipmentLabels && !isBuildingWide(group) && !groups.includes(group)) groups.push(group);
+  }
+  return groups;
+}
+
+function defaultGroups(floor: number | null): EquipmentGroup[] {
   if (floor === null) return ['ventilation', 'blinds', 'solar_pv'];
   if (floor === -1) return ['water_heater', 'servers'];
   const groups: EquipmentGroup[] = ['lighting', 'monitors', 'computers'];
@@ -36,7 +47,8 @@ function equipmentGroups(floor: number | null): EquipmentGroup[] {
 interface BuildingInspectorProps {
   floor: number | null;
   selectedGroup: EquipmentGroup | null;
-  draft: ReadonlyMap<string, EquipmentSwap>;
+  /** The plan's choice for a group on the floor in view. */
+  planned: (group: EquipmentGroup) => Planned;
   onFloorChange: (floor: number | null) => void;
   onSelectGroup: (group: EquipmentGroup | null) => void;
   onChooseOption: (group: EquipmentGroup, option: string) => void;
@@ -44,7 +56,7 @@ interface BuildingInspectorProps {
 }
 
 function Plans({ onGoTo }: { onGoTo: (level: number | null, group: string | null) => void }) {
-  const { plans, activePlan, setActivePlan, createPlan, removePlan, catalog } = useTwin();
+  const { plans, activePlan, setActivePlan, createPlan, removePlan, catalog, setScenario } = useTwin();
   return (
     <section aria-labelledby="plans-heading" className="flex max-h-[44%] shrink-0 flex-col border-b">
       <div className="flex h-12 shrink-0 items-center justify-between gap-2 border-b px-4">
@@ -87,11 +99,16 @@ function Plans({ onGoTo }: { onGoTo: (level: number | null, group: string | null
               {active && n > 0 && (
                 <ul aria-label={`Changes in ${plan.name}`} className="mt-1 mb-2 ml-[1.1rem] flex flex-col border-l pl-2">
                   {groupedChanges(plan.scenario, catalog).map(row => (
-                    <li key={`${row.group}-${row.option}`}>
+                    <li key={`${row.group}-${row.option}`} className="group/change flex items-center rounded-md hover:bg-secondary/80">
                       <button type="button" onClick={() => onGoTo(pinLevel(row.first), row.group)}
-                        className="flex w-full min-w-0 flex-col rounded-md px-2 py-1 text-left hover:bg-secondary/80 focus-visible:outline-2 focus-visible:outline-ring">
+                        className="flex min-w-0 flex-1 flex-col rounded-md px-2 py-1 text-left focus-visible:outline-2 focus-visible:outline-ring">
                         <span className="truncate text-[13px]"><span className="font-medium">{row.label}</span> <span className="text-muted-foreground">→ {row.name}</span></span>
                         <span className="truncate text-xs text-muted-foreground">{row.where}</span>
+                      </button>
+                      <button type="button" aria-label={`Undo: ${row.label} to ${row.name}, ${row.where}`} title="Undo this change"
+                        onClick={() => setScenario(plan.id, plan.scenario.filter(swap => !(swap.group === row.group && swap.option === row.option)))}
+                        className="mr-1 grid size-6 shrink-0 place-items-center rounded text-muted-foreground opacity-0 transition-opacity group-hover/change:opacity-100 hover:bg-background hover:text-foreground focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-ring">
+                        <X className="size-3" />
                       </button>
                     </li>
                   ))}
@@ -105,14 +122,14 @@ function Plans({ onGoTo }: { onGoTo: (level: number | null, group: string | null
   );
 }
 
-export default function BuildingInspector({ floor, selectedGroup, draft, onFloorChange, onSelectGroup, onChooseOption, onGoTo }: BuildingInspectorProps) {
+export default function BuildingInspector({ floor, selectedGroup, planned, onFloorChange, onSelectGroup, onChooseOption, onGoTo }: BuildingInspectorProps) {
   const twin = useTwin();
   const { plans, activePlan, storageError } = twin;
   const navigate = useNavigate();
   const inspectorBody = useRef<HTMLDivElement>(null);
   const activeTrigger = useRef<HTMLButtonElement>(null);
-  const groups = equipmentGroups(floor);
-  const color = planColor(plans, activePlan.id) ?? 'var(--primary)';
+  const groups = equipmentGroups(floor, activePlan.scenario);
+  const color = activePlan.color;
   const changedLevels = new Set(activePlan.scenario.map(pinLevel));
   const withChanges = plans.filter(plan => plan.scenario.length > 0);
 
@@ -153,9 +170,12 @@ export default function BuildingInspector({ floor, selectedGroup, draft, onFloor
             className="flex flex-col gap-1.5 [&_[data-slot=accordion-trigger]>svg]:transition-none">
             {groups.map(group => {
               const Icon = icons[group];
-              const change = draft.get(draftKey(floor, group));
+              const change = planned(group);
               const { installed, choices } = equipmentForFloor(floor, group);
-              const planned = change && choices.find(option => option.option_id === change.option);
+              // The radio to tick: none while the floors differ, today's when the plan keeps today's option.
+              const current = change === 'mixed' ? null : change && change.option !== installed?.option_id ? change.option : keepCurrent;
+              const plannedName = change === 'mixed' ? 'Different on each floor'
+                : current && current !== keepCurrent ? choices.find(option => option.option_id === current)?.name ?? current : null;
               const scope = isBuildingWide(group) ? 'the whole building' : levelName(floor).toLowerCase();
               return (
                 <AccordionItem key={group} value={group} className="rounded-lg border bg-card last:border-b">
@@ -164,11 +184,11 @@ export default function BuildingInspector({ floor, selectedGroup, draft, onFloor
                       <Icon aria-hidden="true" className="size-4 shrink-0 text-muted-foreground" />
                       <span className="flex min-w-0 flex-col">
                         <span>{equipmentLabels[group]}</span>
-                        {planned && (
+                        {plannedName && (
                           <span className="flex min-w-0 items-center gap-1.5 text-xs font-normal text-muted-foreground">
                             <span aria-hidden="true" className="size-1.5 shrink-0 rounded-full" style={{ background: color }} />
                             <span className="sr-only">, change planned:</span>
-                            <span className="truncate">{planned.name}</span>
+                            <span className="truncate">{plannedName}</span>
                           </span>
                         )}
                       </span>
@@ -180,9 +200,9 @@ export default function BuildingInspector({ floor, selectedGroup, draft, onFloor
                       {[{ option_id: keepCurrent, name: installed?.name ?? 'Mixed equipment' }, ...choices.filter(option => option.option_id !== installed?.option_id)].map(option => (
                         <label key={option.option_id} className="flex min-h-8 cursor-pointer items-center gap-2 rounded-md border px-2 py-1 text-xs hover:bg-secondary/70 has-checked:border-primary/50 has-checked:bg-primary/8 focus-within:outline-2 focus-within:outline-ring">
                           <input type="radio" name={`equipment-${group}`} className="size-4 shrink-0 accent-primary"
-                            checked={(change?.option ?? keepCurrent) === option.option_id} onChange={() => onChooseOption(group, option.option_id)} />
+                            checked={current === option.option_id} onChange={() => onChooseOption(group, option.option_id)} />
                           <span className="flex-1">{option.name}</span>
-                          {option.option_id === keepCurrent && <span className="text-[11px] text-muted-foreground">Today</span>}
+                          {option.option_id === keepCurrent && <span className="text-xs text-muted-foreground">Today</span>}
                         </label>
                       ))}
                     </fieldset>

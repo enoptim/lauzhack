@@ -24,7 +24,10 @@ const storageKey = 'assistant-conversation-v3';
 export function loadTurns(): Turn[] {
   try {
     const saved = JSON.parse(sessionStorage.getItem(storageKey) ?? '[]') as unknown;
-    return Array.isArray(saved) ? saved as Turn[] : [];
+    // Keep only turns with the shape the column draws, so one bad entry can't break the app after every reload.
+    return Array.isArray(saved) ? saved.filter((turn): turn is Turn => typeof turn?.id === 'string'
+      && (turn.role === 'user' || turn.role === 'assistant') && typeof turn.content === 'string'
+      && (turn.scenario == null || (Array.isArray(turn.scenario.scenario) && typeof turn.scenario.summary === 'object'))) : [];
   } catch {
     return [];
   }

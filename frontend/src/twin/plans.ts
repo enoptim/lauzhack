@@ -9,12 +9,14 @@ export interface Plan {
   name: string;
   scenario: Scenario;
   source: PlanSource;
+  /** Fixed when the plan is made, so it never changes when other plans come and go. */
+  color: string;
 }
 
-/** One fixed colour per plan, by its place among the plans with changes. The first is the brand orange. */
+/** One colour per plan, in every view. The first is the brand orange. */
 export const PLAN_COLORS = ['#c34e00', '#2f6fc0', '#a3368f', '#0f766e', '#6f7f1f', '#7c5a00'];
 
-/** Results draws at most this many plans on one chart. */
+/** At most this many plans: Results draws at most six on one chart, one colour each. */
 export const MAX_PLANS = 6;
 
 const storageKey = 'bc-twin:plans:v2';
@@ -26,18 +28,36 @@ const isSwap = (swap: unknown): swap is Swap => {
   return typeof s?.group === 'string' && typeof s.option === 'string' && (s.floor === undefined || Number.isInteger(s.floor));
 };
 
+/** The first colour no other plan uses. */
+export function freeColor(plans: Pick<Plan, 'color'>[]) {
+  const used = new Set(plans.map(plan => plan.color));
+  return PLAN_COLORS.find(color => !used.has(color)) ?? PLAN_COLORS[plans.length % PLAN_COLORS.length];
+}
+
+/** Gives every plan a colour of its own, keeping the ones already set. */
+function withColors(plans: (Omit<Plan, 'color'> & { color?: string })[]): Plan[] {
+  const out: Plan[] = [];
+  for (const plan of plans) {
+    const color = plan.color && PLAN_COLORS.includes(plan.color) && !out.some(p => p.color === plan.color) ? plan.color : freeColor(out);
+    out.push({ ...plan, color });
+  }
+  return out;
+}
+
 export function readPlans(): Plan[] {
   try {
     const saved: unknown = JSON.parse(localStorage.getItem(storageKey) ?? 'null');
     if (Array.isArray(saved)) {
-      return saved.filter((plan: Plan) => Number.isSafeInteger(plan?.id) && plan.id > 0 && typeof plan.name === 'string'
+      return withColors(saved.filter((plan: Plan) => Number.isSafeInteger(plan?.id) && plan.id > 0 && typeof plan.name === 'string'
         && Array.isArray(plan.scenario) && plan.scenario.every(isSwap))
-        .map((plan: Plan) => ({ ...plan, source: plan.source === 'assistant' ? 'assistant' : 'you' }));
+        .slice(0, MAX_PLANS)
+        .map((plan: Plan) => ({ ...plan, source: plan.source === 'assistant' ? 'assistant' as const : 'you' as const })));
     }
     const legacy: unknown = JSON.parse(localStorage.getItem(legacyKey) ?? '[]');
     if (!Array.isArray(legacy)) return [];
-    return legacy.filter(entry => Number.isSafeInteger(entry?.id) && Array.isArray(entry.scenario) && entry.scenario.every(isSwap))
-      .map((entry, index) => ({ id: entry.id, name: `Plan ${index + 1}`, scenario: entry.scenario, source: 'you' as const }));
+    return withColors(legacy.filter(entry => Number.isSafeInteger(entry?.id) && Array.isArray(entry.scenario) && entry.scenario.every(isSwap))
+      .slice(0, MAX_PLANS)
+      .map((entry, index) => ({ id: entry.id, name: `Plan ${index + 1}`, scenario: entry.scenario, source: 'you' as const })));
   } catch {
     return [];
   }
@@ -50,8 +70,8 @@ export function storePlans(plans: Plan[]) {
 
 /** The colour of a plan, or null while it has no changes (it is still today's building). */
 export function planColor(plans: Plan[], id: number): string | null {
-  const index = plans.filter(plan => plan.scenario.length > 0).findIndex(plan => plan.id === id);
-  return index < 0 ? null : PLAN_COLORS[index % PLAN_COLORS.length];
+  const plan = plans.find(p => p.id === id);
+  return plan && plan.scenario.length > 0 ? plan.color : null;
 }
 
 /** "Plan 3": the first number not taken by a plan you made. */
@@ -62,12 +82,12 @@ export function nextPlanName(plans: Plan[]) {
   return `Plan ${n}`;
 }
 
-/** The page address that opens Results on these plans, the given one shown in detail. */
+/** The page address that opens Results on these plans, the given one shown in detail, each in its own colour. */
 export function resultsHref(plans: Plan[], focusId: number | null, events: string[] = []) {
   const withChanges = plans.filter(plan => plan.scenario.length > 0).slice(0, MAX_PLANS);
   const selected = Math.max(0, withChanges.findIndex(plan => plan.id === focusId));
   const config = withChanges.length
-    ? { plans: withChanges.map(({ name, scenario }) => ({ name, scenario })), selected, events }
+    ? { plans: withChanges.map(({ name, scenario, color }) => ({ name, scenario, color })), selected, events }
     : { plans: [{ name: 'Current setup', scenario: [] }], selected: 0, events };
   return `/results?config=${encodeURIComponent(JSON.stringify(config))}`;
 }

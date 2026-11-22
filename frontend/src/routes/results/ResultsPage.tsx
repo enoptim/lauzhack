@@ -122,6 +122,11 @@ export default function ResultsPage() {
   const [timing, setTiming] = useState<Timing>('now');
   const plans = useMemo(() => read?.config.plans ?? [], [params]); // eslint-disable-line react-hooks/exhaustive-deps
   const multi = plans.length > 1;
+  // Each plan keeps the colour it has in the building and the assistant; older addresses fall back to its place.
+  const colorOf = (index: number) => {
+    const color = plans[index]?.color;
+    return typeof color === 'string' && /^#[0-9a-f]{6}$/i.test(color) ? color : PLAN_COLORS[index % PLAN_COLORS.length];
+  };
   // The plan shown in detail. The others stay on the chart; any can be hidden.
   const [selected, setSelected] = useState(read?.config.selected ?? 0);
   const [hidden, setHidden] = useState<ReadonlySet<number>>(() => new Set());
@@ -194,7 +199,7 @@ export default function ResultsPage() {
     const fan = s.fan[view].filter(f => f.year <= horizon);
     const path = example?.paths[`p${index}`];
     return {
-      id: index, name: p.name, color: PLAN_COLORS[index % PLAN_COLORS.length],
+      id: index, name: p.name, color: colorOf(index),
       middle: [s.start, ...fan.map(f => f.p50)],
       low: [s.start, ...fan.map(f => f.p10)],
       high: [s.start, ...fan.map(f => f.p90)],
@@ -226,7 +231,8 @@ export default function ResultsPage() {
       'Find a cheaper plan that keeps most of this saving.',
       'Where do this plan’s savings come from?',
     ] : ['Which single upgrades pay back fastest?'],
-    plan: { name: focusName, scenario: chosen, color: PLAN_COLORS[selected % PLAN_COLORS.length] },
+    // The pulse shows what this page shows: the plan as timed here, at the electricity price set here.
+    plan: { name: focusName, scenario, buy: chosen, overrides, color: colorOf(selected) },
   } : null);
 
   // Back in the building, edit the plan shown here (if it is one of the plans you keep).
@@ -334,10 +340,10 @@ export default function ResultsPage() {
                 <li key={index} onMouseEnter={() => setHovered(index)} onMouseLeave={() => setHovered(null)}
                   className={cn('flex items-stretch overflow-hidden rounded-xl border bg-card transition-[border-color,box-shadow,opacity] duration-200',
                     isSelected ? 'border-transparent ring-2' : 'hover:border-foreground/20', isHidden && 'opacity-55')}
-                  style={isSelected ? { ['--tw-ring-color' as string]: PLAN_COLORS[index % PLAN_COLORS.length] } : undefined}>
+                  style={isSelected ? { ['--tw-ring-color' as string]: colorOf(index) } : undefined}>
                   <button type="button" onClick={() => selectPlan(index)} aria-pressed={isSelected}
                     className="flex min-w-0 flex-1 items-center gap-3 px-4 py-3 text-left focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring">
-                    <span aria-hidden="true" className="h-8 w-1.5 shrink-0 rounded-full" style={{ background: PLAN_COLORS[index % PLAN_COLORS.length] }} />
+                    <span aria-hidden="true" className="h-8 w-1.5 shrink-0 rounded-full" style={{ background: colorOf(index) }} />
                     <span className="flex min-w-0 flex-col">
                       <span className="truncate font-semibold">{p.name}</span>
                       <span className="truncate text-sm text-muted-foreground tabular-nums">
@@ -426,7 +432,7 @@ export default function ResultsPage() {
           <div className={cn('grid gap-3 transition-opacity duration-200 sm:grid-cols-2', busy && 'opacity-60')}>
             {[
               { who: 'Doing nothing', share: riskYear.nothing, bill: risk.emergency_chf_mean_baseline, color: 'var(--warning)' },
-              { who: multi ? `With ${plans[selected]?.name}` : 'With the upgrade', share: riskYear.plan, bill: risk.emergency_chf_mean, color: PLAN_COLORS[selected % PLAN_COLORS.length] },
+              { who: multi ? `With ${plans[selected]?.name}` : 'With the upgrade', share: riskYear.plan, bill: risk.emergency_chf_mean, color: colorOf(selected) },
             ].map(row => (
               <div key={row.who} className="flex items-center gap-4 rounded-lg bg-muted/50 px-4 py-3">
                 <span aria-hidden="true" className="grid shrink-0 grid-cols-5 gap-1">
@@ -561,11 +567,11 @@ export default function ResultsPage() {
 
         <p className="flex flex-wrap gap-x-6 gap-y-1 text-sm text-muted-foreground">
           <span className="flex items-center gap-2">
-            <span className="h-3 w-5 rounded-sm" style={{ background: `color-mix(in oklch, ${PLAN_COLORS[selected % PLAN_COLORS.length]} 20%, transparent)` }} />
+            <span className="h-3 w-5 rounded-sm" style={{ background: `color-mix(in oklch, ${colorOf(selected)} 20%, transparent)` }} />
             Pale band: 8 in 10 possible futures land here
           </span>
           <span className="flex items-center gap-2">
-            <span className="h-0.5 w-5 rounded-full" style={{ background: PLAN_COLORS[selected % PLAN_COLORS.length] }} />
+            <span className="h-0.5 w-5 rounded-full" style={{ background: colorOf(selected) }} />
             {example ? 'Bold line: the one future shown' : 'Line: the middle future'}
           </span>
           {staffEffects && <span className="flex items-center gap-2"><svg aria-hidden="true" width="20" height="4" className="text-chart-1"><line x1="0" y1="2" x2="20" y2="2" stroke="currentColor" strokeWidth="2" strokeDasharray="5 3" /></svg>Dashed: includes staff effects, a guess</span>}

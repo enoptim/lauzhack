@@ -49,11 +49,14 @@ The default model is Claude Sonnet 5.5, at about 5 US cents and 15 seconds per q
 {
   "messages": [{"role": "user", "content": "Cut our bill by 5%"}],
   "scenario": [{"group": "lighting", "option": "lighting_mid", "floor": 2}],
-  "confirm": null
+  "confirm": null,
+  "context": "The user is in the 3D building view, looking at the lighting for floor 2."
 }
 ```
 
 `scenario` is optional. It's the scenario the app shows right now, so the assistant can answer "what if we also do floor 3?".
+
+`context` is optional. It says in words where the user is in the app, e.g. "The user is in the 3D building view, looking at the lighting for floor 2 …". The assistant uses it for "this" and "here", so "Which option pays back fastest here?" works.
 
 The reply:
 - `reply`: Markdown for the chat panel.

@@ -5,6 +5,7 @@ import type { ReactNode } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router';
 import { cn } from '@/lib/utils';
 import AssistantColumn from './assistant/AssistantColumn';
+import ErrorBoundary from './ErrorBoundary';
 import Mark from './Mark';
 import { resultsHref } from './plans';
 import PulseBar from './Pulse';
@@ -48,7 +49,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
         </nav>
 
         <span aria-hidden="true" className="h-5 w-px bg-border max-sm:hidden" />
-        <button type="button" onClick={() => setAssistantOpen(!assistantOpen)} aria-expanded={assistantOpen} aria-controls="assistant"
+        <button id="ask-button" type="button" onClick={() => setAssistantOpen(!assistantOpen)} aria-expanded={assistantOpen} aria-controls="assistant"
           className={cn('flex h-9 shrink-0 items-center gap-2.5 rounded-lg border px-3 text-sm font-medium transition-colors focus-visible:outline-2 focus-visible:outline-ring',
             assistantOpen ? 'border-primary/40 bg-primary/8 text-foreground' : 'bg-card hover:border-primary/40 hover:bg-primary/5')}>
           <MessageSquare aria-hidden="true" className="size-4 text-muted-foreground" />
@@ -64,7 +65,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
       </header>
 
       <div className="flex min-h-0 flex-1">
-        <AssistantColumn />
+        <ErrorBoundary what="assistant"><AssistantColumn /></ErrorBoundary>
         <div className="relative min-h-0 min-w-0 flex-1 overflow-auto">{children}</div>
       </div>
     </div>

@@ -26,20 +26,20 @@ const vitals = (snapshot: SimulateResult['snapshot']): Vitals => ({
 });
 
 /** The building's year-1 vital signs, today and with the plan. One engine run (about 13 ms) per change. */
-export function usePulse(scenario: Scenario): Pulse {
+export function usePulse(scenario: Scenario, overrides: Record<string, number> = {}, buy: Scenario = scenario): Pulse {
   const [pulse, setPulse] = useState<Pulse>({ today: null, plan: null, upfront: null, loading: true, offline: false });
-  const key = JSON.stringify(scenario);
-  const scenarioRef = useRef(scenario);
-  scenarioRef.current = scenario;
+  const key = JSON.stringify([scenario, overrides, buy]);
+  const request = useRef({ scenario, overrides, buy });
+  request.current = { scenario, overrides, buy };
 
   useEffect(() => {
     let live = true;
     setPulse(previous => ({ ...previous, loading: true }));
     const timer = setTimeout(() => {
-      const scenario = scenarioRef.current;
+      const { scenario: run, overrides: changed, buy: bought } = request.current;
       Promise.all([
-        api.simulate({ scenario }),
-        scenario.length ? api.evaluate(anyProblem, scenario).then(e => e.metrics.upfront_cost_chf) : Promise.resolve(0),
+        api.simulate({ scenario: run, overrides: changed }),
+        bought.length ? api.evaluate(anyProblem, bought).then(e => e.metrics.upfront_cost_chf) : Promise.resolve(0),
       ])
         .then(([result, upfront]) => {
           if (live) setPulse({ today: vitals(result.snapshot_baseline), plan: vitals(result.snapshot), upfront, loading: false, offline: false });

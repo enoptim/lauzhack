@@ -43,18 +43,26 @@ export default function AssistantColumn() {
   const navigate = useNavigate();
   const { pathname } = useLocation();
   const waiting = useWaitingText(pending);
-  const narrow = () => !window.matchMedia('(min-width: 64rem)').matches;
+  const narrow = () => !window.matchMedia('(min-width: 80rem)').matches;
 
   // Only the keyboard shortcuts move focus into the composer: a click elsewhere keeps the user where they were.
   // The column is inert until it opens, so focus waits a frame for it to render.
   const focusComposer = () => requestAnimationFrame(() => input.current?.focus({ preventScroll: true }));
+  /** Close, and give focus back to the button that opens the column (the column turns inert). */
+  const close = () => {
+    setAssistantOpen(false);
+    document.getElementById('ask-button')?.focus({ preventScroll: true });
+  };
 
   // "/" opens the assistant from anywhere; Ctrl/⌘ K toggles it.
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
       const typing = target?.closest('input, textarea, select, [contenteditable="true"]');
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
+      if (event.key === 'Escape' && assistantOpen && target?.closest('#assistant')) {
+        event.preventDefault();
+        close();
+      } else if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
         event.preventDefault();
         setAssistantOpen(!assistantOpen);
         if (!assistantOpen) focusComposer();
@@ -103,20 +111,20 @@ export default function AssistantColumn() {
     <>
       {/* Below desktop width the column floats over the view; this dims what is behind it. */}
       <div aria-hidden="true" onClick={() => setAssistantOpen(false)}
-        className={cn('fixed inset-0 top-14 z-30 bg-foreground/10 transition-opacity duration-200 lg:hidden',
+        className={cn('fixed inset-0 top-14 z-30 bg-foreground/10 transition-opacity duration-200 xl:hidden',
           assistantOpen ? 'opacity-100' : 'pointer-events-none opacity-0')} />
       <aside id="assistant" aria-label="Assistant" inert={!assistantOpen}
         className={cn('twin-column z-40 flex h-full shrink-0 flex-col overflow-hidden border-r bg-sidebar',
-          'max-lg:fixed max-lg:top-14 max-lg:bottom-0 max-lg:left-0 max-lg:h-auto max-lg:shadow-xl',
-          assistantOpen ? 'w-[min(25rem,100vw)] lg:w-[clamp(21rem,27vw,25rem)]' : 'w-0 border-r-0')}>
-        <div className="flex h-full w-[min(25rem,100vw)] flex-col lg:w-[clamp(21rem,27vw,25rem)]">
+          'max-xl:fixed max-xl:top-14 max-xl:bottom-0 max-xl:left-0 max-xl:h-auto max-xl:shadow-xl',
+          assistantOpen ? 'w-[min(25rem,100vw)] xl:w-[clamp(21rem,27vw,25rem)]' : 'w-0 border-r-0')}>
+        <div className="flex h-full w-[min(25rem,100vw)] flex-col xl:w-[clamp(21rem,27vw,25rem)]">
           <header className="flex h-12 shrink-0 items-center gap-2.5 border-b px-4">
             <h2 className="flex-1 text-sm font-semibold">Ask the building</h2>
             <Button variant="ghost" size="icon-sm" aria-label="New conversation" title="New conversation"
               disabled={pending !== null || turns.length === 0} onClick={twin.newChat}>
               <SquarePen />
             </Button>
-            <Button variant="ghost" size="icon-sm" aria-label="Close the assistant" title="Close (Esc)" onClick={() => setAssistantOpen(false)}>
+            <Button variant="ghost" size="icon-sm" aria-label="Close the assistant" title="Close (Esc)" onClick={close}>
               <PanelLeftClose />
             </Button>
           </header>
@@ -212,8 +220,6 @@ export default function AssistantColumn() {
                   if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
                     event.preventDefault();
                     submit(draft);
-                  } else if (event.key === 'Escape' && !draft) {
-                    setAssistantOpen(false);
                   }
                 }}
                 className="field-sizing-content max-h-40 min-h-14 resize-none bg-transparent px-3 pt-2 pb-1 text-sm outline-none placeholder:text-muted-foreground" />
