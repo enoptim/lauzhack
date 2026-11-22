@@ -1,5 +1,5 @@
 # Project name
-What-If LauzHack
+DigiTwin
 # Short description
 
 Explore a 3D twin of the LauzHack BC building, plan equipment upgrades, and explore the future.
