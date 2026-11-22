@@ -1,15 +1,15 @@
 \documentclass[11pt,a4paper]{article}
 \usepackage[T1]{fontenc}
 \usepackage{lmodern}
-\usepackage[margin=22mm]{geometry}
+\usepackage[margin=16mm]{geometry}
 \usepackage{graphicx}
 \usepackage{microtype}
 
 \pagestyle{empty}
 \setlength{\parindent}{0pt}
-\setlength{\parskip}{5pt}
+\setlength{\parskip}{3pt}
 
-\newcommand{\reportsection}[1]{\par\addvspace{8pt}\noindent\textbf{\large #1}\par\nobreak}
+\newcommand{\reportsection}[1]{\par\addvspace{6pt}\noindent\textbf{\large #1}\par\nobreak}
 \newcommand{\coTwo}{CO\textsubscript{2}}
 
 \begin{document}
@@ -17,6 +17,10 @@
 {\LARGE\bfseries What-If LauzHack\par}
 {\large Technical Report\par}
 \medskip\hrule
+
+\reportsection{Introduction}
+
+We built a 3D twin of EPFL's BC building, where LauzHack took place. It helps energy managers explore possible futures and compare equipment upgrades before spending money. The building is real; the numbers are demo estimates, not measurements.
 
 \reportsection{3D model}
 
@@ -36,13 +40,14 @@ A stateful FastAPI session runs the same Python engine against one scripted or s
 
 \reportsection{Simulation engine}
 
-{\centering\includegraphics[width=\linewidth]{.build/engine.pdf}\par}
+{\centering\includegraphics[width=0.85\linewidth]{.build/engine.pdf}\par}
 
 The Python engine, served through FastAPI, simulates the upgrade plan and a like-for-like replacement baseline over 15 years by default. It calculates electricity use from equipment power and runtime, adjusts heating and cooling for internal heat gains and ventilation heat recovery, and estimates peak room \coTwo{} from occupancy and fresh airflow. It compares yearly operating and investment costs, including remaining equipment value at the horizon. Discounted differences give net present value; cumulative differences give payback.
 
 The optimizer uses a fixed run. Results uses 200 seeded Monte Carlo draws: electricity prices follow a random walk, events such as heatwaves are sampled, and existing equipment failures follow an age-conditioned Weibull wear-out curve. Every plan and its baseline face the same draws. The chart shows the median and the 10th--90th percentile band of cumulative savings under those assumptions.
 
 \reportsection{Optimizer}
+\textbf{How we find upgrade plans that meet your limits}\par\nobreak
 
 A plan keeps or swaps the equipment in each zone, such as the lighting on floor 2: about $10^{18}$ plans. Each round, the engine measures every single swap on top of the current best plan. Treating these effects as additive, a dynamic program over the zones keeps the plans no other plan beats on cost and the user's limits (a Pareto frontier). The engine checks up to twelve of them. A swap's effect depends on what else is installed, so the search repeats from the best plan until it stops improving or reaches 1,500 simulations.
 
