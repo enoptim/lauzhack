@@ -3,6 +3,11 @@
 import { useId, useState } from 'react';
 import type { ChatChart } from '@/api/types';
 import { chfShort } from '../format';
+import { levelsText } from '../plans';
+
+/** "LED tube retrofit (floors -1, 0, 1)" → "LED tube retrofit (basement, ground floor and floor 1)". */
+const plainFloors = (label: string) => label.replace(/\(floors? ([-\d, ]+)\)/g, (_, list: string) =>
+  `(${levelsText(list.split(',').map(Number)).toLowerCase()})`);
 
 const W = 320;
 const H = 150;
@@ -49,12 +54,12 @@ export default function TradeoffChart({ chart }: { chart: ChatChart }) {
               onMouseEnter={() => setPicked(i)} onClick={() => setPicked(i)} />
           </g>
         ))}
-        <text x={PAD.left} y={H - 6} className="fill-muted-foreground text-[11px]">CHF 0</text>
-        <text x={W - PAD.right} y={H - 6} textAnchor="end" className="fill-muted-foreground text-[11px]">{chfShort(maxX)} upfront</text>
+        <text x={PAD.left} y={H - 6} className="fill-muted-foreground text-[12px]">CHF 0</text>
+        <text x={W - PAD.right} y={H - 6} textAnchor="end" className="fill-muted-foreground text-[12px]">{chfShort(maxX)} upfront</text>
       </svg>
       <p className="min-h-10 text-xs text-pretty" aria-live="polite">
         <span className="font-medium tabular-nums">{chfShort(point.x)} upfront, saves {unit.startsWith('CHF') ? chfShort(point.y) : `${Math.round(point.y).toLocaleString('en-US')} ${unit.replace('/year', '')}`} a year.</span>{' '}
-        <span className="text-muted-foreground">{picked === chart.knee_index ? 'Balanced: past this, each extra franc buys less saving. ' : ''}{point.label}</span>
+        <span className="text-muted-foreground">{picked === chart.knee_index ? 'Balanced: past this, each extra franc buys less saving. ' : ''}{plainFloors(point.label)}</span>
       </p>
     </figure>
   );

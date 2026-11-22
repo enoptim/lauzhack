@@ -34,14 +34,12 @@ export default function PlanPins({ scenario, color, onPick }: {
   if (narrow && order.length > 2) {
     const kinds = [...new Set(order.flatMap(([, groups]) => groups))];
     return (
-      <Html position={[WIDTH / 2 + 0.6, FLOOR_COUNT * FLOOR_HEIGHT + 2.5, LENGTH / 2 + 0.6]} zIndexRange={[20, 0]} style={{ pointerEvents: 'none' }}>
-        <div className="twin-enter flex -translate-y-1/2 items-center">
-          <span className="size-2 shrink-0 rounded-full ring-2 ring-white" style={{ background: color }} />
-          <span className="h-px w-4 shrink-0" style={{ background: color }} />
-          <span className="rounded-full border bg-card/95 px-2.5 py-1 text-xs whitespace-nowrap shadow-sm">
-            <span className="font-semibold">{order.length} places</span> <span className="text-muted-foreground">{kinds.map(groupLabel).join(', ')}</span>
-          </span>
-        </div>
+      <Html center position={[0, FLOOR_COUNT * FLOOR_HEIGHT + 6, 0]} zIndexRange={[20, 0]} style={{ pointerEvents: 'none' }}>
+        <span className="twin-enter flex max-w-[16rem] items-center gap-1.5 rounded-full border bg-card/95 px-2.5 py-1 text-xs shadow-sm">
+          <span aria-hidden="true" className="size-2 shrink-0 rounded-full" style={{ background: color }} />
+          <span className="shrink-0 font-semibold">{scenario.length} changes</span>
+          <span className="truncate text-muted-foreground">{kinds.map(groupLabel).join(', ')}</span>
+        </span>
       </Html>
     );
   }

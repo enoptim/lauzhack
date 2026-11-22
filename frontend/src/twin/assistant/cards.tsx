@@ -51,12 +51,6 @@ function withUnit(value: number, unit: string) {
   return unit ? `${number(value)} ${unit}` : number(value, 1);
 }
 
-function payback(years: number | null) {
-  if (years === null) return 'Not in cash';
-  if (years === 0) return 'From day one';
-  return withUnit(years, 'years');
-}
-
 function limitText(c: ProblemConstraint) {
   const { label, unit } = metricText[c.metric];
   if (c.metric === 'warnings' && c.max === 0) return 'No warnings (over budget, reserve too low, …)';
@@ -79,8 +73,10 @@ function limitText(c: ProblemConstraint) {
 export function planName(scenario: ChatScenario, optimization: ChatOptimization | null | undefined) {
   if (optimization) {
     const { metric, sense } = optimization.problem.objective;
-    return `${sense === 'max' ? 'Highest' : 'Lowest'} ${metricText[metric].label}`;
+    return `${sense === 'max' ? 'Highest' : 'Lowest'} ${metricText[metric].label.replace(/ per (year|person)$/, '')}`;
   }
+  // The trade-off curve's balanced package: a name short enough for the pulse and the plan list.
+  if (scenario.title === 'Balanced choice from the trade-off curve') return 'Balanced package';
   return scenario.title.length > 44 ? `${scenario.title.slice(0, 43)}…` : scenario.title;
 }
 
@@ -130,6 +126,9 @@ function GoalRows({ problem, today, catalog }: {
 }
 
 export type ProposalState = 'open' | 'running' | 'ran' | 'replaced';
+
+/** "In 3D now" and "In Results now": the same quiet pressed look, hovered or not. */
+const nowStyle = 'bg-secondary text-muted-foreground shadow-none hover:bg-secondary hover:text-muted-foreground';
 
 const cardClass = 'w-full overflow-hidden rounded-xl border bg-card shadow-[0_1px_2px_oklch(0_0_0/0.04),0_6px_16px_-10px_oklch(0.3_0.02_60/0.18)]';
 
@@ -184,10 +183,6 @@ export function PlanCard({ scenario, catalog, optimization, kept, shown, onShow,
   const bill = s.energy_bill_chf_month;
   const changes = scenario.scenario.length;
   const rows = groupedChanges(scenario.scenario, catalog);
-  // The card's figures come from one fixed future; Results shows the middle of 200. Each figure says its basis.
-  const paybackNote = s.payback_years === 0 && s.extra_cost_vs_like_for_like_chf <= 0
-    ? 'It costs no more than replacing worn-out units like for like'
-    : 'Against replacing worn-out units like for like';
   return (
     <section aria-label={`Plan: ${kept?.name ?? scenario.title}`} className={cardClass}>
       <header className="flex items-start gap-2.5 px-4 pt-3.5 pb-3">
@@ -236,10 +231,9 @@ export function PlanCard({ scenario, catalog, optimization, kept, shown, onShow,
           ['Upfront', <span className="font-medium tabular-nums">{chfShort(s.upfront_cost_chf)}</span>],
           // A year, like the pulse and Results (the assistant reports it per month).
           ['Energy bill', <span className="tabular-nums"><span className="font-medium">{chfShort(bill.scenario * 12)}</span> a year</span>, `Today ${chfShort(bill.today * 12)}`],
-          ['Pays back', <span className="font-medium tabular-nums">{payback(s.payback_years)}</span>, paybackNote],
-          [`Over ${s.horizon_years} years`, <span className="tabular-nums"><span className="font-medium">{chfShort(s.npv_chf)}</span> {s.npv_chf >= 0 ? 'gained' : 'lost'}</span>,
-            'In one fixed future, in today’s money. Results shows the range over 200 futures.'],
+          ['Saves', <span className="tabular-nums"><span className="font-medium">{chfShort(s.running_cost_saving_chf_year)}</span> a year</span>, 'On energy, upkeep and supplies'],
         ]} />
+        <p className="mt-3 text-xs text-muted-foreground text-pretty">Year 1, from the building model. When it pays back, and how that varies across 200 futures, is in Results.</p>
         {flagTypes.length > 0 && (
           <ul className="mt-3 flex flex-wrap gap-1.5">
             {flagTypes.map(type => {
@@ -256,11 +250,11 @@ export function PlanCard({ scenario, catalog, optimization, kept, shown, onShow,
       </div>
 
       <footer className="flex flex-wrap items-center gap-2 border-t bg-muted/40 px-4 py-3">
-        <Button size="sm" variant="outline" onClick={onShow} aria-pressed={shown === 'building'} className={cn(shown === 'building' && 'text-muted-foreground')}>
+        <Button size="sm" variant="outline" onClick={onShow} aria-pressed={shown === 'building'} className={cn(shown === 'building' && nowStyle)}>
           {shown === 'building' ? <Check data-icon="inline-start" /> : <Box data-icon="inline-start" />}
           {shown === 'building' ? 'In 3D now' : 'Show in 3D'}
         </Button>
-        <Button size="sm" variant="outline" onClick={onCompare} aria-pressed={shown === 'results'} className={cn(shown === 'results' && 'text-muted-foreground')}>
+        <Button size="sm" variant="outline" onClick={onCompare} aria-pressed={shown === 'results'} className={cn(shown === 'results' && nowStyle)}>
           {shown === 'results' ? <Check data-icon="inline-start" /> : <ChartSpline data-icon="inline-start" />}
           {shown === 'results' ? 'In Results now' : 'Compare in Results'}
         </Button>

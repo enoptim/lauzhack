@@ -147,7 +147,7 @@ export default function BuildingInspector({ floor, selectedGroup, planned, onFlo
     <aside aria-label="Plans and equipment" className="flex min-h-0 min-w-0 flex-col border-t bg-background md:border-t-0 md:border-l">
       <Plans onGoTo={onGoTo} />
 
-      <div ref={inspectorBody} className="flex min-h-0 flex-1 flex-col gap-4 p-4 md:overflow-y-auto md:overscroll-contain md:[overflow-anchor:none] md:[scrollbar-gutter:stable]">
+      <div ref={inspectorBody} className="flex min-h-0 flex-1 flex-col gap-4 p-4 pb-8 md:overflow-y-auto md:[mask-image:linear-gradient(to_bottom,black_calc(100%-1.5rem),transparent)] md:overscroll-contain md:[overflow-anchor:none] md:[scrollbar-gutter:stable]">
         <div role="radiogroup" aria-label="Floor" className="grid grid-cols-7 gap-0.5 rounded-lg bg-secondary p-0.5 shadow-[inset_0_0_0_1px_var(--border)]">
           {levels.map(level => {
             const checked = floor === level;
@@ -206,12 +206,11 @@ export default function BuildingInspector({ floor, selectedGroup, planned, onFlo
                         </label>
                       ))}
                     </fieldset>
-                    <button type="button" disabled={twin.pending !== null}
-                      onClick={() => void twin.send(`Which ${equipmentLabels[group].toLowerCase()} option pays back fastest for ${scope}?`)}
-                      className="flex w-fit items-center gap-1.5 rounded-md px-1 py-0.5 text-xs text-muted-foreground hover:text-foreground disabled:opacity-50 focus-visible:outline-2 focus-visible:outline-ring">
-                      <MessageSquare aria-hidden="true" className="size-3.5" />
+                    <Button variant="outline" size="xs" className="w-fit text-muted-foreground hover:text-foreground" disabled={twin.pending !== null}
+                      onClick={() => void twin.send(`Which ${equipmentLabels[group].toLowerCase()} option pays back fastest for ${scope}?`)}>
+                      <MessageSquare data-icon="inline-start" />
                       Ask which pays back fastest
-                    </button>
+                    </Button>
                   </AccordionContent>
                 </AccordionItem>
               );

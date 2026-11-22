@@ -3,6 +3,7 @@
 import { MessageSquare } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { api } from '@/api/client';
+import { Button } from '@/components/ui/button';
 import type { Catalog } from '@/api/types';
 import { chfShort } from '@/twin/format';
 import { useTwin } from '@/twin/TwinProvider';
@@ -57,12 +58,11 @@ export default function BuildingToday() {
           </div>
         ))}
       </dl>
-      <button type="button" disabled={pending !== null}
-        onClick={() => void send('Which worn-out equipment should we replace first, and what does it cost?')}
-        className="flex w-fit items-center gap-1.5 rounded-md px-1 py-0.5 text-xs text-muted-foreground hover:text-foreground disabled:opacity-50 focus-visible:outline-2 focus-visible:outline-ring">
-        <MessageSquare aria-hidden="true" className="size-3.5" />
+      <Button variant="outline" size="sm" className="w-fit" disabled={pending !== null}
+        onClick={() => void send('Which worn-out equipment should we replace first, and what does it cost?')}>
+        <MessageSquare data-icon="inline-start" />
         Ask what to replace first
-      </button>
+      </Button>
     </section>
   );
 }
