@@ -2,8 +2,8 @@
 What-If LauzHack
 # Short description
 
-Play around with a 3D twin of the LauzHack BC building, see how changes have an effect on the energy consumption, indoor air quality, and raise the LauzHack Banner!
+Explore a 3D twin of the LauzHack BC building, plan equipment upgrades, and see 15-year savings, payback and risk against doing nothing. You can also raise the LauzHack banner!
 
 # Long description
 
-We have built a tool that helps energy managers explore how different scenarios affect the power bill and the building's load on the environment. Start by exploring the 3D model of the BC building we have been sitting in this weekend. Change the type of computer screens used, add solar panels to the roof, or modify the water heater in the basement. The underlying engine uses lifecycle financial modeling and Monte Carlo risk analysis to explore how your choices affect the future. Based on the analysis of the digital twin, energy managers can make sure they make informed decisions that lead to a lower power bill and smaller environmental footprint. 
+We built a tool for energy managers to decide on building investments before spending money. Explore the 3D model of the BC building we sat in this weekend. Swap equipment: computer screens, rooftop solar panels, the basement water heater, lighting, ventilation and more. Each plan is compared with a baseline of doing nothing, where worn-out equipment is replaced like-for-like. The engine runs 15 years and shows energy, air quality, costs, savings, payback and net present value. Each plan is also run across 200 random futures (energy prices, heatwaves, equipment failures), so you see a range, not one number. An AI assistant answers questions with figures taken from the engine. Assumptions are listed with sources in open data files. The numbers are demo estimates, not measurements.

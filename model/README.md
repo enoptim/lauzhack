@@ -8,6 +8,7 @@ In the repo this folder sits at `model/`, next to the team's `data/`; the engine
 ```sh
 python test_engine.py        # 41 validation tests
 python test_search.py        # search: brute-force checks on small problems
+python judge_check.py        # judges' one-command check: today, upgrade, one changed assumption, cash ledger, 200 futures
 ```
 
 ```python
@@ -84,6 +85,12 @@ What varies between futures (parameters in `model_assumptions.csv`, category `fu
 - **What we don't know (epistemic):** the strength of each people effect, drawn once per future from its low / central / high range.
 
 Every future is an ordinary `simulate()` run, so all accounting identities hold in each one. Every plan, and the "do nothing" path inside each run, faces the same futures, so differences come from the decision. Percentiles describe outcomes under these assumed distributions, not known real-world probabilities. A future with no randomness reproduces the deterministic run exactly (tested).
+
+How to read the results:
+- **Draws:** `montecarlo.run` defaults to `n=300` futures and seed 2026. The same seed gives the same futures, so results repeat exactly. `judge_check.py` uses 200 futures.
+- **Distributions:** people-effect strengths are triangular draws between the `low` and `high` of `assumptions.csv`, around the central value. The price path is a log random walk (`price_volatility_per_year`, kept between 0.5x and 3x today's price). Heatwaves, price spikes and the new lab are yes/no draws with the yearly probabilities in `model_assumptions.csv`. Failures follow the Weibull curve above.
+- **P10, P50, P90:** sort the futures from worst to best. P50 is the middle one. P10 is the value that 1 future in 10 falls below. P90 is the value that 1 in 10 beats. The band from P10 to P90 holds the middle 8 of 10 futures.
+- **Not real-world odds:** "chance" and "share of futures" mean a share of our 200 or 300 simulated futures. They come from our assumed distributions, which are estimates. They are not measured probabilities of anything happening in the real building.
 
 Note: in the deterministic run, overdue units are replaced as planned at year 0. In the futures they keep running until they fail, so upgrading now costs the full price rather than only the premium over a like-for-like replacement.
 
