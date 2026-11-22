@@ -102,7 +102,7 @@ def _post(payload):
         raise RuntimeError(f"OpenRouter error {e.code}: {e.read().decode()[:500]}") from None
 
 
-def chat(messages, scenario=None, confirm=None, on_tool=None):
+def chat(messages, scenario=None, confirm=None, on_tool=None, context=None):
     """Answer the last user message.
 
     messages: [{"role": "user" | "assistant", "content": str}, ...]
@@ -110,6 +110,7 @@ def chat(messages, scenario=None, confirm=None, on_tool=None):
     confirm:  a problem the user confirmed (from an earlier `proposal`). The optimizer runs on exactly this problem
               before the model answers, so the model can't change it.
     on_tool:  optional callback(name, args) for logging
+    context:  optional words from the app about what the user is looking at, e.g. "Building view, floor 2, lighting"
 
     Returns {"reply", "scenario", "proposal", "optimization", "chart"}:
     - scenario: the plan the model showed (see tools.app_scenario), or None.
@@ -120,6 +121,9 @@ def chat(messages, scenario=None, confirm=None, on_tool=None):
     system = SYSTEM
     if scenario:
         system += f"\n\nThe app currently shows this scenario: {json.dumps(scenario)}"
+    if context:
+        system += (f"\n\nWhere the user is in the app right now: {context[:600]}\n"
+                   "Use it to resolve words like \"this\", \"here\" or \"this plan\". Don't repeat it back.")
     convo = [{"role": "system", "content": system}] + [
         {"role": m["role"], "content": m["content"]} for m in messages if m.get("role") in ("user", "assistant")
     ]

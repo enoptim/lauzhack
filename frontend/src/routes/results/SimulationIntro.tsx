@@ -63,8 +63,8 @@ export default function SimulationIntro({ changes, ready, onDone }: Props) {
                 </span>
                 <span className="flex flex-col gap-0.5">
                   <span className={cn(done || index === step ? 'text-foreground' : 'text-muted-foreground')}>{label}</span>
-                  {index === 1 && changes.slice(0, 3).map(change => (
-                    <span key={change} className="text-muted-foreground">{change}</span>
+                  {index === 1 && changes.slice(0, 3).map((change, k) => (
+                    <span key={`${k}-${change}`} className="text-muted-foreground">{change}</span>
                   ))}
                 </span>
               </li>

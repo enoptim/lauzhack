@@ -10,6 +10,8 @@ import { Spinner } from '@/components/ui/spinner';
 import { Switch } from '@/components/ui/switch';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { cn } from '@/lib/utils';
+import { PLAN_COLORS, sameScenario } from '@/twin/plans';
+import { usePublishFocus, useTwin } from '@/twin/TwinProvider';
 import { readConfig } from './config';
 import { chances, chf, chfShort, kwh, pricePerKwh, years } from './format';
 import { flagText, groupLabels, isContextFlag, seriesColor, whatIfDetails, whatIfLabels } from './labels';
@@ -34,8 +36,6 @@ const TIMINGS: { value: Timing; label: string }[] = [
   { value: 8, label: 'In year 8' },
 ];
 const MS_PER_YEAR = 400;
-/** One fixed colour per plan, by its place in the list. The first is the brand orange. */
-const PLAN_COLORS = ['#c34e00', '#2f6fc0', '#a3368f', '#0f766e', '#6f7f1f', '#7c5a00'];
 
 /** The same plan, bought at the chosen time. The engine keeps the old units running until then. */
 function withTiming(scenario: Scenario, timing: Timing): Scenario {
@@ -213,6 +213,29 @@ export default function ResultsPage() {
   }, [futures, planLines, selected, view, horizon]);
   typicalRef.current = typicalIndex;
 
+  // The assistant and the pulse follow the plan shown here.
+  const focusName = plans[selected]?.name ?? 'the plan';
+  usePublishFocus(read ? {
+    label: `Results · ${focusName}`,
+    describe: `The user is on the Results page, looking at the plan "${focusName}" (${chosen.length} change(s)) over ${horizon} years,`
+      + ` across ${FUTURES_N} possible futures. Electricity price: CHF ${price.toFixed(2)} per kWh.`
+      + `${whatIf ? ` What-if switched on: ${whatIfLabels[whatIf]} (${whatIfDetails[whatIf]})` : ''}`
+      + `${staffEffects ? ' Staff effects are counted.' : ''}${multi ? ` Other plans on the chart: ${plans.filter((_, i) => i !== selected).map(p => p.name).join(', ')}.` : ''}`,
+    suggestions: chosen.length ? [
+      'What happens to this plan if energy prices spike?',
+      'Find a cheaper plan that keeps most of this saving.',
+      'Where do this plan’s savings come from?',
+    ] : ['Which single upgrades pay back fastest?'],
+    plan: { name: focusName, scenario: chosen, color: PLAN_COLORS[selected % PLAN_COLORS.length] },
+  } : null);
+
+  // Back in the building, edit the plan shown here (if it is one of the plans you keep).
+  const twin = useTwin();
+  const editShownPlan = () => {
+    const kept = twin.plans.find(p => sameScenario(p.scenario, chosen));
+    if (kept) twin.setActivePlan(kept.id);
+  };
+
   function selectPlan(index: number) {
     setSelected(index);
     setHidden(previous => { const next = new Set(previous); next.delete(index); return next; });
@@ -281,6 +304,7 @@ export default function ResultsPage() {
   const today = plan?.snapshot_baseline.building;
   const after = plan?.snapshot.building;
 
+
   return (
     <main className="mx-auto flex w-full max-w-7xl flex-col gap-8 px-4 py-8 md:px-8">
       {intro && (
@@ -288,7 +312,7 @@ export default function ResultsPage() {
           changes={chosen.map(swap => `${groupLabels[swap.group] ?? swap.group} → ${optionName(engine.catalog.data, swap.group, swap.option) ?? swap.option}`)} />
       )}
       <Button asChild variant="outline" size="lg" className="w-fit">
-        <Link to="/"><ArrowLeft data-icon="inline-start" /> Change the plan</Link>
+        <Link to="/" onClick={editShownPlan}><ArrowLeft data-icon="inline-start" /> Change the plan</Link>
       </Button>
 
       {multi && (

@@ -78,6 +78,8 @@
   --chart-4: #a3368f;
   --chart-5: oklch(0.7 0 0);
   --warning: var(--destructive);
+  /* A change for the better (lower bill, cleaner air). Dark enough for small text on white. */
+  --positive: oklch(0.47 0.11 140);
 
   /* Radius scale: controls md (6px), surfaces lg (10px), overlays xl (14px). */
   --radius: 0.625rem;
@@ -92,6 +94,7 @@
   --color-chart-4: var(--chart-4);
   --color-chart-5: var(--chart-5);
   --color-warning: var(--warning);
+  --color-positive: var(--positive);
   --color-brand-orange: var(--brand-orange);
   --color-brand-dark-green: var(--brand-dark-green);
   --color-brand-mid-green: var(--brand-mid-green);
@@ -409,3 +412,31 @@
   0%, 30% { opacity: 1; }
   100% { opacity: 0.15; }
 }
+
+/* The twin's mark: its green core breathes while the twin is live. */
+@media (prefers-reduced-motion: no-preference) {
+  .twin-core { animation: twin-breathe 4.8s ease-in-out infinite; }
+}
+@keyframes twin-breathe {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+/* The assistant column opens and closes by width, so the view beside it resizes instead of being covered. */
+.twin-column { transition: width 260ms cubic-bezier(0.16, 1, 0.3, 1), border-color 260ms; }
+@media (prefers-reduced-motion: reduce) {
+  .twin-column { transition: none; }
+}
+
+/* A value that appears (e.g. the upfront cost once a plan has changes) settles in from slightly below. */
+@media (prefers-reduced-motion: no-preference) {
+  .twin-enter { animation: twin-enter 320ms cubic-bezier(0.16, 1, 0.3, 1) both; }
+}
+@keyframes twin-enter {
+  from { opacity: 0; transform: translateY(3px); filter: blur(2px); }
+  to { opacity: 1; transform: none; filter: none; }
+}
+
+/* Scrollbars, caret and selection carry the theme too. */
+* { scrollbar-width: thin; scrollbar-color: color-mix(in oklch, var(--foreground) 18%, transparent) transparent; }
+textarea, input { caret-color: var(--primary); }

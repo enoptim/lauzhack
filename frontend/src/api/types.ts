@@ -409,6 +409,8 @@ export interface ChatRequest {
   scenario?: Scenario;
   /** A proposal's problem the user confirmed: the server runs the optimizer on exactly this, then the assistant explains. */
   confirm?: OptimizationProblem;
+  /** What the user is looking at in the app, in words, so the assistant can resolve "this" and "here". */
+  context?: string;
 }
 
 /** What the assistant said about its scenario. Money in CHF, today vs the scenario in year 1. */

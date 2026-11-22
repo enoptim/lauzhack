@@ -109,6 +109,7 @@ class Chat(BaseModel):
     messages: list
     scenario: list = []
     confirm: dict | None = None
+    context: str | None = None  # what the user is looking at in the app, in words
 
 
 @app.get("/api/catalog")
@@ -188,7 +189,7 @@ def chat(body: Chat):
     if not body.messages or body.messages[-1].get("role") != "user":
         raise HTTPException(400, "The last message must be from the user.")
     try:
-        return viz.clean(agent.chat(body.messages, body.scenario, body.confirm))
+        return viz.clean(agent.chat(body.messages, body.scenario, body.confirm, context=body.context))
     except RuntimeError as e:  # missing key or OpenRouter error
         raise HTTPException(502, str(e))
 
