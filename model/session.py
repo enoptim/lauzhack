@@ -13,7 +13,8 @@ The engine stays the only source of numbers. A session holds the future, the dec
 current pause time t; every state is read from engine.simulate runs with those decisions in that future.
 
 A session pauses at the first time T > t where something happens:
-  failure          an original unit breaks: an install of kind "failure" at time T
+  failure          a big system breaks (STOP_GROUPS): an install of kind "failure" at time T. Smaller
+                   equipment that wears out is replaced like-for-like without stopping; the next stop lists it
   event_announced  an event with a notice period becomes known, at time start_year - 1 - notice
   event_started    an event starts in the coming year, at time start_year - 1
   new_flag         a warning (desk shortfall, a floor over ventilation capacity, the reserve below its
@@ -173,13 +174,24 @@ def _price_jumps(data, res):
     return out
 
 
+# Breakdowns of these stop the game; smaller equipment (lights, monitors, computers, blinds, coffee machines,
+# printers) wears out somewhere every year, so it is replaced like-for-like without stopping and listed instead.
+STOP_GROUPS = engine.PLANNED_GROUPS
+
+
+def routine_by_time(data, session):
+    """Small equipment wearing out, which doesn't stop the game: {T: [reason]} (same shape as a failure)."""
+    return {T: small for T, rs in _failures(data, session).items()
+            if (small := [r for r in rs if r["group"] not in STOP_GROUPS])}
+
+
 def reasons_by_time(data, session, res=None):
     """Every reason to pause in the whole run, keyed by time: {T: [reason]}. Only the ones at or before the
     current pause are ever shown."""
     res = res or _sim(data, session)
     out = {}
-    for part in (_failures(data, session), _events(data, session), _warnings(data, session, res),
-                 _price_jumps(data, res)):
+    big = {T: stop for T, rs in _failures(data, session).items() if (stop := [r for r in rs if r["group"] in STOP_GROUPS])}
+    for part in (big, _events(data, session), _warnings(data, session, res), _price_jumps(data, res)):
         for T, rs in part.items():
             out.setdefault(T, []).extend(rs)
     for T, rs in out.items():                      # a price event starting now already explains a price jump
@@ -305,8 +317,11 @@ def _state(data, session, T):
     reactions = _reactions(data, session, reasons, res)
     snapshot = (viz.snapshot(data, res, T, "state") if T >= 1
                 else viz.snapshot(data, res, 1, "state_baseline"))        # today: the building as it is
+    since = session.get("previous_t", -1)          # small wear-outs since the last stop, replaced like-for-like
+    routine = [{k: r[k] for k in ("time", "group", "floors", "title")}
+               for t, rs in sorted(routine_by_time(data, session).items()) if since < t <= T for r in rs]
     state = {"t": T, "horizon": _horizon(data, session), "ended": False, "future": session["future_name"],
-             "reasons": reasons, "decisions": session["decisions"], "plan": _plan(session, T),
+             "reasons": reasons, "routine": routine, "decisions": session["decisions"], "plan": _plan(session, T),
              "history": viz.finance(res)["years"][:T], "snapshot": snapshot, "reactions": reactions,
              "situation": _situation(data, session, T, reasons, reactions, res)}
     session["state"] = viz.clean(state)
@@ -352,6 +367,7 @@ def next_pause(data, session):
     if session["ended"]:
         return session["state"]
     times = [T for T in reasons_by_time(data, session) if session["t"] < T < _horizon(data, session)]
+    session["previous_t"] = session["t"]
     if not times:
         return _end(data, session)
     session["t"] = min(times)

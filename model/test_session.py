@@ -356,6 +356,19 @@ def test_the_played_future_is_the_first_example_in_results():
     assert optimize.upfront_cost(D, engine.simulate(D, plan)) > 0             # bought today in a game: paid today
 
 
+def test_only_big_systems_stop_the_game_small_wear_outs_are_listed():
+    s, st = S.start(D, _sampled(1), "x", years=10)
+    seen_routine = set()
+    while not st["ended"]:
+        st = S.next_pause(D, s)
+        if st["ended"]:
+            break
+        assert all(r["group"] in S.STOP_GROUPS for r in st["reasons"] if r["type"] == "failure")
+        seen_routine |= {r["group"] for r in st["routine"]}
+        assert all(r["time"] <= st["t"] for r in st["routine"])
+    assert {"lighting", "monitors"} <= seen_routine and not seen_routine & S.STOP_GROUPS
+
+
 if __name__ == "__main__":
     tests = [v for k, v in dict(globals()).items() if k.startswith("test_")]
     failed = 0

@@ -844,6 +844,8 @@ export interface SessionState {
   ended: boolean;
   future: string | null;
   reasons: PauseReason[];
+  /** Small equipment that wore out since the last stop and was replaced like-for-like without stopping. */
+  routine?: { time: number; group: string; floors: number[]; title: string }[];
   decisions: SessionSwap[];
   /** done: before now, locked. planned: now or later, can still change. */
   plan: { done: SessionSwap[]; planned: SessionSwap[] };

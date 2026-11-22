@@ -19,6 +19,12 @@ const ICONS = {
 
 const TIERS = ['current', 'budget', 'mid', 'premium', 'upgrade'];
 
+/** "lighting", "coffee machines", but "3D printers": lower case inside a sentence, except the acronym. */
+const inSentence = (group: string) => {
+  const label = groupLabels[group] ?? group;
+  return label.startsWith('3D') ? label : label.toLowerCase();
+};
+
 type Props = {
   state: SessionState;
   catalog: Catalog | null;
@@ -111,7 +117,7 @@ function Suggestions({ reaction, state, catalog, busy, onDecide }: Props & { rea
       </ul>
       {others.length > 0 && (
         <p className="text-sm text-muted-foreground">
-          Also worth a look: {[...new Set(others.map(g => (groupLabels[g.group] ?? g.group).toLowerCase()))].join(', ')}.
+          Also worth a look: {[...new Set(others.map(g => inSentence(g.group)))].join(', ')}.
         </p>
       )}
     </div>
@@ -148,6 +154,12 @@ export default function WhatHappened(props: Props) {
           </div>
         );
       })}
+      {(state.routine?.length ?? 0) > 0 && (
+        <p className="text-xs text-pretty text-muted-foreground">
+          Also worn out since the last stop and replaced like-for-like:{' '}
+          {[...new Set(state.routine!.map(r => inSentence(r.group)))].join(', ')}.
+        </p>
+      )}
     </section>
   );
 }

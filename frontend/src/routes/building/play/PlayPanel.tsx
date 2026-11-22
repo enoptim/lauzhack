@@ -140,10 +140,10 @@ export default function PlayPanel({ play, floor, onFloorChange, selectedGroup, o
   const { state, catalog, busy, error } = play;
   const navigate = useNavigate();
   const [years, setYears] = useState<(typeof LENGTHS)[number]>(10);
-  const [story, setStory] = useState<'demo' | 'surprise'>('demo');
-
   function start() {
-    play.start(story === 'demo' ? DEMO_FUTURE : { seed: Math.floor(Math.random() * 1e6) }, years);
+    // Every run draws a new future. ?story=demo plays the fixed demo story instead (handy to rehearse).
+    const demo = new URLSearchParams(window.location.search).get('story') === 'demo';
+    play.start(demo ? DEMO_FUTURE : { seed: Math.floor(Math.random() * 1e4) }, years);
   }
 
   /** Results, with the game as a plan and the future it played shown first. */
@@ -155,12 +155,16 @@ export default function PlayPanel({ play, floor, onFloorChange, selectedGroup, o
   }
 
   const title = !state ? 'Explore the next years' : state.ended ? 'The end' : state.t === 0 ? 'Today' : `End of year ${state.t}`;
+  // Which future this is: "Future 4821" for a drawn one, so people can see each run is new.
+  const seed = /seed (\d+)/.exec(state?.future ?? '')?.[1];
+  const which = !state ? null : seed ? `Future ${seed}` : 'Demo story';
 
   return (
     <aside aria-label="Explore" className="flex min-h-0 min-w-0 flex-col border-t bg-background md:border-t-0 md:border-l">
       <div className="flex h-12 shrink-0 items-center justify-between gap-2 border-b px-4">
         <h2 className="text-sm font-semibold">
           {title}{state && !state.ended && <span className="font-normal text-muted-foreground"> of {state.horizon}</span>}
+          {which && <span className="font-normal text-muted-foreground"> · {which}</span>}
         </h2>
         {state && (
           <button type="button" onClick={play.restart} className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
@@ -174,23 +178,17 @@ export default function PlayPanel({ play, floor, onFloorChange, selectedGroup, o
         {!state ? (
           <>
             <p className="text-sm text-pretty text-muted-foreground">
-              Live through the building’s next years. Your plan runs until something happens, like a breakdown, news or a
-              price shock. Then you decide. What has happened can’t be undone. At the end you see how your choices did,
-              against doing nothing and against 200 other possible futures.
+              Live through the building’s next years. Your plan runs until something important happens, like a big
+              breakdown, news or a price shock. Then you decide. What has happened can’t be undone. At the end you see how
+              your choices did, against doing nothing and against 200 other possible futures.
             </p>
             <section className="flex flex-col gap-2">
               <h3 className="text-sm font-semibold">How long</h3>
               <Segments label="How long" options={LENGTHS} value={years} onChange={setYears} text={y => `${y} years`} />
             </section>
-            <section className="flex flex-col gap-2">
-              <h3 className="text-sm font-semibold">Which future</h3>
-              <Segments label="Which future" options={['demo', 'surprise'] as const} value={story} onChange={setStory}
-                text={s => (s === 'demo' ? 'The demo story' : 'A surprise')} />
-              <p className="text-xs text-muted-foreground">
-                {story === 'demo' ? 'A new lab, a ventilation breakdown, a heatwave and a price spike. The same every time.'
-                  : 'One random future: prices, events and breakdowns drawn like in Results.'}
-              </p>
-            </section>
+            <p className="text-xs text-pretty text-muted-foreground">
+              Each run draws a new future: prices, events and breakdowns, drawn the same way as the 200 futures in Results.
+            </p>
           </>
         ) : (
           <>
