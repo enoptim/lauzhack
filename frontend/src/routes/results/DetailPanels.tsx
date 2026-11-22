@@ -116,7 +116,7 @@ export default function DetailPanels({ m }: { m: ResultsModel }) {
                         !shown && 'translate-y-1 opacity-0')}>
                       <TriangleAlert className="mt-[3px] size-3.5 shrink-0 text-warning" aria-hidden="true" />
                       <span className="text-pretty">
-                        {flag.year !== undefined && <span className="font-semibold">Year {flag.year}: </span>}
+                        {flag.year !== undefined && <span className="font-semibold">{flag.year === 0 ? 'Today' : `Year ${flag.year}`}: </span>}
                         {flagText(flag)}
                       </span>
                     </li>

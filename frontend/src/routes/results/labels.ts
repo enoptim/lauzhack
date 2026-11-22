@@ -1,4 +1,5 @@
 import type { Flag } from '@/api/types';
+import { chfShort } from '@/twin/format';
 import type { WhatIf } from './useEngine';
 
 export const whatIfLabels: Record<WhatIf, string> = {
@@ -52,9 +53,21 @@ export const breakdownLabels: Record<string, { label: string; guess: boolean }> 
 
 export function flagText(flag: Flag): string {
   switch (flag.type) {
-    case 'reserve_below_minimum': return 'The building’s reserve fund drops below its safety minimum.';
+    case 'reserve_below_minimum': return flag.year === 0
+      ? 'Paying for it today takes the building’s reserve fund below its safety minimum.'
+      : 'The building’s reserve fund drops below its safety minimum.';
+    case 'needs_financing': {
+      const short = typeof flag.shortfall === 'number' ? ` It is ${chfShort(flag.shortfall)} short.` : '';
+      const also = typeof flag.year_without_upgrades === 'number' ? ` Doing nothing runs it out too, in year ${flag.year_without_upgrades}.` : '';
+      return `The reserve fund runs out, so this plan needs a loan or other outside money.${short}${also}`;
+    }
     case 'reserve_below_minimum_without_upgrades': return 'Even without this upgrade, normal replacements take the reserve fund below its safety minimum.';
-    case 'over_budget': return 'The up-front cost is above the budget for upgrades.';
+    case 'over_budget': {
+      // The budget covers the extra cost over replacing worn-out units like for like, not the full price.
+      const extra = typeof flag.extra_cost === 'number' ? `${chfShort(flag.extra_cost)} more` : 'More';
+      const budget = typeof flag.budget === 'number' ? ` of ${chfShort(flag.budget)}` : '';
+      return `${extra} than replacing worn-out units like for like. That is over the upgrade budget${budget}.`;
+    }
     case 'desk_shortfall': return 'There are more staff than desks.';
     case 'ventilation_over_capacity': return 'A floor has more people than its air supply can handle.';
     default: return flag.type.replaceAll('_', ' ');

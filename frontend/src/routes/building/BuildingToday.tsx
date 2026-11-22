@@ -42,7 +42,7 @@ export default function BuildingToday() {
   const rows: [string, string, string?][] = [
     ['Running costs', `${chfShort(costs.running)} a year`, `${chfShort(costs.energy)} of it is energy`],
     ['Savings reserve', chfShort(catalog.limits.opening_reserve_chf), `Must stay above ${chfShort(catalog.limits.min_reserve_chf)}`],
-    ['Upgrade budget', chfShort(catalog.limits.capex_budget_chf)],
+    ['Upgrade budget', chfShort(catalog.limits.capex_budget_chf), 'For the extra cost of an upgrade, above replacing worn-out units like for like. Paying today must also keep the reserve above its minimum.'],
     ['Worn out', chfShort(worn.now), `Equipment past its normal life. Another ${chfShort(worn.soon)} reaches it within 5 years.`],
   ];
 

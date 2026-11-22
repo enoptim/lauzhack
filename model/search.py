@@ -443,12 +443,16 @@ def _warnings(p, capex_s, capex_b, op, op_b, states):
             entries += 1
     cash_s, cash_b = p["opening_reserve_chf"] - capex_s[0], p["opening_reserve_chf"] - capex_b[0]
     path = [cash_s]
-    for t in range(1, len(op) + 1):
-        cash_s = cash_s + p["other_operating_cf_chf_year"] - op[t - 1] - capex_s[t]
-        cash_b = cash_b + p["other_operating_cf_chf_year"] - op_b[t - 1] - capex_b[t]
-        path.append(cash_s)
-        if cash_s < p["min_reserve_chf"] and cash_s < cash_b - 1e-6:
-            flags.add(("reserve_below_minimum", None))
+    for t in range(len(op) + 1):          # year 0 is right after the day-one purchase
+        if t:
+            cash_s = cash_s + p["other_operating_cf_chf_year"] - op[t - 1] - capex_s[t]
+            cash_b = cash_b + p["other_operating_cf_chf_year"] - op_b[t - 1] - capex_b[t]
+            path.append(cash_s)
+        if cash_s < cash_b - 1e-6:
+            if cash_s < p["min_reserve_chf"]:
+                flags.add(("reserve_below_minimum", None))
+            if cash_s < 0:
+                flags.add(("needs_financing", None))
     return frozenset(flags), path, entries
 
 
@@ -492,8 +496,10 @@ class _Ctx:
         self.kwh_b = [b["energy"]["total_kwh"] for b in yb]
         self.warn_b, self.reserve_b, _ = _warnings(p, self.capex_b, self.capex_b, self.op_b, self.op_b, yb)
         self.bill_b = [b["costs"]["energy"] + b["costs"]["pv_export"] for b in yb]
-        # A plan gets the reserve warning in year t if its reserve is below min(minimum, doing nothing's reserve).
-        self.reserve_floor = [min(p["min_reserve_chf"], v - 1e-6) for v in self.reserve_b[1:]]
+        # A plan gets the reserve warning in year t (0: right after the day-one purchase) if its reserve is below
+        # min(minimum, doing nothing's reserve), and the financing warning if it is below min(0, doing nothing's).
+        self.reserve_floor = [min(p["min_reserve_chf"], v - 1e-6) for v in self.reserve_b]
+        self.cash_floor = [min(0.0, v - 1e-6) for v in self.reserve_b]
         self.money, self.upfront, self.cache = {}, {}, {}
         self.use_engine = False          # True: evaluate with engine.simulate itself (slower, used as a fallback)
 
@@ -884,7 +890,7 @@ def _thin(points, cap, spread):
     return out
 
 
-_CASH_FLAGS = ("reserve_below_minimum", "over_budget")       # warnings that follow the money, not single zones
+_CASH_FLAGS = ("reserve_below_minimum", "needs_financing", "over_budget")       # warnings that follow the money, not single zones
 MAX_Y_AXES = 2             # constraint axes in the DP (2 keeps its fast staircase); plans are still ranked on all
 
 
@@ -1000,10 +1006,11 @@ class _Search:
             res = [m[f"res@{t}"] for t in range(H + 1)]
             m["lowest_reserve_chf"] = min(res)
         if self.warn:
-            low = any(v < f for v, f in zip(res[1:], self.ctx.reserve_floor))
+            low = any(v < f for v, f in zip(res, self.ctx.reserve_floor))
+            broke = any(v < f for v, f in zip(res, self.ctx.cash_floor))
             over = m["net_upfront_cost_chf"] > self.ctx.p["capex_budget_chf"]
-            m["new_warnings"] = max(0, round(m["w_other"])) + low + over
-            m["warnings"] = max(0, round(m["w_entries"])) + low + over
+            m["new_warnings"] = max(0, round(m["w_other"])) + low + broke + over
+            m["warnings"] = max(0, round(m["w_entries"])) + low + broke + over
         return m
 
     def tight_years(self, base, D, name, xs=None):
@@ -1011,8 +1018,8 @@ class _Search:
         each unit takes its best x value. They become the DP axes for reserve-based metrics."""
         H, floor = self.ctx.H, self.ctx.reserve_floor
         warn = name in ("new_warnings", "warnings")
-        years = range(1, H + 1) if warn else range(H + 1)
-        limit = (lambda t: floor[t - 1]) if warn else (lambda t: 0.0)
+        years = range(H + 1)
+        limit = (lambda t: floor[t]) if warn else (lambda t: 0.0)
         plans = [None]
         if xs:                                    # the plan pushing hardest on the objective comes first
             plans.insert(0, tuple(min(range(len(row)), key=lambda k: _dot(xs, self.li, row[k])) for row in D))

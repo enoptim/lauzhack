@@ -35,8 +35,10 @@ const metricText: Record<MetricName, { label: string; unit: 'CHF' | 'kWh' | 'yea
 const noTodayValue = new Set<MetricName>(['upfront_cost_chf', 'extra_cost_vs_like_for_like_chf', 'npv_cash_chf', 'npv_economic_chf', 'payback_years', 'warnings', 'new_warnings']);
 
 const flagText: Record<string, string> = {
-  over_budget: 'Over budget',
+  // The budget covers the extra cost over like-for-like replacements, not the full price.
+  over_budget: 'Extra cost over the upgrade budget',
   reserve_below_minimum: 'Reserve below minimum',
+  needs_financing: 'Reserve runs out: needs a loan',
   ventilation_over_capacity: 'Ventilation over capacity',
   desk_shortfall: 'Not enough desks',
 };
@@ -232,7 +234,7 @@ export function PlanCard({ scenario, catalog, optimization, kept, shown, onShow,
 
       <div className="border-t px-4 pt-3 pb-3">
         <Rows rows={[
-          ['Upfront', <span className="font-medium tabular-nums">{chfShort(s.upfront_cost_chf)}</span>, dueAnyway],
+          ['Paid today', <span className="font-medium tabular-nums">{chfShort(s.upfront_cost_chf)}</span>, dueAnyway],
           // A year, like the pulse and Results (the assistant reports it per month).
           ['Energy bill', <span className="tabular-nums"><span className="font-medium">{chfShort(bill.scenario * 12)}</span> a year</span>, `Today ${chfShort(bill.today * 12)}`],
           ['Saves', <span className="tabular-nums"><span className="font-medium">{chfShort(s.running_cost_saving_chf_year)}</span> a year</span>, 'On energy, upkeep and supplies'],
@@ -245,7 +247,7 @@ export function PlanCard({ scenario, catalog, optimization, kept, shown, onShow,
               return (
                 <li key={type} className="flex items-center gap-1 rounded-md bg-warning/8 px-2 py-0.5 text-xs">
                   <TriangleAlert aria-hidden="true" className="size-3 text-warning" />
-                  {flagText[type] ?? type}{first ? ` from year ${first}` : ''}
+                  {flagText[type] ?? type}{first ? ` from year ${first}` : first === 0 && type !== 'over_budget' ? ' on day one' : ''}
                 </li>
               );
             })}

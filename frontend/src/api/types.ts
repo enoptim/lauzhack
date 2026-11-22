@@ -123,7 +123,10 @@ export interface NpvBreakdown {
 
 export interface Flag {
   /** reserve_below_minimum_without_upgrades is context (doing nothing also runs the reserve low), not a warning about the plan. */
-  type: 'ventilation_over_capacity' | 'desk_shortfall' | 'over_budget' | 'reserve_below_minimum'
+  /** Reserve flags can be year 0: right after the day-one purchase. needs_financing: the reserve goes below zero
+   * (`shortfall`, and `year_without_upgrades` if doing nothing runs it out too). over_budget: `extra_cost` (what the
+   * budget applies to: the cost above like-for-like replacements) and `purchase` (the new equipment's full price). */
+  type: 'ventilation_over_capacity' | 'desk_shortfall' | 'over_budget' | 'reserve_below_minimum' | 'needs_financing'
     | 'reserve_below_minimum_without_upgrades' | string;
   year?: number;
   [detail: string]: unknown;
@@ -161,7 +164,12 @@ export interface Finance {
   npv_economic: number;
   payback_cash: number | null;
   payback_economic: number | null;
+  /** Day one: extra cost over doing nothing (what the upgrade budget applies to). */
   capex_year0: number;
+  /** Day one: the full price of the plan's new equipment. */
+  purchase_year0: number;
+  /** Day one: everything paid from the reserve, including like-for-like replacements due anyway. */
+  paid_year0: number;
   npv_breakdown: NpvBreakdown;
   flags: Flag[];
   years: FinanceYear[];
@@ -309,13 +317,22 @@ export interface FuturesSummary {
   npv_economic: Percentiles;
   prob_cash_positive: number;
   prob_economic_positive: number;
+  /** Middle of the per-future payback years over the whole horizon, on the chart's cash basis; null = most futures don't pay back. */
   payback_cash_p50: number | null;
+  /** Share of futures whose cash line (chart basis) ends below zero. */
   prob_no_cash_payback: number;
   flag_probability: Record<string, number>;
   /** Cumulative money vs doing nothing per year. `_running` leaves out the value of equipment left at the end. */
   fan: { cash: FanPoint[]; economic: FanPoint[]; cash_running: FanPoint[]; economic_running: FanPoint[] };
-  /** Payback year in a good (p10), middle (p50) and bad (p90) future; null = not within the horizon. */
+  /**
+   * Payback worked out for each future on the chart's basis (the `_running` lines), for every number of years shown.
+   * Entry h-1 is for h years. Use these for any payback share or range: the chart's low and high lines are worked out
+   * separately for each year, so where they cross zero says nothing about single futures.
+   */
+  payback: { cash_running: PaybackPoint[]; economic_running: PaybackPoint[] };
+  /** Same as `payback.cash_running` at the full horizon: 10th, 50th and 90th percentile future; null = not paid back by then. */
   payback_range: { p10: number | null; p50: number | null; p90: number | null };
+  /** Share of futures (chart cash basis) that have paid back by year y and stay paid back to the end of the horizon. */
   prob_paid_back_by_year: { year: number; share: number }[];
   /** Average over all futures of each part of the discounted 15-year value. */
   npv_breakdown_mean: NpvBreakdown;
@@ -325,6 +342,17 @@ export interface FuturesSummary {
   /** Money vs doing nothing today, before year 1: minus the purchase price. */
   start: number;
   npv_economic_mean: number;
+}
+
+/** Payback across the futures when `year` years are shown. Years have decimals; null = that future has not paid back by `year`. */
+export interface PaybackPoint {
+  year: number;
+  /** Share of futures that have paid for themselves by `year`. */
+  share: number;
+  /** 10th, 50th and 90th percentile of the per-future payback year. 8 in 10 futures pay back between p10 and p90. */
+  p10: number | null;
+  p50: number | null;
+  p90: number | null;
 }
 
 export type FuturePathView = 'cash' | 'economic' | 'cash_running' | 'economic_running';
@@ -479,6 +507,23 @@ export interface ChatResult {
   optimization: ChatOptimization | null;
   /** Set when the assistant compared packages (upgrade_tradeoffs): cost against saving, to plot. */
   chart?: ChatChart | null;
+  /** Whether every figure in the reply is in this turn's results from the building model (chat/grounding.py). */
+  verification?: ChatVerification | null;
+}
+
+/** The check of the reply's figures (CHF, %, years, kWh, ppm …) against the building model's results. */
+export interface ChatVerification {
+  /** Figures checked. Numbers the user typed are not counted. */
+  checked: number;
+  matched: number;
+  /** Figures, as written in the reply, that no result contains. */
+  unsupported: string[];
+  /** Figures that repeat the user's own numbers. */
+  from_question: string[];
+  ok: boolean;
+  /** The first draft had figures no result contains, so the assistant rewrote it once. */
+  repaired: boolean;
+  first_draft_unsupported: string[];
 }
 
 /** One line of /api/chat/stream: what the assistant is doing right now. */
@@ -492,6 +537,10 @@ export type ChatEvent =
   | { type: 'tool_end'; id: string; name: string; ok: boolean; seconds: number }
   /** Sent every 10 s while nothing else happens, so a silent line means the server is gone. */
   | { type: 'ping' }
+  /** The draft named figures the building model did not produce: the assistant rewrites it. */
+  | { type: 'check'; status: 'retry'; unsupported: string[] }
+  /** The final reply's figures, checked. */
+  | { type: 'check'; status: 'done'; result: ChatVerification }
   | { type: 'done'; result: ChatResult }
   | { type: 'error'; message: string };
 

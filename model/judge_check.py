@@ -49,7 +49,7 @@ def main():
     t1 = today["years"][0]
     print("1. The building today (EPFL building BC, fictional finances, real 2026 CHF)")
     print(f"  Savings reserve:         {chf(p['opening_reserve_chf'])} (must stay above {chf(p['min_reserve_chf'])})")
-    print(f"  Upgrade budget:          {chf(p['capex_budget_chf'])}")
+    print(f"  Upgrade budget:          {chf(p['capex_budget_chf'])} (for the extra cost over like-for-like replacements)")
     print(f"  Electricity price:       {p[PRICE_KEY]:.2f} CHF/kWh")
     print(f"  Yearly electricity use:  {t1['kwh_baseline']:,.0f} kWh")
     print(f"  Yearly running cost:     {chf(t1['operating_cost_baseline'])} (energy {chf(t1['state']['costs']['energy'])})")
@@ -60,7 +60,7 @@ def main():
     y1 = s["years"][0]
     pb = s["payback_cash"]
     print("\n2. Plan: upgrade ventilation to 'New AHUs with heat recovery + CO2 control' (the app's demo plan)")
-    print(f"  Purchase cost:           {chf(s['capex_year0'])}")
+    print(f"  Purchase cost:           {chf(s['purchase_year0'])} (extra over like-for-like replacements, counted against the budget: {chf(s['capex_year0'])})")
     print(f"  Year-1 running-cost saving: {chf(y1['operating_cost_baseline'] - y1['operating_cost'])}")
     print(f"  Year-1 electricity use:  {y1['kwh']:,.0f} kWh (today {y1['kwh_baseline']:,.0f} kWh)")
     print(f"  Meeting-room CO2:        {t1['outcomes']['meeting_co2_ppm']:.0f} ppm -> {y1['outcomes']['meeting_co2_ppm']:.0f} ppm")

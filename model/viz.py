@@ -136,7 +136,8 @@ def finance(result):
              for y in result["years"]]
     return clean({"npv_cash": result["npv_cash"], "npv_economic": result["npv_economic"],
                   "payback_cash": result["payback_cash"], "payback_economic": result["payback_economic"],
-                  "capex_year0": result["capex_year0"], "npv_breakdown": result["npv_breakdown"],
+                  "capex_year0": result["capex_year0"], "purchase_year0": result["purchase_year0"],
+                  "paid_year0": result["paid_year0"], "npv_breakdown": result["npv_breakdown"],
                   "flags": result["flags"], "years": years, "kind": KIND})
 
 
