@@ -168,7 +168,7 @@ export default function PlanRail({ m }: { m: ResultsModel }) {
       </div>
 
       <p className="mt-auto pt-8 @min-[56rem]/results:@max-[76rem]/results:hidden text-xs leading-5 text-pretty text-muted-foreground">
-        The building is real. The numbers are our assumptions.
+        The building is real. The numbers are our assumptions. Results show possible futures, not a forecast or financial advice.
       </p>
     </div>
   );

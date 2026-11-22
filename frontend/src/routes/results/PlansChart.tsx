@@ -42,13 +42,18 @@ export type PlanLine = {
   id: number;
   name: string;
   color: string;
-  /** The middle future: half of the possible futures do better, half do worse. */
+  /** The middle of all futures, year by year: in each year, half of the futures do better, half do worse. Not one single future. */
   middle: number[];
-  /** 8 in 10 futures land between `low` and `high`. */
+  /** In each year, 8 in 10 futures land between `low` and `high`. Worked out year by year: these lines are not single futures. */
   low: number[];
   high: number[];
   /** One example future, when the viewer is looking at one. */
   example: number[] | null;
+  /**
+   * The middle payback year of all futures, worked out for each future by the engine on the basis of these lines.
+   * null = more than half have not paid back by the last year shown. When missing, the chart uses where the middle line crosses zero.
+   */
+  payback?: number | null;
 };
 
 /** Something that happens in the example future: a dot on its line, `text` in the hover box,
@@ -107,13 +112,14 @@ function endLabel(name: string, value: number, color: string, strong: boolean, t
 }
 
 function paybackPoint(color: string, payback: number, thisFuture = false) {
+  // One future: where its own line crosses zero. All futures: by when half of them have paid back.
   return {
     value: [payback, 0], symbol: 'circle', symbolSize: 11,
     itemStyle: { color, borderColor: C.card, borderWidth: 2.5 },
     label: {
       show: true, position: 'top' as const, distance: 10,
       backgroundColor: C.card, borderColor: C.grid, borderWidth: 1, borderRadius: 6, padding: [4, 8],
-      formatter: `{t|${thisFuture ? 'This future pays' : 'Pays'} for itself · }{v|year ${payback.toFixed(1)}}`,
+      formatter: `{t|${thisFuture ? 'This future pays for itself' : 'Half the futures paid back'} · }{v|year ${payback.toFixed(1)}}`,
       rich: {
         t: { fontFamily: SANS, fontSize: 12, color: C.ink },
         v: { fontFamily: MONO, fontSize: 12, color: C.ink },
@@ -209,7 +215,9 @@ export default function PlansChart({ lines, selected, highlighted, horizon, dash
 
     const dash: number[] | 'solid' = dashed ? [8, 6] : 'solid';
     const focusMain = focus ? (focus.example ?? focus.middle) : null;
-    const payback = focusMain ? paybackYear(focusMain) : null;
+    // The band view uses the engine's per-future middle payback when it has one, so the chart and the key numbers agree.
+    const payback = !focus || !focusMain ? null
+      : focus.example || focus.payback === undefined ? paybackYear(focusMain) : focus.payback;
     const showPayback = payback !== null && payback > 0 && (p === null || p >= payback);
     const reach = p ?? horizon;
 

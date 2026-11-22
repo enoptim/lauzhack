@@ -99,10 +99,57 @@ def _pct(xs, q):
     return xs[f] + (xs[c] - xs[f]) * (k - f)
 
 
+def _pct_or_never(xs, q):
+    """Percentile of per-future years where None means "not within the horizon". Those futures sort last and are
+    never dropped. Same interpolation as _pct, with one rule for None:
+      - the percentile lands exactly on a future: that future's value (None if it never paid back);
+      - it lands between two futures and either is None: None. Part of the way there has not paid back,
+        so the honest answer is "not within the horizon", never a number pulled towards one."""
+    xs = sorted(xs, key=lambda x: math.inf if x is None else x)
+    if not xs:
+        return None
+    k = (len(xs) - 1) * q
+    f = math.floor(k)
+    if k == f:
+        return xs[f]
+    c = min(f + 1, len(xs) - 1)
+    if xs[f] is None or xs[c] is None:
+        return None
+    return xs[f] + (xs[c] - xs[f]) * (k - f)
+
+
+def payback_year(values):
+    """When a cumulative money line crosses zero for good, in years, interpolated within the year.
+    values[0] is today (minus the purchase), values[t] the end of year t. None if the line ends below zero;
+    0.0 if it never goes below zero. The Results chart marks payback the same way (PlansChart.paybackYear)."""
+    if not values or values[-1] < 0:
+        return None
+    if all(v >= 0 for v in values):
+        return 0.0
+    t = len(values) - 1
+    while t > 0 and values[t - 1] >= 0:
+        t -= 1
+    a, b = values[t - 1], values[t]
+    return t - 1 + -a / (b - a)
+
+
+def payback_by_horizon(runs, view, horizon):
+    """Payback of each future on the chart's basis, for every number of years shown (1 to horizon).
+    view: "cash_running" or "economic_running", the lines the Results chart draws: cumulative money
+    without the value of equipment still standing at the end. A future's line is [start, view[0], ..., view[h-1]].
+    Per h: the share of futures that have paid back by year h (their line is at or above zero there), and the
+    10th, 50th and 90th percentile of the per-future payback year (None = that future has not paid back by h)."""
+    rows = []
+    for h in range(1, horizon + 1):
+        years = [payback_year([r["start"]] + r[view][:h]) for r in runs]
+        rows.append({"year": h, "share": sum(x is not None for x in years) / len(runs),
+                     **{q: _pct_or_never(years, v) for q, v in (("p10", .1), ("p50", .5), ("p90", .9))}})
+    return rows
+
+
 def _slim(res):
     """What the summary needs from one run. Keeps pickling cheap when runs come from worker processes."""
     return {"npv_cash": res["npv_cash"], "npv_economic": res["npv_economic"], "start": -res["capex_year0"],
-            "payback_cash": res["payback_cash"], "payback_economic": res["payback_economic"],
             "flag_types": sorted({f["type"] for f in res["flags"]}), "npv_breakdown": res["npv_breakdown"], "risk": res["risk"],
             "cash": [y["cumulative_cash_cf"] for y in res["years"]],
             "economic": [y["cumulative_economic_cf"] for y in res["years"]],
@@ -189,7 +236,11 @@ def run(data, scenarios, n=300, seed=2026, events=(), overrides=None, pool=None,
     for name, runs in results.items():
         cash = [r["npv_cash"] for r in runs]
         econ = [r["npv_economic"] for r in runs]
-        pb = [r["payback_cash"] for r in runs]
+        # Payback per future, counted exactly as the chart counts (see payback_by_horizon).
+        payback = {view: payback_by_horizon(runs, view, H) for view in ("cash_running", "economic_running")}
+        full = payback["cash_running"][-1]
+        # Over the whole horizon: when each future's cash line crosses zero for good (None = it ends below zero).
+        pb = [payback_year([r["start"]] + r["cash_running"]) for r in runs]
         flags = {}
         for r in runs:
             for t in r["flag_types"]:
@@ -200,26 +251,24 @@ def run(data, scenarios, n=300, seed=2026, events=(), overrides=None, pool=None,
                           "p10": _pct([r[view][t] for r in runs], 0.1),
                           "p50": _pct([r[view][t] for r in runs], 0.5),
                           "p90": _pct([r[view][t] for r in runs], 0.9)} for t in range(H)]
-        # payback per future; "never within the horizon" sorts last
-        pb_sorted = sorted(pb, key=lambda x: math.inf if x is None else x)
-        def pb_pct(q):
-            v = pb_sorted[min(n - 1, int(round(q * (n - 1))))]
-            return v
         breakdown = {}
         for r in runs:
             for k, v in r["npv_breakdown"].items():
                 breakdown[k] = breakdown.get(k, 0.0) + v / n
-        paid = [x for x in pb if x is not None]
         summary[name] = {
             "npv_cash": {q: _pct(cash, v) for q, v in (("p10", .1), ("p50", .5), ("p90", .9))},
             "npv_economic": {q: _pct(econ, v) for q, v in (("p10", .1), ("p50", .5), ("p90", .9))},
             "prob_cash_positive": sum(x > 0 for x in cash) / n,
             "prob_economic_positive": sum(x > 0 for x in econ) / n,
-            "payback_cash_p50": _pct(paid, 0.5) if paid else None,
-            "prob_no_cash_payback": sum(x is None for x in pb) / n,
+            # All payback figures below use the chart's cash basis (no value of equipment left at the end),
+            # are worked out per future, and count futures that never pay back (None) instead of dropping them.
+            "payback_cash_p50": full["p50"],
+            "prob_no_cash_payback": 1 - full["share"],
             "flag_probability": {k: v / n for k, v in sorted(flags.items())},
             "fan": fan,
-            "payback_range": {"p10": pb_pct(0.1), "p50": pb_pct(0.5), "p90": pb_pct(0.9)},
+            "payback": payback,
+            "payback_range": {q: full[q] for q in ("p10", "p50", "p90")},
+            # paid back by year y and still paid back at the end of the horizon (so the share only grows with y)
             "prob_paid_back_by_year": [{"year": y, "share": sum(x is not None and x <= y for x in pb) / n}
                                        for y in range(1, H + 1)],
             "npv_breakdown_mean": breakdown,
