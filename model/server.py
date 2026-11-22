@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Literal
 
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
@@ -27,6 +27,7 @@ import montecarlo
 import optimize
 import search
 import session as play
+import validate
 import viz
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))  # repo root, for chat/
@@ -34,6 +35,14 @@ from chat import agent  # noqa: E402
 
 DATA = engine.load()
 app = FastAPI(title="BC twin engine")
+
+
+@app.exception_handler(validate.ValidationError)
+def _bad_input(_request, exc):
+    """Any failed input check: a plain-English 400."""
+    return JSONResponse(status_code=400, content={"detail": str(exc)})
+
+
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 
@@ -132,27 +141,33 @@ def assumptions():
 
 @app.post("/api/simulate")
 def simulate(body: Run):
-    return viz.run(DATA, body.scenario, body.events, body.overrides, body.year)
+    sc, ev, ov = validate.check_run(DATA, body.scenario, body.events, body.overrides, body.year)
+    return viz.run(DATA, sc, ev, ov, body.year)
 
 
 @app.post("/api/preview")
 def preview(body: Preview):
-    return viz.preview(DATA, body.scenario, body.swap, body.events, body.overrides)
+    sc, ev, ov = validate.check_run(DATA, body.scenario, body.events, body.overrides)
+    swap = validate.check_swap(DATA, body.swap, validate.horizon(DATA, ov))
+    return viz.preview(DATA, sc, swap, ev, ov)
 
 
 @app.post("/api/stress_test")
 def stress_test(body: Run):
-    return viz.clean(engine.stress_test(DATA, body.scenario, overrides=body.overrides))
+    sc, _, ov = validate.check_run(DATA, body.scenario, body.events, body.overrides)
+    return viz.clean(engine.stress_test(DATA, sc, overrides=ov))
 
 
 @app.post("/api/tornado")
 def tornado(body: Run):
-    return viz.clean(engine.tornado(DATA, body.scenario, body.events, top=10, overrides=body.overrides))
+    sc, ev, ov = validate.check_run(DATA, body.scenario, body.events, body.overrides)
+    return viz.clean(engine.tornado(DATA, sc, ev, top=10, overrides=ov))
 
 
 @app.post("/api/bands")
 def bands(body: Run):
-    return viz.clean(engine.bands(DATA, body.scenario, body.events, overrides=body.overrides))
+    sc, ev, ov = validate.check_run(DATA, body.scenario, body.events, body.overrides)
+    return viz.clean(engine.bands(DATA, sc, ev, overrides=ov))
 
 
 _POOL = None
@@ -179,25 +194,34 @@ def _stop_futures_pool():
 
 @app.post("/api/futures")
 def futures(body: Futures):
-    if len(body.scenarios) > 6:
-        raise HTTPException(status_code=400, detail="At most 6 plans at once.")
-    args = dict(n=min(body.n, 500), seed=body.seed, events=body.events, overrides=body.overrides)
+    overrides = validate.check_overrides(DATA, body.overrides, allow_horizon=False)
+    plans = validate.check_plans(DATA, body.scenarios, overrides)
+    events = validate.check_events(DATA, body.events)
+    n = validate.check_count(body.n, "n (number of futures)", 1, validate.MAX_FUTURES)
+    seed = validate.check_seed(body.seed)
+    args = dict(n=n, seed=seed, events=events, overrides=overrides)
     if body.pinned_session:
         args["pinned"] = _session(body.pinned_session)["future"]
     pool = _futures_pool()
     try:
-        res = montecarlo.run(DATA, body.scenarios, pool=pool, **args)
+        res = montecarlo.run(DATA, plans, pool=pool, **args)
     except Exception:  # noqa: BLE001 - a broken worker pool: answer from this process instead
-        res = montecarlo.run(DATA, body.scenarios, **args)
+        res = montecarlo.run(DATA, plans, **args)
     res.pop("futures")
     return viz.clean(res)
+
+
+def _check_chat(body):
+    validate.check_messages(body.messages)
+    validate.check_scenario(DATA, body.scenario)
+    if len(body.plans) > 50 or not all(isinstance(p, dict) for p in body.plans):
+        raise validate.ValidationError("plans must be a list of at most 50 plan objects.")
 
 
 @app.post("/api/chat")
 def chat(body: Chat):
     """The assistant (chat/agent.py). Needs OPENROUTER_API_KEY in chat/.env."""
-    if not body.messages or body.messages[-1].get("role") != "user":
-        raise HTTPException(400, "The last message must be from the user.")
+    _check_chat(body)
     try:
         return viz.clean(agent.chat(body.messages, body.scenario, body.confirm, context=body.context, plans=body.plans))
     except RuntimeError as e:  # missing key or OpenRouter error
@@ -208,8 +232,7 @@ def chat(body: Chat):
 def chat_stream(body: Chat):
     """The assistant, live. One JSON object per line: "thinking" and "text" pieces, "tool_start" and "tool_end" for
     each job, then "done" with the same answer as /api/chat, or "error"."""
-    if not body.messages or body.messages[-1].get("role") != "user":
-        raise HTTPException(400, "The last message must be from the user.")
+    _check_chat(body)
     events = queue.Queue()
 
     def work():
@@ -239,9 +262,9 @@ def chat_stream(body: Chat):
 
 @app.post("/api/breakeven")
 def breakeven(body: Breakeven):
-    if body.param not in DATA["params"]:
-        raise HTTPException(status_code=400, detail=f"Unknown assumption: {body.param}")
-    return viz.clean(engine.breakeven(DATA, body.scenario, body.events, body.overrides, body.param))
+    validate.check_param(DATA, body.param)
+    sc, ev, ov = validate.check_run(DATA, body.scenario, body.events, body.overrides)
+    return viz.clean(engine.breakeven(DATA, sc, ev, ov, body.param))
 
 
 @app.get("/api/metrics")
@@ -251,9 +274,23 @@ def metrics():
             for k, (u, sense, kind, d) in optimize.METRICS.items()]
 
 
+def _check_problem(problem):
+    if not isinstance(problem, dict):
+        raise validate.ValidationError("problem must be an object with an objective, e.g. "
+                                       "{\"objective\": {\"metric\": \"upfront_cost_chf\"}}.")
+    validate.check_events(DATA, problem.get("events", []))
+    for c in problem.get("constraints") or []:
+        if not isinstance(c, dict):
+            raise validate.ValidationError("Each constraint must be an object like {\"metric\": ..., \"max\": 200000}.")
+        for k in ("min", "max", "max_change_pct", "min_change_pct"):
+            if k in c:
+                validate._finite(c[k], f"The constraint's {k}")
+
+
 @app.post("/api/optimize")
 def optimize_plan(body: Optimize):
     """Best plan for a goal under limits. The problem format is in model/optimize.py."""
+    _check_problem(body.problem)
     try:
         return viz.clean(optimize.solve(DATA, body.problem))
     except ValueError as e:
@@ -263,6 +300,8 @@ def optimize_plan(body: Optimize):
 @app.post("/api/evaluate")
 def evaluate(body: Evaluate):
     """Score one scenario against a problem: metrics, limits missed, objective. For optimizers outside Python."""
+    _check_problem(body.problem)
+    validate.check_scenario(DATA, body.scenario)
     try:
         res = optimize.evaluate_scenario(DATA, optimize.normalize(DATA, body.problem), body.scenario)
     except (ValueError, KeyError) as e:
@@ -270,7 +309,31 @@ def evaluate(body: Evaluate):
     return viz.clean({k: v for k, v in res.items() if not k.startswith("_")})
 
 
+def _check_search_inputs(b, overrides_allowed_horizon=True):
+    """Shared numeric checks for /api/search and /api/pareto."""
+    validate.check_overrides(DATA, b.overrides)
+    validate.check_events(DATA, b.events)
+    for name in ("target", "budget"):
+        if getattr(b, name, None) is not None:
+            validate._finite(getattr(b, name), name)
+            if name == "budget" and getattr(b, name) < 0:
+                raise validate.ValidationError("budget cannot be negative.")
+    if b.horizon_years is not None:
+        validate.check_count(b.horizon_years, "horizon_years", 1, validate.HORIZON_MAX)
+    if getattr(b, "years", None) is not None:
+        validate.check_count(b.years, "years", 1, validate.HORIZON_MAX)
+    for c in b.constraints:
+        if not isinstance(c, dict):
+            raise validate.ValidationError("Each constraint must be an object like {\"metric\": ..., \"max\": 200000}.")
+        for k in ("min", "max"):
+            if k in c:
+                validate._finite(c[k], f"The constraint's {k}")
+    if getattr(b, "max_points", None) is not None:
+        validate.check_count(b.max_points, "max_points", 2, 200)
+
+
 def _search(b: Search):
+    _check_search_inputs(b)
     common = dict(scope=b.scope, events=b.events, overrides=b.overrides, granularity=b.granularity,
                   include_engine_output=b.include_engine_output)
     timeframe = dict(horizon_years=b.horizon_years, discounted=b.discounted, include_residual=b.include_residual)
@@ -305,6 +368,7 @@ def search_plan(body: Search):
 @app.post("/api/pareto")
 def pareto(body: Pareto):
     """The plans no other plan beats on both axes (e.g. up-front cost vs yearly saving), sorted by x."""
+    _check_search_inputs(body)
     try:
         return viz.clean(search.pareto(DATA, **body.model_dump()))
     except ValueError as e:
@@ -372,12 +436,14 @@ def session_start(body: SessionStart):
         if isinstance(body.future, str):
             future, name = montecarlo.load_scripted(DATA, body.future), body.future
         elif "seed" in body.future:
-            seed = int(body.future["seed"])
+            seed = validate.check_seed(body.future["seed"])
             future, name = montecarlo.draw_play_future(DATA, random.Random(seed)), f"sampled future (seed {seed})"
         else:
             raise ValueError('future must be a scripted future\'s name or {"seed": <number>}')
     except ValueError as e:
         raise HTTPException(400, str(e))
+    if body.years is not None:
+        validate.check_count(body.years, "years", 1, validate.horizon(DATA))
     try:
         session, state = play.start(DATA, future, name, body.years)
     except ValueError as e:
@@ -395,6 +461,7 @@ def session_next(body: SessionId):
 @app.post("/api/session/decide")
 def session_decide(body: SessionDecide):
     try:
+        validate.check_scenario(DATA, body.swaps)
         return {"session_id": body.session_id, **play.decide(DATA, _session(body.session_id), body.swaps)}
     except (ValueError, KeyError) as e:
         raise HTTPException(400, str(e))
@@ -404,6 +471,7 @@ def session_decide(body: SessionDecide):
 def session_plan(body: SessionPlan):
     """Replace everything not done yet with this plan; done decisions stay."""
     try:
+        validate.check_scenario(DATA, body.plan)
         return {"session_id": body.session_id, **play.set_plan(DATA, _session(body.session_id), body.plan)}
     except (ValueError, KeyError) as e:
         raise HTTPException(400, str(e))
@@ -412,6 +480,8 @@ def session_plan(body: SessionPlan):
 @app.post("/api/session/preview")
 def session_preview(body: SessionPreview):
     try:
+        for sw in body.swap if isinstance(body.swap, list) else [body.swap]:
+            validate.check_swap(DATA, sw)
         return play.preview(DATA, _session(body.session_id), body.swap)
     except (ValueError, KeyError) as e:
         raise HTTPException(400, str(e))
@@ -419,8 +489,8 @@ def session_preview(body: SessionPreview):
 
 @app.post("/api/session/outlook")
 def session_outlook(body: SessionOutlook):
-    if not 1 <= body.n <= 500:
-        raise HTTPException(400, "n must be between 1 and 500.")
+    validate.check_count(body.n, "n (number of futures)", 1, validate.MAX_FUTURES)
+    validate.check_seed(body.seed)
     return play.outlook(DATA, _session(body.session_id), body.n, body.seed)
 
 
