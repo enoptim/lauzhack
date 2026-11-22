@@ -60,7 +60,7 @@ function installedOption(catalog: Catalog | null, swap: Swap) {
   return optionName(catalog, swap.group, top);
 }
 
-const where = (swap: Swap) => swap.floor === undefined ? 'Whole building' : swap.floor === 0 ? 'Ground floor' : `Floor ${swap.floor}`;
+const where = (swap: Swap) => swap.floor === undefined ? 'Whole building' : swap.floor === -1 ? 'Basement' : swap.floor === 0 ? 'Ground floor' : `Floor ${swap.floor}`;
 
 /** True only after `on` has stayed true for `ms`: avoids a flash of "Recalculating" for instant answers. */
 function useDelayed(on: boolean, ms: number) {
@@ -277,14 +277,18 @@ export default function ResultsPage() {
   const finance = plan?.finance;
   const yearlySaving = finance?.years[0] ? finance.years[0].operating_cost_baseline - finance.years[0].operating_cost : null;
   // The year the upgrade is paid for: today, or the first year its equipment spending differs from doing nothing.
-  const boughtIn = !finance ? null : finance.capex_year0 > 0 ? 0
+  // Bought "now" is always today, even when worn-out units make it no dearer than like-for-like (capex_year0 <= 0).
+  const boughtIn = !finance ? null : timing === 'now' || finance.capex_year0 > 0 ? 0
     : finance.years.find(y => Math.abs(y.capex - y.capex_baseline) > 1000)?.year ?? null;
   // Price of the new equipment (same in any year: all prices are in today's francs).
+  // New solar panels get the one-off subsidy per kWp, as in the engine's upfront cost and the assistant's cards.
+  const pvSubsidy = engine.assumptions.data?.find(a => a.key === 'pv_subsidy_chf_per_kwp')?.value ?? 0;
   const purchase = chosen.reduce((sum, swap) => {
     const price = engine.catalog.data?.groups[swap.group]?.find(o => o.option_id === swap.option)?.price_chf_per_unit ?? 0;
     const units = (engine.catalog.data?.items ?? []).filter(item => item.group === swap.group
       && (swap.floor === undefined || item.serves_floor === swap.floor)).reduce((n, item) => n + item.units, 0);
-    return sum + price * units;
+    const subsidy = swap.group === 'solar_pv' && price > 0 ? pvSubsidy : 0;
+    return sum + (price - subsidy) * units;
   }, 0);
   const focus = planLines[selected] ?? null;
   const endValue = focus?.middle[horizon] ?? 0;
@@ -396,7 +400,8 @@ export default function ResultsPage() {
 
       <dl aria-label="Today and after" className="grid grid-cols-2 gap-px overflow-hidden rounded-xl border bg-border md:grid-cols-4">
         {[
-          { label: 'Energy bill, year 1', sub: today && `today ${chfShort(today.costs_chf.energy)}`, now: after && chfShort(after.costs_chf.energy) },
+          // Net of solar sold to the grid, like the engine's energy bill, the pulse and the assistant.
+          { label: 'Energy bill, year 1', sub: today && `today ${chfShort(today.costs_chf.energy + today.costs_chf.pv_export)}`, now: after && chfShort(after.costs_chf.energy + after.costs_chf.pv_export) },
           { label: 'Energy use, year 1', sub: today && `today ${kwh(today.kwh_year)}`, now: after && kwh(after.kwh_year) },
           { label: 'CO₂ in meeting rooms', sub: today && `today ${Math.round(today.outcomes.meeting_co2_ppm)} ppm`, now: after && `${Math.round(after.outcomes.meeting_co2_ppm)} ppm` },
           { label: 'Pays back in', now: focus ? (payback !== null ? years(payback) : `not within ${horizon} years`) : null,

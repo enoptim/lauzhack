@@ -49,8 +49,8 @@ export default function TradeoffChart({ chart }: { chart: ChatChart }) {
               onMouseEnter={() => setPicked(i)} onClick={() => setPicked(i)} />
           </g>
         ))}
-        <text x={PAD.left} y={H - 6} className="fill-muted-foreground text-[10px]">CHF 0</text>
-        <text x={W - PAD.right} y={H - 6} textAnchor="end" className="fill-muted-foreground text-[10px]">{chfShort(maxX)} upfront</text>
+        <text x={PAD.left} y={H - 6} className="fill-muted-foreground text-[11px]">CHF 0</text>
+        <text x={W - PAD.right} y={H - 6} textAnchor="end" className="fill-muted-foreground text-[11px]">{chfShort(maxX)} upfront</text>
       </svg>
       <p className="min-h-10 text-xs text-pretty" aria-live="polite">
         <span className="font-medium tabular-nums">{chfShort(point.x)} upfront, saves {unit.startsWith('CHF') ? chfShort(point.y) : `${Math.round(point.y).toLocaleString('en-US')} ${unit.replace('/year', '')}`} a year.</span>{' '}

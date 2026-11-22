@@ -9,7 +9,7 @@ import {
 } from '@/components/ui/message-scroller';
 import { cn } from '@/lib/utils';
 import Mark from '../Mark';
-import { planColor, resultsHref } from '../plans';
+import { planColor, resultsHref, sameScenario } from '../plans';
 import { useTwin } from '../TwinProvider';
 import { planName, PlanCard, ProposalCard, type ProposalState } from './cards';
 import Markdown from './Markdown';
@@ -45,9 +45,9 @@ export default function AssistantColumn() {
   const waiting = useWaitingText(pending);
   const narrow = () => !window.matchMedia('(min-width: 64rem)').matches;
 
-  useEffect(() => {
-    if (assistantOpen) input.current?.focus({ preventScroll: true });
-  }, [assistantOpen]);
+  // Only the keyboard shortcuts move focus into the composer: a click elsewhere keeps the user where they were.
+  // The column is inert until it opens, so focus waits a frame for it to render.
+  const focusComposer = () => requestAnimationFrame(() => input.current?.focus({ preventScroll: true }));
 
   // "/" opens the assistant from anywhere; Ctrl/⌘ K toggles it.
   useEffect(() => {
@@ -57,10 +57,11 @@ export default function AssistantColumn() {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
         event.preventDefault();
         setAssistantOpen(!assistantOpen);
+        if (!assistantOpen) focusComposer();
       } else if (event.key === '/' && !typing && !event.metaKey && !event.ctrlKey && !event.altKey) {
         event.preventDefault();
         setAssistantOpen(true);
-        input.current?.focus();
+        focusComposer();
       }
     };
     window.addEventListener('keydown', onKey);
@@ -151,7 +152,7 @@ export default function AssistantColumn() {
                       {turn.role === 'user' ? (
                         <div className="flex flex-col items-end gap-1 pl-8">
                           {turn.where && (
-                            <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
+                            <span className="flex items-center gap-1 text-xs text-muted-foreground">
                               <LocateFixed aria-hidden="true" className="size-3" />{turn.where}
                             </span>
                           )}
@@ -170,8 +171,10 @@ export default function AssistantColumn() {
                           {turn.scenario && (() => {
                             const plan = plans.find(p => p.id === turn.planId);
                             return (
-                              <PlanCard scenario={turn.scenario} optimization={turn.optimization}
+                              <PlanCard scenario={turn.scenario} catalog={twin.catalog} optimization={turn.optimization}
                                 kept={plan ? { name: plan.name, color: planColor(plans, plan.id) } : null}
+                                shown={pathname === '/' && plan?.id === twin.activePlan.id ? 'building'
+                                  : pathname.startsWith('/results') && focus?.plan && sameScenario(focus.plan.scenario, turn.scenario.scenario) ? 'results' : null}
                                 onShow={() => showOnBuilding(turn)} onCompare={() => compare(turn)} />
                             );
                           })()}
@@ -195,9 +198,9 @@ export default function AssistantColumn() {
           </MessageScrollerProvider>
 
           <form className="shrink-0 px-3 pt-1 pb-3" onSubmit={event => { event.preventDefault(); submit(draft); }}>
-            <div className="flex flex-col rounded-xl border bg-card shadow-[0_1px_2px_oklch(0_0_0/0.04)] transition-[border-color,box-shadow] focus-within:border-primary/50 focus-within:ring-3 focus-within:ring-primary/12">
+            <div className="flex flex-col rounded-xl border bg-card shadow-[0_1px_2px_oklch(0_0_0/0.04)] transition-[border-color,box-shadow] duration-200 focus-within:border-foreground/25 focus-within:shadow-[0_1px_2px_oklch(0_0_0/0.04),0_6px_16px_-10px_oklch(0.3_0.02_60/0.3)]">
               {focus && (
-                <span className="flex items-center gap-1.5 px-3 pt-2.5 text-[11px] text-muted-foreground" title="The assistant sees what you are looking at">
+                <span className="flex items-center gap-1.5 px-3 pt-2.5 text-xs text-muted-foreground" title="The assistant sees what you are looking at">
                   <LocateFixed aria-hidden="true" className="size-3" />
                   <span className="truncate">{focus.label}</span>
                 </span>
@@ -213,9 +216,9 @@ export default function AssistantColumn() {
                     setAssistantOpen(false);
                   }
                 }}
-                className="field-sizing-content max-h-40 min-h-14 resize-none bg-transparent px-3 pt-2 pb-1 text-sm outline-none placeholder:text-muted-foreground/80" />
+                className="field-sizing-content max-h-40 min-h-14 resize-none bg-transparent px-3 pt-2 pb-1 text-sm outline-none placeholder:text-muted-foreground" />
               <div className="flex items-center justify-between gap-2 px-2 pb-2">
-                <span className="pl-1 text-[11px] text-muted-foreground">The building model does every calculation.</span>
+                <span className="pl-1 text-xs text-muted-foreground">The building model does every calculation.</span>
                 <Button type="submit" size="icon-sm" aria-label="Send" disabled={pending !== null || !draft.trim()} className="rounded-lg">
                   <ArrowUp />
                 </Button>

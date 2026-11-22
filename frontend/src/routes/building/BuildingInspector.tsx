@@ -5,15 +5,15 @@ import {
 } from 'lucide-react';
 import { useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router';
-import type { Swap } from '@/api/types';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { Button } from '@/components/ui/button';
 import { FLOOR_COUNT } from '@/data/building';
 import { cn } from '@/lib/utils';
-import { PLAN_COLORS, planColor, resultsHref } from '@/twin/plans';
+import { groupedChanges, PLAN_COLORS, planColor, resultsHref } from '@/twin/plans';
 import { useTwin } from '@/twin/TwinProvider';
 import { draftKey, equipmentForFloor, equipmentLabels, isBuildingWide, type EquipmentGroup, type EquipmentSwap } from './equipment';
-import { groupName, levelName, pinLevel } from './PlanPins';
+import BuildingToday from './BuildingToday';
+import { levelName, pinLevel } from './PlanPins';
 
 export const keepCurrent = 'keep-current';
 /** Top floor first, like the buttons in a lift; null is the whole building. */
@@ -33,9 +33,6 @@ function equipmentGroups(floor: number | null): EquipmentGroup[] {
   return groups;
 }
 
-const optionName = (swap: Swap) =>
-  equipmentForFloor(swap.floor ?? null, swap.group as EquipmentGroup).choices.find(option => option.option_id === swap.option)?.name ?? swap.option;
-
 interface BuildingInspectorProps {
   floor: number | null;
   selectedGroup: EquipmentGroup | null;
@@ -47,17 +44,18 @@ interface BuildingInspectorProps {
 }
 
 function Plans({ onGoTo }: { onGoTo: (level: number | null, group: string | null) => void }) {
-  const { plans, activePlan, setActivePlan, createPlan, removePlan } = useTwin();
+  const { plans, activePlan, setActivePlan, createPlan, removePlan, catalog } = useTwin();
   return (
-    <section aria-labelledby="plans-heading" className="flex max-h-[42%] shrink-0 flex-col border-b">
-      <div className="flex items-center justify-between gap-2 px-4 pt-3.5 pb-2">
+    <section aria-labelledby="plans-heading" className="flex max-h-[44%] shrink-0 flex-col border-b">
+      <div className="flex h-12 shrink-0 items-center justify-between gap-2 border-b px-4">
         <h2 id="plans-heading" className="text-sm font-semibold">Plans</h2>
         <Button variant="ghost" size="xs" onClick={createPlan} disabled={plans.length >= PLAN_COLORS.length}
           className="text-muted-foreground hover:text-foreground">
           <Plus data-icon="inline-start" /> New plan
         </Button>
       </div>
-      <ul className="flex min-h-0 flex-col gap-1 overflow-y-auto overscroll-contain px-2 pb-3">
+      {/* The list fades out at the bottom edge when it scrolls, so a cut row reads as "more below". */}
+      <ul className="flex min-h-0 flex-col gap-1 overflow-y-auto overscroll-contain px-2 py-2 [mask-image:linear-gradient(to_bottom,black_calc(100%-1.25rem),transparent)]">
         {plans.map(plan => {
           const active = plan.id === activePlan.id;
           const color = planColor(plans, plan.id);
@@ -77,7 +75,7 @@ function Plans({ onGoTo }: { onGoTo: (level: number | null, group: string | null
                       {plan.source === 'assistant' && ' · from the assistant'}
                     </span>
                   </span>
-                  {active && <span className="text-[11px] font-medium text-muted-foreground">Editing</span>}
+                  {active && <span className="text-xs font-medium text-muted-foreground">Editing</span>}
                 </button>
                 {plans.length > 1 && (
                   <button type="button" onClick={() => removePlan(plan.id)} aria-label={`Remove ${plan.name}`} title="Remove plan"
@@ -87,14 +85,13 @@ function Plans({ onGoTo }: { onGoTo: (level: number | null, group: string | null
                 )}
               </div>
               {active && n > 0 && (
-                <ul aria-label={`Changes in ${plan.name}`} className="mt-1 mb-1 ml-[1.05rem] flex flex-col border-l pl-2.5">
-                  {plan.scenario.map((swap, index) => (
-                    <li key={`${swap.group}-${swap.floor}-${index}`}>
-                      <button type="button" onClick={() => onGoTo(pinLevel(swap), swap.group)}
-                        className="flex w-full min-w-0 items-baseline gap-1.5 rounded-md px-1.5 py-1 text-left text-xs hover:bg-secondary/80 focus-visible:outline-2 focus-visible:outline-ring">
-                        <span className="shrink-0 font-medium">{groupName(swap.group)}</span>
-                        <span className="shrink-0 text-muted-foreground">{pinLevel(swap) === null ? '' : `· ${levelName(pinLevel(swap))}`}</span>
-                        <span className="min-w-0 truncate text-muted-foreground">→ {optionName(swap)}</span>
+                <ul aria-label={`Changes in ${plan.name}`} className="mt-1 mb-2 ml-[1.1rem] flex flex-col border-l pl-2">
+                  {groupedChanges(plan.scenario, catalog).map(row => (
+                    <li key={`${row.group}-${row.option}`}>
+                      <button type="button" onClick={() => onGoTo(pinLevel(row.first), row.group)}
+                        className="flex w-full min-w-0 flex-col rounded-md px-2 py-1 text-left hover:bg-secondary/80 focus-visible:outline-2 focus-visible:outline-ring">
+                        <span className="truncate text-[13px]"><span className="font-medium">{row.label}</span> <span className="text-muted-foreground">→ {row.name}</span></span>
+                        <span className="truncate text-xs text-muted-foreground">{row.where}</span>
                       </button>
                     </li>
                   ))}
@@ -150,10 +147,7 @@ export default function BuildingInspector({ floor, selectedGroup, draft, onFloor
         </div>
 
         <section aria-labelledby="equipment-heading" className="flex shrink-0 flex-col gap-2">
-          <h2 id="equipment-heading" className="flex items-baseline justify-between gap-2 text-sm font-semibold">
-            {levelName(floor)}
-            <span className="text-xs font-normal text-muted-foreground">Click an outlined part in 3D, or pick here</span>
-          </h2>
+          <h2 id="equipment-heading" className="text-sm font-semibold">{levelName(floor)}</h2>
           <Accordion type="single" collapsible value={selectedGroup ?? ''}
             onValueChange={value => onSelectGroup(groups.find(group => group === value) ?? null)}
             className="flex flex-col gap-1.5 [&_[data-slot=accordion-trigger]>svg]:transition-none">
@@ -203,7 +197,10 @@ export default function BuildingInspector({ floor, selectedGroup, draft, onFloor
               );
             })}
           </Accordion>
+          {!selectedGroup && <p className="text-xs text-muted-foreground">Pick equipment here, or click an outlined part in 3D.</p>}
         </section>
+
+        {floor === null && <BuildingToday />}
       </div>
 
       <footer className="flex shrink-0 flex-col gap-2 border-t bg-background px-4 py-3.5">

@@ -72,15 +72,51 @@ export function resultsHref(plans: Plan[], focusId: number | null, events: strin
   return `/results?config=${encodeURIComponent(JSON.stringify(config))}`;
 }
 
-/** What the plan costs to buy: each new option's price times the units it replaces. Matches Results. */
-export function purchasePrice(catalog: Catalog | null, scenario: Scenario) {
-  if (!catalog) return null;
-  return scenario.reduce((sum, swap) => {
-    const price = catalog.groups[swap.group]?.find(option => option.option_id === swap.option)?.price_chf_per_unit ?? 0;
-    const units = catalog.items.filter(item => item.group === swap.group
-      && (swap.floor === undefined || item.serves_floor === swap.floor)).reduce((n, item) => n + item.units, 0);
-    return sum + price * units;
-  }, 0);
+export const sameScenario = (a: Scenario, b: Scenario) => JSON.stringify(a) === JSON.stringify(b);
+
+/** Plain names for every kind of equipment the engine knows, including ones the 3D view can't pick. */
+export const groupLabels: Record<string, string> = {
+  lighting: 'Lighting', monitors: 'Monitors', computers: 'Computers', coffee: 'Coffee machines',
+  water_heater: 'Water heaters', servers: 'Server racks', ventilation: 'Ventilation', solar_pv: 'Solar panels',
+  blinds: 'Blinds', lauzhack_banner: 'LauzHack banner', heating_cooling: 'Heating and cooling', printers_3d: '3D printers',
+};
+export const groupLabel = (group: string) => groupLabels[group] ?? group.replaceAll('_', ' ');
+
+/** "Basement, ground floor and floors 1–4"; null means the whole building. */
+export function levelsText(levels: (number | null)[]) {
+  if (levels.includes(null)) return 'Whole building';
+  const sorted = [...new Set(levels as number[])].sort((a, b) => a - b);
+  const parts: string[] = [];
+  if (sorted.includes(-1)) parts.push('basement');
+  if (sorted.includes(0)) parts.push('ground floor');
+  const upper = sorted.filter(level => level > 0);
+  const runs: string[] = [];
+  for (let i = 0; i < upper.length; i++) {
+    let j = i;
+    while (j + 1 < upper.length && upper[j + 1] === upper[j] + 1) j++;
+    runs.push(j - i >= 2 ? `${upper[i]}–${upper[j]}` : upper.slice(i, j + 1).join(', '));
+    i = j;
+  }
+  if (upper.length) parts.push(`${upper.length === 1 ? 'floor' : 'floors'} ${runs.join(', ')}`);
+  const text = parts.length > 1 ? `${parts.slice(0, -1).join(', ')} and ${parts.at(-1)}` : parts[0] ?? '';
+  return text.charAt(0).toUpperCase() + text.slice(1);
 }
 
-export const sameScenario = (a: Scenario, b: Scenario) => JSON.stringify(a) === JSON.stringify(b);
+/** Building-wide groups have one unit for the whole building, wherever it sits. */
+const buildingWide = new Set(['water_heater', 'ventilation', 'solar_pv', 'blinds']);
+
+/** A plan's changes grouped by what they install: one row per kind of equipment and new option. */
+export function groupedChanges(scenario: Scenario, catalog: Catalog | null) {
+  const rows = new Map<string, { group: string; option: string; name: string; levels: (number | null)[]; first: Swap }>();
+  for (const swap of scenario) {
+    const key = `${swap.group}|${swap.option}`;
+    const level = buildingWide.has(swap.group) || swap.floor === undefined ? null : swap.floor;
+    const row = rows.get(key);
+    if (row) row.levels.push(level);
+    else rows.set(key, {
+      group: swap.group, option: swap.option, levels: [level], first: swap,
+      name: catalog?.groups[swap.group]?.find(option => option.option_id === swap.option)?.name ?? swap.option.replaceAll('_', ' '),
+    });
+  }
+  return [...rows.values()].map(row => ({ ...row, label: groupLabel(row.group), where: levelsText(row.levels) }));
+}

@@ -1,4 +1,5 @@
-const CHF = new Intl.NumberFormat('de-CH', { maximumFractionDigits: 0 });
+// Thousands with a comma, like every other amount in the app (de-CH would print 198’670).
+const CHF = new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 });
 
 /** CHF 760,500 → "CHF 761k"; keeps the sign with a real minus. */
 export function chfShort(value: number): string {
@@ -10,7 +11,7 @@ export function chfShort(value: number): string {
 }
 
 export function chf(value: number): string {
-  return `${value < 0 ? '−' : ''}CHF ${CHF.format(Math.abs(value)).replaceAll('’', ',')}`;
+  return `${value < 0 ? '−' : ''}CHF ${CHF.format(Math.abs(value))}`;
 }
 
 export function kwh(value: number): string {

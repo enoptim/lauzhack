@@ -422,6 +422,17 @@
   50% { opacity: 0.4; }
 }
 
+/* While the twin works, a light pulse runs around the mark's building outline. */
+@media (prefers-reduced-motion: no-preference) {
+  .twin-orbit { animation: twin-orbit 1.3s linear infinite; }
+}
+@keyframes twin-orbit {
+  to { stroke-dashoffset: -60; }
+}
+
+/* Pins land floor by floor when a plan arrives on the building. */
+.twin-enter-stagger { animation-delay: calc(var(--i, 0) * 70ms); }
+
 /* The assistant column opens and closes by width, so the view beside it resizes instead of being covered. */
 .twin-column { transition: width 260ms cubic-bezier(0.16, 1, 0.3, 1), border-color 260ms; }
 @media (prefers-reduced-motion: reduce) {

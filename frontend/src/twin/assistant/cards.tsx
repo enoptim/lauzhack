@@ -1,6 +1,8 @@
 // Cards under the assistant's replies: the optimization it proposes (to confirm), and the plan it found.
 // Every number comes from the API; this file only formats them.
-import { ArrowRight, Box, Check, Play, TriangleAlert } from 'lucide-react';
+import { Box, ChartSpline, Check, Play, TriangleAlert } from 'lucide-react';
+import { chfShort } from '../format';
+import { groupedChanges } from '../plans';
 import type { ReactNode } from 'react';
 import type {
   Catalog, ChatOptimization, ChatProposal, ChatScenario, MetricName, OptimizationProblem, ProblemConstraint,
@@ -166,18 +168,26 @@ export function ProposalCard({ proposal, state, catalog, onRun }: {
   );
 }
 
-export function PlanCard({ scenario, optimization, kept, onShow, onCompare }: {
+export function PlanCard({ scenario, catalog, optimization, kept, shown, onShow, onCompare }: {
   scenario: ChatScenario;
+  catalog: Catalog | null;
   optimization: ChatOptimization | null | undefined;
   /** The plan this became, once kept: its name and colour. */
   kept: { name: string; color: string | null } | null;
+  /** Where this plan is on screen right now, if anywhere. */
+  shown: 'building' | 'results' | null;
   onShow: () => void;
   onCompare: () => void;
 }) {
   const s = scenario.summary;
   const flagTypes = [...new Set(s.flags.map(flag => flag.type))];
-  const floors = s.changed_floors.map(f => (f === -1 ? 'basement' : f === 0 ? 'ground' : String(f)));
   const bill = s.energy_bill_chf_month;
+  const changes = scenario.scenario.length;
+  const rows = groupedChanges(scenario.scenario, catalog);
+  // The card's figures come from one fixed future; Results shows the middle of 200. Each figure says its basis.
+  const paybackNote = s.payback_years === 0 && s.extra_cost_vs_like_for_like_chf <= 0
+    ? 'It costs no more than replacing worn-out units like for like'
+    : 'Against replacing worn-out units like for like';
   return (
     <section aria-label={`Plan: ${kept?.name ?? scenario.title}`} className={cardClass}>
       <header className="flex items-start gap-2.5 px-4 pt-3.5 pb-3">
@@ -186,8 +196,8 @@ export function PlanCard({ scenario, optimization, kept, onShow, onCompare }: {
         <div className="flex min-w-0 flex-1 flex-col gap-0.5">
           <h3 className="text-sm font-semibold text-pretty">{kept?.name ?? scenario.title}</h3>
           <p className="text-xs text-muted-foreground">
-            {s.changed_items} {s.changed_items === 1 ? 'item changes' : 'items change'}
-            {floors.length > 0 && ` · ${floors.length === 1 ? 'floor' : 'floors'} ${floors.join(', ')}`}
+            {/* Counted like the plan list: one change per kind of equipment and floor. */}
+            {changes} {changes === 1 ? 'change' : 'changes'}
           </p>
         </div>
         {optimization && (
@@ -211,12 +221,24 @@ export function PlanCard({ scenario, optimization, kept, onShow, onCompare }: {
         </ul>
       )}
 
-      <div className="px-4 pb-3">
+      <ul aria-label="What changes" className="mx-4 mb-3 flex flex-col gap-1.5 border-l pl-3 text-sm">
+        {rows.slice(0, 4).map(row => (
+          <li key={`${row.group}-${row.option}`} className="flex flex-col leading-snug">
+            <span><span className="font-medium">{row.label}</span> <span className="text-muted-foreground">→</span> {row.name}</span>
+            <span className="text-xs text-muted-foreground">{row.where}</span>
+          </li>
+        ))}
+        {rows.length > 4 && <li className="text-xs text-muted-foreground">and {rows.length - 4} more</li>}
+      </ul>
+
+      <div className="border-t px-4 pt-3 pb-3">
         <Rows rows={[
-          ['Upfront', <span className="font-medium tabular-nums">{withUnit(s.upfront_cost_chf, 'CHF')}</span>],
-          ['Energy bill', <span className="tabular-nums"><span className="font-medium">{withUnit(bill.scenario, 'CHF')}</span> a month</span>, `Today ${withUnit(bill.today, 'CHF')}`],
-          ['Pays back', <span className="font-medium tabular-nums">{payback(s.payback_years)}</span>],
-          [`Over ${s.horizon_years} years`, <span className="tabular-nums"><span className="font-medium">{withUnit(s.npv_chf, 'CHF')}</span> {s.npv_chf >= 0 ? 'gained' : 'lost'}</span>, 'After every cost, in today’s money'],
+          ['Upfront', <span className="font-medium tabular-nums">{chfShort(s.upfront_cost_chf)}</span>],
+          // A year, like the pulse and Results (the assistant reports it per month).
+          ['Energy bill', <span className="tabular-nums"><span className="font-medium">{chfShort(bill.scenario * 12)}</span> a year</span>, `Today ${chfShort(bill.today * 12)}`],
+          ['Pays back', <span className="font-medium tabular-nums">{payback(s.payback_years)}</span>, paybackNote],
+          [`Over ${s.horizon_years} years`, <span className="tabular-nums"><span className="font-medium">{chfShort(s.npv_chf)}</span> {s.npv_chf >= 0 ? 'gained' : 'lost'}</span>,
+            'In one fixed future, in today’s money. Results shows the range over 200 futures.'],
         ]} />
         {flagTypes.length > 0 && (
           <ul className="mt-3 flex flex-wrap gap-1.5">
@@ -234,13 +256,13 @@ export function PlanCard({ scenario, optimization, kept, onShow, onCompare }: {
       </div>
 
       <footer className="flex flex-wrap items-center gap-2 border-t bg-muted/40 px-4 py-3">
-        <Button size="sm" variant="outline" onClick={onShow}>
-          <Box data-icon="inline-start" />
-          Show on building
+        <Button size="sm" variant="outline" onClick={onShow} aria-pressed={shown === 'building'} className={cn(shown === 'building' && 'text-muted-foreground')}>
+          {shown === 'building' ? <Check data-icon="inline-start" /> : <Box data-icon="inline-start" />}
+          {shown === 'building' ? 'In 3D now' : 'Show in 3D'}
         </Button>
-        <Button size="sm" onClick={onCompare}>
-          Compare in Results
-          <ArrowRight data-icon="inline-end" />
+        <Button size="sm" variant="outline" onClick={onCompare} aria-pressed={shown === 'results'} className={cn(shown === 'results' && 'text-muted-foreground')}>
+          {shown === 'results' ? <Check data-icon="inline-start" /> : <ChartSpline data-icon="inline-start" />}
+          {shown === 'results' ? 'In Results now' : 'Compare in Results'}
         </Button>
       </footer>
     </section>

@@ -4,24 +4,30 @@ import type { Scenario, SimulateResult } from '@/api/types';
 
 export type Vitals = { bill: number; co2: number; kwh: number };
 
+/** Any objective will do: the engine scores the plan and returns every metric, including its upfront cost. */
+const anyProblem = { objective: { metric: 'upfront_cost_chf' as const, sense: 'min' as const } };
+
 export type Pulse = {
   today: Vitals | null;
   plan: Vitals | null;
+  /** What the plan costs to buy now, after the solar subsidy: the engine's own figure, as in the assistant's cards. */
+  upfront: number | null;
   /** True while the engine works on a change. The last answer stays on screen meanwhile. */
   loading: boolean;
   /** True when the engine does not answer. */
   offline: boolean;
 };
 
+// The energy bill is net of solar sold to the grid, the engine's definition (pv_export is negative).
 const vitals = (snapshot: SimulateResult['snapshot']): Vitals => ({
-  bill: snapshot.building.costs_chf.energy,
+  bill: snapshot.building.costs_chf.energy + snapshot.building.costs_chf.pv_export,
   co2: snapshot.building.outcomes.meeting_co2_ppm,
   kwh: snapshot.building.kwh_year,
 });
 
 /** The building's year-1 vital signs, today and with the plan. One engine run (about 13 ms) per change. */
 export function usePulse(scenario: Scenario): Pulse {
-  const [pulse, setPulse] = useState<Pulse>({ today: null, plan: null, loading: true, offline: false });
+  const [pulse, setPulse] = useState<Pulse>({ today: null, plan: null, upfront: null, loading: true, offline: false });
   const key = JSON.stringify(scenario);
   const scenarioRef = useRef(scenario);
   scenarioRef.current = scenario;
@@ -30,9 +36,13 @@ export function usePulse(scenario: Scenario): Pulse {
     let live = true;
     setPulse(previous => ({ ...previous, loading: true }));
     const timer = setTimeout(() => {
-      api.simulate({ scenario: scenarioRef.current })
-        .then(result => {
-          if (live) setPulse({ today: vitals(result.snapshot_baseline), plan: vitals(result.snapshot), loading: false, offline: false });
+      const scenario = scenarioRef.current;
+      Promise.all([
+        api.simulate({ scenario }),
+        scenario.length ? api.evaluate(anyProblem, scenario).then(e => e.metrics.upfront_cost_chf) : Promise.resolve(0),
+      ])
+        .then(([result, upfront]) => {
+          if (live) setPulse({ today: vitals(result.snapshot_baseline), plan: vitals(result.snapshot), upfront, loading: false, offline: false });
         })
         .catch(() => { if (live) setPulse(previous => ({ ...previous, loading: false, offline: true })); });
     }, 60);
