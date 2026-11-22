@@ -1,7 +1,7 @@
-\documentclass[11pt,a4paper]{article}
+\documentclass[10pt,a4paper]{article}
 \usepackage[T1]{fontenc}
 \usepackage{lmodern}
-\usepackage[margin=16mm]{geometry}
+\usepackage[margin=14mm]{geometry}
 \usepackage{graphicx}
 \usepackage{microtype}
 
@@ -9,12 +9,12 @@
 \setlength{\parindent}{0pt}
 \setlength{\parskip}{3pt}
 
-\newcommand{\reportsection}[1]{\par\addvspace{6pt}\noindent\textbf{\large #1}\par\nobreak}
+\newcommand{\reportsection}[1]{\par\addvspace{4pt}\noindent\textbf{\large #1}\par\nobreak}
 \newcommand{\coTwo}{CO\textsubscript{2}}
 
 \begin{document}
 
-{\LARGE\bfseries DigiTwin\par}
+{\LARGE\bfseries DigiBuild\par}
 {\large Technical Report\par}
 \medskip\hrule
 
@@ -24,11 +24,7 @@ We built a 3D twin of EPFL's BC building, where LauzHack took place. It helps en
 
 \reportsection{3D model}
 
-We built the 3D viewer with React, Three.js, React Three Fiber, and Drei. We assembled the building in code from reusable
- components for floors, walls, windows, stairs, furniture, and clickable equipment, and used Drei’s OrbitControls for camera
- movement. To get the modeling correct, we walked around the building, took photos of different rooms to get the interior of the model correct. We used the floor plan from EPFL's website to get the dimension right and used aerial photos to model the roof. 
- To keep rendering efficient, we redraw only when the view changes, reuse the sun’s shadows while the camera moves,
- and batch repeated pieces like window frames so the GPU can draw them together.
+The 3D viewer uses React, Three.js, React Three Fiber, and Drei. We built it from reusable parts, from walls and stairs to clickable equipment. We used EPFL's floor plans for dimensions, our own photos for interiors, and aerial photos for the roof. Drei's OrbitControls lets users move the camera. To keep the viewer responsive, we redraw only when needed, reuse shadows as the camera moves, and draw repeated parts such as window frames together.
 
 \reportsection{Simulation engine}
 
