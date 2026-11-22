@@ -20,10 +20,12 @@ type Props = {
   horizon: number;
   now: number;
   ended: boolean;
+  /** Height, e.g. "h-40". */
+  className?: string;
 };
 
 /** Money compared with doing nothing, added up year by year, up to now. The rest of the chart is still empty. */
-export default function PlayChart({ history, horizon, now, ended }: Props) {
+export default function PlayChart({ history, horizon, now, ended, className = 'h-64' }: Props) {
   const host = useRef<HTMLDivElement>(null);
   const chart = useRef<echarts.ECharts | null>(null);
 
@@ -98,5 +100,5 @@ export default function PlayChart({ history, horizon, now, ended }: Props) {
   const summary = last
     ? `After year ${last.year}: ${signedChf(last.cumulative_cash_cf)} compared with doing nothing.`
     : 'Nothing has happened yet.';
-  return <div ref={host} className="h-64 w-full" role="img" aria-label={`Money compared with doing nothing. ${summary}`} />;
+  return <div ref={host} className={`${className} w-full`} role="img" aria-label={`Money compared with doing nothing. ${summary}`} />;
 }

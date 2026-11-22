@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
 import { chf, groupLabels, optionName, signedChf, whenLabel } from './format';
+import OptionRow from './OptionRow';
 
 const ICONS = {
   failure: Wrench,
@@ -83,14 +84,6 @@ function Replacements({ reaction, state, catalog, busy, onDecide }: Props & { re
   );
 }
 
-/** One change for now, with what it costs today and what it saves each year from next year. */
-function yearlyText(preview: SessionPreview | undefined): string {
-  if (!preview) return 'Working out the cost…';
-  const yearly = -(preview.delta_operating_cost ?? 0);
-  const saving = yearly >= 0 ? `saves ${chf(yearly)} a year` : `costs ${chf(-yearly)} more a year`;
-  return `${chf(preview.extra_capex_chf)} now · ${saving}`;
-}
-
 /** News or a warning: options for the most relevant equipment, each with its cost, to add now. */
 function Suggestions({ reaction, state, catalog, busy, onDecide }: Props & { reaction: GroupReaction }) {
   const [main, ...others] = reaction.groups;
@@ -114,17 +107,8 @@ function Suggestions({ reaction, state, catalog, busy, onDecide }: Props & { rea
     <div className="flex flex-col gap-2">
       <ul className="flex flex-col gap-2">
         {main.options.map(option => (
-          <li key={option} className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-lg border p-3">
-            <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-              <span className="font-medium">{groupLabels[main.group] ?? main.group}: {optionName(catalog, main.group, option)}</span>
-              <span className="text-sm text-muted-foreground">{inPlan(option) ? 'In your plan.' : yearlyText(previews[option])}</span>
-            </div>
-            {inPlan(option) ? (
-              <Badge><Check data-icon="inline-start" />In your plan</Badge>
-            ) : (
-              <Button size="sm" variant="outline" disabled={busy} onClick={() => onDecide([swapFor(option)])}>Add now</Button>
-            )}
-          </li>
+          <OptionRow key={option} title={`${groupLabels[main.group] ?? main.group}: ${optionName(catalog, main.group, option)}`}
+            preview={previews[option]} inPlan={inPlan(option)} busy={busy} onAdd={() => onDecide([swapFor(option)])} />
         ))}
       </ul>
       {others.length > 0 && (
@@ -143,7 +127,7 @@ export default function WhatHappened(props: Props) {
       <Card className="gap-3">
         <CardHeader>
           <CardTitle>Nothing has happened yet</CardTitle>
-          <CardDescription>Plan changes if you like, then press Start. The years run until something happens.</CardDescription>
+          <CardDescription>Change equipment if you like, then press Start the clock. The years run until something happens.</CardDescription>
         </CardHeader>
       </Card>
     );

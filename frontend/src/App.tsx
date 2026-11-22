@@ -3,7 +3,6 @@ import { BrowserRouter, Route, Routes } from 'react-router';
 import AppHeader from './components/AppHeader';
 import AssistantPage from './routes/assistant/AssistantPage';
 import NotFoundPage from './routes/not-found/NotFoundPage';
-import PlayPage from './routes/play/PlayPage';
 import ResultsPage from './routes/results/ResultsPage';
 
 const BuildingPage = lazy(() => import('./routes/building/BuildingPage'));
@@ -12,7 +11,6 @@ const pages = [
   { path: '/', label: 'Building', Page: BuildingPage },
   { path: '/assistant', label: 'Assistant', Page: AssistantPage },
   { path: '/results', label: 'Results', Page: ResultsPage },
-  { path: '/play', label: 'Play', Page: PlayPage },
 ];
 
 export default function App() {

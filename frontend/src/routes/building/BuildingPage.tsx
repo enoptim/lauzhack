@@ -1,5 +1,6 @@
 import { Edges } from '@react-three/drei';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { readSavedConfigurations, storeConfigurations, type SavedConfiguration } from './configurations';
 import BuildingScene from '@/components/BuildingScene';
 import { draftKey, isBuildingWide, lightingItems, type EquipmentGroup } from './equipment';
@@ -7,11 +8,25 @@ import { draftKey, isBuildingWide, lightingItems, type EquipmentGroup } from './
 import BuildingInspector, { keepCurrent } from './BuildingInspector';
 import ExteriorBlinds from './ExteriorBlinds';
 import RoofEquipment from './RoofEquipment';
+import PlayPanel from './play/PlayPanel';
+import { brokenNow, sceneView, usePlay } from './play/usePlay';
 
 const selectableOutline = '#f5ad20';
 const selectedOutline = '#b7530c'; // Matches the inspector's brand-orange selection.
+const brokenOutline = '#d4361f'; // Play mode: equipment that just broke.
+
+type Mode = 'plan' | 'play';
+const MODE_KEY = 'building-mode';
+
+function savedMode(): Mode {
+  try { return sessionStorage.getItem(MODE_KEY) === 'play' ? 'play' : 'plan'; } catch { return 'plan'; }
+}
 
 export default function BuildingPage() {
+  // Plan: choose upgrades and simulate them. Play: live through the next 15 years and react when something happens.
+  const [mode, setMode] = useState<Mode>(savedMode);
+  const play = usePlay(mode === 'play');
+  const broken = mode === 'play' ? brokenNow(play.state) : [];
   const [floor, setFloor] = useState<number | null>(null);
   const [selectedGroup, setSelectedGroup] = useState<EquipmentGroup | null>(null);
   const [configurations, setConfigurations] = useState(() => {
@@ -23,8 +38,33 @@ export default function BuildingPage() {
   const draft = new Map(active.scenario.map(swap => [draftKey(swap.floor ?? null, swap.group), swap]));
   const [storageError, setStorageError] = useState(false);
   const floorLights = lightingItems.filter(item => item.floor === floor);
-  const solarDraft = draft.get(draftKey(null, 'solar_pv'));
-  const showBanner = draft.get(draftKey(0, 'lauzhack_banner'))?.option === 'lauzhack_banner_add';
+  const playSolar = [...(play.state?.plan.done ?? []), ...(play.state?.plan.planned ?? [])].some(swap => swap.group === 'solar_pv');
+  const solarDraft = mode === 'play' ? playSolar : draft.get(draftKey(null, 'solar_pv'));
+  const showBanner = mode === 'plan' && draft.get(draftKey(0, 'lauzhack_banner'))?.option === 'lauzhack_banner_add';
+
+  function switchMode(next: Mode) {
+    setMode(next);
+    setSelectedGroup(null);
+    try { sessionStorage.setItem(MODE_KEY, next); } catch { /* no storage */ }
+  }
+
+  // When the game stops because something broke, look at it: the floor (or roof) it's on.
+  const pauseKey = play.state ? `${play.state.session_id}|${play.state.t}` : '';
+  useEffect(() => {
+    if (mode !== 'play' || !play.state) return;
+    const first = play.state.reasons.find(reason => reason.type === 'failure' && reason.group
+      && sceneView(reason.group, reason.floors) !== undefined);
+    if (first?.group) {
+      setFloor(sceneView(first.group, first.floors) ?? null);
+      setSelectedGroup(null);
+    }
+  }, [pauseKey]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  /** Outline colour for a group in the current view: red if it just broke here (play), brand if selected. */
+  function outlineFor(group: EquipmentGroup) {
+    if (broken.some(b => b.group === group && b.view === floor)) return brokenOutline;
+    return selectedGroup === group ? selectedOutline : selectableOutline;
+  }
 
   function chooseOption(group: EquipmentGroup, option: string) {
     const key = draftKey(floor, group);
@@ -63,14 +103,14 @@ export default function BuildingPage() {
 
   function selectionFor(group: EquipmentGroup) {
     return {
-      outline: selectedGroup === group ? selectedOutline : selectableOutline,
+      outline: outlineFor(group),
       onSelect: () => setSelectedGroup(group),
     };
   }
 
   return (
     <main aria-label="Building viewer" className="grid min-h-full grid-rows-[minmax(20rem,55dvh)_auto] md:h-full md:grid-cols-[minmax(0,1fr)_clamp(21rem,26vw,25rem)] md:grid-rows-[minmax(0,1fr)]">
-      <div className="min-h-0">
+      <div className="relative min-h-0">
         <BuildingScene floor={floor} showBanner={showBanner} equipmentSelection={floor !== null ? {
           monitors: selectionFor('monitors'), computers: selectionFor('computers'), coffee: selectionFor('coffee'),
           water_heater: selectionFor('water_heater'), servers: selectionFor('servers'),
@@ -91,12 +131,22 @@ export default function BuildingPage() {
             >
               <boxGeometry args={[.9, .25, .65]} />
               <meshBasicMaterial color="#e6e8e6" />
-              <Edges lineWidth={2} color={selectedGroup === 'lighting' ? selectedOutline : selectableOutline} />
+              <Edges lineWidth={2} color={outlineFor('lighting')} />
             </mesh>
           ))}
         </BuildingScene>
+        <ToggleGroup type="single" variant="outline" value={mode} aria-label="Mode"
+          onValueChange={value => value && switchMode(value as Mode)}
+          className="absolute top-3 left-3 bg-background/95 shadow-sm">
+          <ToggleGroupItem value="plan" className="px-4">Plan</ToggleGroupItem>
+          <ToggleGroupItem value="play" className="px-4">Play</ToggleGroupItem>
+        </ToggleGroup>
       </div>
-      <BuildingInspector
+      {mode === 'play' ? (
+        <PlayPanel play={play} floor={floor}
+          onFloorChange={level => { if (level !== floor) { setFloor(level); setSelectedGroup(null); } }}
+          selectedGroup={selectedGroup} onSelectGroup={group => setSelectedGroup(group as EquipmentGroup | null)} />
+      ) : <BuildingInspector
         floor={floor}
         selectedGroup={selectedGroup}
         draft={draft}
@@ -113,7 +163,7 @@ export default function BuildingPage() {
         onCreateConfiguration={createConfiguration}
         onEditConfiguration={setActiveId}
         onRemoveConfiguration={removeConfiguration}
-      />
+      />}
     </main>
   );
 }

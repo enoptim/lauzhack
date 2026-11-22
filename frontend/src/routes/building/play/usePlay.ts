@@ -1,0 +1,96 @@
+// Play mode's state: one game from the API (model/session.py), shared by the 3D view and the play panel.
+import { useEffect, useState } from 'react';
+import { api } from '@/api/client';
+import type { Catalog, PlaySwap, SessionState } from '@/api/types';
+
+export const DEMO_FUTURE = 'ventilation_failure';
+const STORAGE_KEY = 'play-session-id';
+
+export type PlayBusy = null | 'start' | 'next' | 'change';
+
+function remember(id: string | null) {
+  try {
+    if (id) sessionStorage.setItem(STORAGE_KEY, id);
+    else sessionStorage.removeItem(STORAGE_KEY);
+  } catch {
+    // Storage can be unavailable (private mode); the game still works, it just won't survive a reload.
+  }
+}
+
+function errorText(error: unknown): string {
+  const text = String(error);
+  if (text.includes(' 404 ')) return 'This game is gone: the simulation was restarted. Start a new one.';
+  return /"detail":"((?:[^"\\]|\\.)*)"/.exec(text)?.[1] ?? 'The simulation is not answering. Start it with make dev.';
+}
+
+/** The game, loaded the first time play mode opens. A game in progress survives a page reload. */
+export function usePlay(active: boolean) {
+  const [state, setState] = useState<SessionState | null>(null);
+  const [catalog, setCatalog] = useState<Catalog | null>(null);
+  const [busy, setBusy] = useState<PlayBusy>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    if (!active || loaded) return;
+    setLoaded(true);
+    api.catalog().then(setCatalog).catch(() => undefined);
+    let saved: string | null = null;
+    try { saved = sessionStorage.getItem(STORAGE_KEY); } catch { /* no storage */ }
+    if (saved) api.session(saved).then(setState).catch(() => remember(null));
+  }, [active, loaded]);
+
+  async function run(kind: Exclude<PlayBusy, null>, call: () => Promise<SessionState>) {
+    setBusy(kind);
+    setError(null);
+    try {
+      const next = await call();
+      setState(next);
+      remember(next.session_id);
+    } catch (e) {
+      setError(errorText(e));
+      if (String(e).includes(' 404 ')) { setState(null); remember(null); }
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  const id = state?.session_id ?? '';
+  return {
+    state, catalog, busy, error,
+    start: (future: string | { seed: number }) => run('start', () => api.sessionStart(future)),
+    next: () => run('next', () => api.sessionNext(id)),
+    decide: (swaps: PlaySwap[]) => run('change', () => api.sessionDecide(id, swaps)),
+    removePlanned: (index: number) => run('change', () =>
+      api.sessionPlan(id, (state?.plan.planned ?? []).filter((_, k) => k !== index))),
+    restart: () => { setState(null); remember(null); setError(null); },
+  };
+}
+
+export type Play = ReturnType<typeof usePlay>;
+
+/** Equipment drawn in the 3D view. */
+const IN_SCENE = new Set(['lighting', 'monitors', 'computers', 'coffee', 'water_heater', 'servers', 'ventilation', 'blinds', 'solar_pv']);
+
+/** Which 3D view shows a group: a floor, the basement (-1), or the whole building (null: roof and facade).
+ *  undefined when the group isn't drawn in 3D (e.g. heating and cooling). */
+export function sceneView(group: string, floors: number[]): number | null | undefined {
+  if (!IN_SCENE.has(group)) return undefined;
+  if (group === 'water_heater' || group === 'servers') return -1;
+  if (group === 'ventilation' || group === 'blinds' || group === 'solar_pv') return null;
+  return floors[0] ?? null;
+}
+
+/** What broke at this pause, with the 3D view each shows in. */
+export function brokenNow(state: SessionState | null): { group: string; view: number | null }[] {
+  if (!state || state.ended) return [];
+  const out: { group: string; view: number | null }[] = [];
+  for (const reason of state.reasons) {
+    if (reason.type !== 'failure' || !reason.group) continue;
+    for (const floor of reason.floors.length ? reason.floors : [undefined]) {
+      const view = sceneView(reason.group, floor === undefined ? [] : [floor]);
+      if (view !== undefined && !out.some(b => b.group === reason.group && b.view === view)) out.push({ group: reason.group, view });
+    }
+  }
+  return out;
+}
