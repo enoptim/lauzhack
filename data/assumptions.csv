@@ -23,7 +23,7 @@ horizon_years,15,10,25,years,Evaluation horizon; year 1 is the first simulated y
 capex_budget_chf,1500000,1000000,2500000,CHF,What facilities can spend on upgrades up front in year 1,made up
 opening_reserve_chf,2500000,2000000,3500000,CHF,Building reserve at the start of year 1; upgrades are paid from it,made up
 min_reserve_chf,1000000,500000,1500000,CHF,Floor the reserve must not fall below (emergency repairs),made up
-other_operating_cf_chf_year,350000,300000,450000,CHF/yr,"Yearly budget EPFL allocates to the building, net of costs not modelled (cleaning, security); pays energy, maintenance and consumables, the rest goes into the reserve. Salaries are not paid from it; people effects are valued with salary_cost_chf_year",made up
+other_operating_cf_chf_year,600000,500000,700000,CHF/yr,"Yearly budget EPFL allocates to the building, net of costs not modelled (cleaning, security); pays energy, maintenance and consumables, the rest goes into the reserve, which also pays like-for-like replacements. Set so doing nothing keeps the reserve above its minimum. Salaries are not paid from it; people effects are valued with salary_cost_chf_year",made up
 salary_cost_chf_year,110000,80000,140000,CHF/yr/person,"Fully loaded cost per staff member (mix of PhD students, postdocs, professors, admin)",estimate
 rent_chf_m2_year,290,220,380,CHF/m2/yr,Market rent for comparable space in Lausanne (opportunity cost of space),estimate
 sick_days_per_employee_year,7,5,10,days/yr,Absence days due to illness per full-time employee,estimate

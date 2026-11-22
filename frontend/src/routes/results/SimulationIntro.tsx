@@ -72,7 +72,7 @@ export default function SimulationIntro({ changes, ready, onDone }: Props) {
           })}
         </ol>
 
-        <p className="text-sm text-muted-foreground">The building is real. The numbers are our assumptions.</p>
+        <p className="text-sm text-muted-foreground">The building is real. The numbers are our assumptions. Results show possible futures, not a forecast or financial advice.</p>
       </div>
     </div>
   );

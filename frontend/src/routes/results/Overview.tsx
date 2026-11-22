@@ -1,9 +1,9 @@
 import type { ReactNode } from 'react';
-import { TrendingDown, TrendingUp } from 'lucide-react';
+import { TrendingDown, TrendingUp, TriangleAlert } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import AnimatedNumber from './AnimatedNumber';
 import { chf, chfShort } from './format';
-import { whatIfLabels } from './labels';
+import { flagShort, flagText, whatIfLabels } from './labels';
 import { num, Skeleton } from './parts';
 import type { ResultsModel } from './useResultsModel';
 
@@ -12,7 +12,10 @@ import type { ResultsModel } from './useResultsModel';
  * and five key numbers. Every line keeps its height, so the chart below never jumps.
  */
 
-/** The range where 8 in 10 futures pay back, short: "7.4–10.7", or "7.4 to over 15". The unit is in the value above. */
+/**
+ * The years in which 8 in 10 futures pay back, short: "7.4–10.7", or "7.4 to over 15".
+ * Worked out from each future's own payback year (10th to 90th percentile), never from the band's edges.
+ */
 const paybackRange = (good: number, bad: number | null, horizon: number) =>
   (bad === null ? `${good.toFixed(1)} to over ${horizon}` : `${good.toFixed(1)}–${bad.toFixed(1)}`);
 const yearsShort = (value: number) => `${value.toFixed(1)} years`;
@@ -53,6 +56,48 @@ function DeltaChip({ delta, label }: { delta: number; label: string }) {
       )}
       <span className="max-w-[28rem] truncate text-muted-foreground">· {label}</span>
     </span>
+  );
+}
+
+/** A warning about the plan that happens in a real share of the futures, e.g. "Needs a loan in 98% of futures". */
+function WarningChip({ w }: { w: ResultsModel['planWarnings'][number] }) {
+  const share = w.share >= 0.995 ? 'every future' : `${Math.round(w.share * 100)}% of futures`;
+  const when = w.fixed?.year !== undefined ? ` With your assumptions and no surprises: from year ${w.fixed.year}.` : '';
+  return (
+    <span title={`${w.fixed ? flagText(w.fixed) : ''}${when}`.trim() || undefined}
+      className="inline-flex h-7 shrink-0 items-center gap-1.5 rounded-md bg-warning/8 px-2 text-[13px]">
+      <TriangleAlert aria-hidden="true" className="size-3.5 text-warning" />
+      {flagShort[w.type] ?? w.type.replaceAll('_', ' ')} in {share}
+    </span>
+  );
+}
+
+/**
+ * The headline counts cash only, like the chart. This line says what it leaves out and adds it back for one real
+ * middle future, so the steps add up exactly: cash saved, the difference in equipment still worth something at the end,
+ * where that leaves the plan, and the same in today's money (NPV). Then the share of futures where that is above zero.
+ */
+function Chain({ c }: { c: NonNullable<ResultsModel['chain']> }) {
+  const strong = (value: string) => <span className={cn(num, 'font-medium text-foreground')}>{value}</span>;
+  const less = c.leftover_value < 0;
+  const rate = c.discountRate !== null ? `, ${Math.round(c.discountRate * 1000) / 10}% a year` : '';
+  const share = Math.round(c.npvPositiveShare * 100);
+  return (
+    <div className="mt-1 flex min-h-10 flex-col text-[13px] leading-5 text-muted-foreground">
+      <p className="truncate">Not counted above: equipment still worth something at the end, and today’s money. One middle future, year {c.year}:</p>
+      <p className="text-pretty">
+        {strong(chfShort(c.cash_saved))} cash saved{' '}
+        <span title={less ? 'Doing nothing buys its replacements later, so its equipment is newer and worth more at the end.'
+          : 'The plan’s equipment is newer, so it is worth more at the end.'}>
+          {less ? '−' : '+'} {strong(chfShort(Math.abs(c.leftover_value)))} {less ? 'less' : 'more'} equipment value left
+        </span>{' '}
+        = {strong(chfShort(Math.abs(c.ahead)))} {c.ahead >= 0 ? 'ahead' : 'behind'}{' '}
+        <span title={`NPV (net present value): all ${c.year} years of money vs doing nothing, in today’s francs. A franc later counts less than a franc today.`}>
+          → {strong(chfShort(c.npv_cash))} in today’s money (NPV{rate})
+        </span>.{' '}
+        <span className={cn(share < 50 && 'text-warning')}>{share}% of futures end ahead in today’s money.</span>
+      </p>
+    </div>
   );
 }
 
@@ -123,9 +168,10 @@ export default function Overview({ m }: { m: ResultsModel }) {
       : storyValue < 0 ? <>{yearLabel}{money(storyValue, 'plain')} still to earn back</>
         : <>{yearLabel}{subject} has saved {money(storyValue, 'plan')} so far</>;
   } else {
+    // Cash only, like the chart: it leaves out equipment left at the end and today's money (the line below adds them).
     verdict = cash >= 0
-      ? <>{subject} saves {money(cash, 'plan', 'Saved means: doing nothing would have cost this much more.')} over {horizon} years</>
-      : <>{subject} is {money(cash, 'warning', 'It has not paid for itself yet in the middle future.')} short after {horizon} years</>;
+      ? <>{subject} saves {money(cash, 'plan', `Cash saved by year ${horizon}, middle of ${futuresN} futures: how much more doing nothing would have spent. Leaves out equipment left at the end and today’s money.`)} in cash by year {horizon}</>
+      : <>{subject} is {money(cash, 'warning', `Cash by year ${horizon}, middle of ${futuresN} futures: it has not paid for itself yet.`)} short in cash by year {horizon}</>;
   }
 
   // Where the selected plan ranks among all plans, by cash in the middle future at the end.
@@ -152,8 +198,13 @@ export default function Overview({ m }: { m: ResultsModel }) {
   const lastLabel = m.lastChange && m.delta !== null ? m.lastChange.label : '';
   const energyChange = today && after && today.kwh_year > 0 ? (after.kwh_year - today.kwh_year) / today.kwh_year * 100 : null;
   const saving = m.yearlySaving;
-  // The 8-in-10 payback range, only when it means something: a plan bought later can "pay back" in year 0.0.
-  const rangeShown = m.goodPayback !== null && m.goodPayback > 0.05 && (m.badPayback === null || m.badPayback > 0.05);
+  // The 8-in-10 payback range, only when it means something: at least half the futures pay back in the years shown,
+  // and a plan bought later can "pay back" in year 0.0.
+  const rangeShown = m.payback !== null && m.goodPayback !== null && m.goodPayback > 0.05 && (m.badPayback === null || m.badPayback > 0.05);
+  const paidTenths = m.paidBackShare === null ? null : Math.round(m.paidBackShare * 10);
+  const paidShort = paidTenths === null ? null : m.paidBackShare === 1 ? 'all futures pay back'
+    : m.paidBackShare === 0 ? 'no future pays back' : paidTenths === 0 ? 'under 1 in 10 pay back'
+      : paidTenths === 10 ? 'over 9 in 10 pay back' : `${paidTenths} in 10 pay back`;
 
   // The cells of the KPI strip; each value shows a skeleton only before the first answer.
   const kpis: { label: string; value: ReactNode; sub: ReactNode; title?: string; subTitle?: string }[] = [
@@ -166,8 +217,8 @@ export default function Overview({ m }: { m: ResultsModel }) {
     {
       label: 'Costs saved, year 1',
       value: empty ? chfShort(0) : saving !== null ? <AnimatedNumber value={Math.abs(saving)} format={chfShort} /> : pending,
-      sub: empty ? 'about the same' : saving !== null ? (Math.abs(saving) < 500 ? 'about the same' : saving > 0 ? 'lower than today' : 'higher than today') : pendingSub,
-      title: 'What the building pays to run in year 1, compared with today.',
+      sub: empty ? 'about the same' : saving !== null ? (Math.abs(saving) < 500 ? 'about the same' : saving > 0 ? 'lower than doing nothing' : 'higher than doing nothing') : pendingSub,
+      title: 'What the building pays to run in year 1, compared with doing nothing. From one fixed run: your assumptions, no surprises.',
     },
     {
       label: 'Pays for itself in',
@@ -175,24 +226,25 @@ export default function Overview({ m }: { m: ResultsModel }) {
         : m.payback === 0 ? 'Right away' : <AnimatedNumber value={m.payback} format={yearsShort} />,
       sub: empty ? 'nothing to pay back' : !focus ? pendingSub
         : rangeShown ? `8 in 10: ${paybackRange(m.goodPayback as number, m.badPayback, horizon)}`
-          : m.paidBackShare !== null ? `${Math.round(m.paidBackShare * 10)} in 10 pay back` : 'not in most futures',
+          : paidShort ? `${paidShort} by year ${horizon}` : 'not in most futures',
       subTitle: [
-        rangeShown && `In 8 of 10 futures it pays for itself in ${paybackRange(m.goodPayback as number, m.badPayback, horizon)} years.`,
-        m.paidBackShare !== null && `It has paid for itself by year ${horizon} in ${Math.round(m.paidBackShare * 10)} of 10 futures.`,
+        rangeShown && `8 in 10 futures pay for themselves in ${paybackRange(m.goodPayback as number, m.badPayback, horizon)} years.`,
+        paidShort && `By year ${horizon}: ${paidShort}.`,
       ].filter(Boolean).join(' ') || undefined,
-      title: 'When the money saved catches up with the money spent, in the middle future.',
+      title: `When the money saved catches up with the money spent. The middle of ${futuresN} futures: half pay back sooner, half later. Counted like the chart, without the value of equipment left at the end.`,
     },
     {
       label: 'Energy use, year 1',
       value: after ? <AnimatedNumber value={after.kwh_year} format={mwh} /> : pending,
       sub: today ? (energyChange !== null && Math.abs(energyChange) >= 0.5 ? `${percent(energyChange)} vs today` : 'same as today') : pendingSub,
       subTitle: today ? `today ${mwh(today.kwh_year)}` : undefined,
+      title: 'From one fixed run: your assumptions, no surprises.',
     },
     {
       label: 'Meeting room CO₂',
       value: after ? <AnimatedNumber value={after.outcomes.meeting_co2_ppm} format={ppm} /> : pending,
       sub: today && after ? co2Note(after.outcomes.meeting_co2_ppm, Math.round(today.outcomes.meeting_co2_ppm)) : pendingSub,
-      title: 'CO₂ shows how fresh the air is. Below 1000 ppm is good.',
+      title: 'CO₂ shows how fresh the air is. Below 1000 ppm is good. From one fixed run: your assumptions, no surprises.',
     },
   ];
 
@@ -206,13 +258,17 @@ export default function Overview({ m }: { m: ResultsModel }) {
         </h1>
       ) : <Skeleton className="h-9 w-2/3" />}
 
+      {!empty && (m.chain ? <div className={cn('transition-opacity duration-150', busy && 'opacity-60')}><Chain c={m.chain} /></div>
+        : !m.futures && <Skeleton className="mt-1 h-10 w-3/4" />)}
+
       <p className={cn('mt-1 h-5 truncate text-sm leading-5 text-muted-foreground transition-opacity duration-150', busy && 'opacity-60')}>
-        {m.example ? 'Showing one example future. The numbers below are the middle of all 200.'
-          : focus && !empty ? <>{m.staffEffects ? 'Counting staff effects' : `The middle of ${futuresN} possible futures`}. In 8 of 10, it lands between {strong(chfShort(focus.low[horizon]))} and {strong(chfShort(focus.high[horizon]))}.</>
+        {m.example ? 'Showing one example future. The numbers below stay the same: they are not from this future.'
+          : focus && !empty ? <>{m.staffEffects ? 'Chart counts staff effects' : `Chart: cash saved, middle of ${futuresN} possible futures`}. 8 in 10 end year {horizon} between {strong(chfShort(focus.low[horizon]))} and {strong(chfShort(focus.high[horizon]))}.</>
             : null}
       </p>
 
       <div className="mt-2 flex h-7 min-w-0 items-center gap-3 overflow-hidden whitespace-nowrap">
+        {!empty && m.planWarnings.slice(0, 2).map(w => <WarningChip key={w.type} w={w} />)}
         <div aria-live="polite" aria-atomic="true" className="flex min-w-0 shrink">
           {m.lastChange && m.delta !== null && (
             <DeltaChip key={`${m.lastChange.label}|${Math.round(m.delta)}`} delta={m.delta} label={m.lastChange.label} />

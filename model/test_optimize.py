@@ -98,3 +98,4 @@ if __name__ == "__main__":
             failed += 1
             print("FAIL", t.__name__)
     print(f"{len(tests) - failed}/{len(tests)} passed")
+    raise SystemExit(1 if failed else 0)

@@ -23,7 +23,17 @@ The tools:
 - `remove_plans`: removes plans from the app's plan list when the user asks. It's only offered when the app sends its `plans`. The app removes them and shows an Undo button.
 - `show_scenario`: simulates a package and sends it to the app. The confirmed optimization and `upgrade_tradeoffs` show their own plan, so the model uses this for a specific change or another package.
 
-The model never does the maths. Every number it gives comes from the engine.
+The model never does the maths. Every number it gives comes from the engine, and a program checks that.
+
+## Checking the figures
+
+A language model can still write a number that no tool gave it. So after it answers, `grounding.py` checks every figure in the reply before the reply is sent:
+1. It finds each number with a unit: CHF amounts (`CHF 4,106`, `4'106 CHF`, `CHF 33k`, `CHF 1.2M`), percentages, years and months, kWh/MWh, ppm, °C and people. Numbers without a unit, like dates, floor numbers and list items, are not checked.
+2. It looks for the same number in this turn's tool results, the building's parameters and today's values. A CHF figure must match a field measured in CHF (`upfront_cost_chf`), a payback in years a field in years, and so on.
+3. A figure matches within the rounding it shows: "CHF 33k" matches 32,500 to 33,499, "8 years" matches 7.5 to 8.49, "CHF 26,100" matches 26,050 to 26,149. Only plain rescaling is allowed: kWh to MWh, a share to a percent (0.12 to 12%), per year to per month, and the sign ("saves CHF 4,106" for -4,106). Other sums are not checked: a figure the model worked out itself fails.
+4. Numbers the user typed (a budget, a target) count as given.
+
+If a figure fails, the model gets one more round: it is told exactly which figures are not in the tool results and rewrites its reply, calling tools if it needs to. If a figure still fails, the reply is sent with a warning. Either way the result comes back as `verification`, and the app shows one quiet line under the reply: "All 6 figures match the building model", or which figures could not be checked.
 
 ## Optimizing: propose, confirm, run
 
@@ -51,6 +61,7 @@ The default model is Claude Sonnet 5.5, at about 5 US cents and 15 seconds per q
 The app uses the live version, `POST /api/chat/stream` (`api.chatStream()`). It takes the same body and sends one JSON object per line as things happen:
 - `thinking` and `text`: the next piece of the model's thinking or of its reply.
 - `tool_start` and `tool_end`: a job in the building model starts or ends (`name`, `args`, then `ok` and `seconds`). The app shows these apart from thinking, so people can tell the model is waiting for the engine.
+- `check`: the figure check. `status: "retry"` with `unsupported` (the figures that failed) means the draft is dropped and a rewrite follows. `status: "done"` with `result` is the final `verification`.
 - `ping`: every 10 s while nothing else happens. If the line stays silent for 35 s, the app gives up and says the API is not responding.
 - `done` with `result`: the same answer as `/api/chat`. Or `error` with `message`.
 
@@ -80,6 +91,7 @@ The reply:
 - `chart`: `null`, or the cost-vs-savings curve when the assistant compared packages: `x_label`, `y_label`, `points` (each with `x`, `y`, a `label` of the changes and its `scenario`) and `knee_index`, the balanced point.
 - `proposal`: `null`, or a problem waiting for the user's OK: `problem` (already checked, with relative limits turned into absolute ones and a "no new warnings" limit added) and `today` (today's value of the goal and each limit). To run it, send the next message with `"confirm": proposal.problem`. The format is in [model/README.md](../model/README.md#optimizer-optimizepy).
 - `optimization`: `null`, or after a confirmed run: `problem`, `all_limits_met` and `limits_missed`.
+- `verification`: the figure check (see "Checking the figures"): `checked` and `matched` (counts), `unsupported` (figures as written), `from_question`, `ok`, and `repaired` with `first_draft_unsupported` when the first draft failed.
 
 `plans` is optional: the plans in the app, as `{"id", "name", "changes", "source"}`. With it the assistant can remove plans; the ids it removed come back in `removed_plan_ids`.
 
@@ -88,6 +100,8 @@ The reply:
 ## Files
 
 - `agent.py`: the model's instructions (`SYSTEM`), the tool loop, the confirmed-run step and the terminal chat.
-- `test_agent.py`: offline tests of propose, confirm and run, with the model replaced by a script (`make test` runs them).
+- `grounding.py`: the figure check.
+- `test_agent.py`: offline tests of propose, confirm and run, and of the figure check, with the model replaced by a script (`make test` runs them).
+- `test_live.py`: asks the real model 3 questions and fails if any figure in a reply is not in the engine's results. It costs a few cents, so it only runs with a key: `python3 -m chat.test_live`. Without a key it prints SKIP.
 - `tools.py`: the tools and the summary of engine results the model sees.
 - The `/api/chat` route is in `model/server.py`.

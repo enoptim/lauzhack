@@ -12,6 +12,7 @@ import ErrorBoundary from '../ErrorBoundary';
 import { planColor, resultsHref, sameScenario } from '../plans';
 import { useTwin } from '../TwinProvider';
 import { planName, PlanCard, ProposalCard, type ProposalState } from './cards';
+import FigureCheck from './FigureCheck';
 import Markdown from './Markdown';
 import Steps, { Waiting } from './Steps';
 import TradeoffChart from './TradeoffChart';
@@ -182,6 +183,7 @@ export default function AssistantColumn() {
                               <Markdown text={turn.content} caret={turn.streaming} />
                             </div>
                           )}
+                          {!turn.streaming && turn.verification && <FigureCheck check={turn.verification} />}
                           {turn.removedPlans && turn.removedPlans.length > 0 && (
                             <div role="status" className="flex items-center gap-2 rounded-lg border bg-card px-3 py-2 text-xs">
                               <Trash2 aria-hidden="true" className="size-3.5 shrink-0 text-muted-foreground" />

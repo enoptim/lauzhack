@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useSearchParams } from 'react-router';
 import { api } from '@/api/client';
-import type { Catalog, FutureSample, FuturePathView, Scenario, Swap } from '@/api/types';
+import type { Catalog, Flag, FutureSample, FuturePathView, Scenario, Swap } from '@/api/types';
 import { PLAN_COLORS, sameScenario } from '@/twin/plans';
 import { usePublishFocus, useTwin } from '@/twin/TwinProvider';
 import { readConfig } from './config';
 import { groupLabels, isContextFlag, whatIfDetails, whatIfLabels } from './labels';
-import { paybackYear, type ExampleNote, type PlanLine } from './PlansChart';
+import type { ExampleNote, PlanLine } from './PlansChart';
 import { storyBeats } from './story';
 import { FUTURES_N, useEngine, WHAT_IFS, type WhatIf } from './useEngine';
 
@@ -22,6 +22,11 @@ export const TODAY_PRICE = 0.2;
 export const PRICE_MIN = 0.1;
 export const PRICE_MAX = 0.45;
 export const HORIZONS = [5, 10, 15] as const;
+/** A warning about the plan is shown next to the headline once it happens in at least this share of the futures. */
+const WARNING_SHARE = 0.2;
+/** Which warnings come first next to the headline: money trouble, then the rest. */
+const WARNING_ORDER = ['needs_financing', 'reserve_below_minimum', 'over_budget', 'ventilation_over_capacity', 'desk_shortfall'];
+const rank = (type: string) => (WARNING_ORDER.indexOf(type) + WARNING_ORDER.length + 1) % (WARNING_ORDER.length + 1);
 export type Timing = 'now' | 'end_of_life' | number;
 export const TIMINGS: { value: Timing; label: string; short: string }[] = [
   { value: 'now', label: 'Now', short: 'Now' },
@@ -161,7 +166,7 @@ export function useResultsModel() {
   const plan = runs?.plan;
   // An engine started before the futures update answers without these fields: say so instead of drawing nonsense.
   const outdated = Boolean(engine.futures.data && Object.values(engine.futures.data.summary)
-    .some(s => typeof s.start !== 'number' || !s.fan.cash_running || !s.risk) || (engine.futures.data && !engine.futures.data.samples));
+    .some(s => typeof s.start !== 'number' || !s.fan.cash_running || !s.risk || !s.payback) || (engine.futures.data && !engine.futures.data.samples));
   const futures = outdated ? null : engine.futures.data;
   // The fast single run still answers for another plan or buy date (not just another price): its numbers are stale.
   const runsKeyPrefix = `{"scenario":${JSON.stringify(scenario)},`;
@@ -238,6 +243,8 @@ export function useResultsModel() {
       low: [s.start, ...fan.map(f => f.p10)],
       high: [s.start, ...fan.map(f => f.p90)],
       example: path ? [path.start, ...path[view].slice(0, horizon)] : null,
+      // Worked out for each future by the engine, on the basis of these lines. Not where the middle line crosses zero.
+      payback: s.payback[view][horizon - 1]?.p50 ?? null,
     };
   }), [plans, colors, futures, view, horizon, example]);
   const lines = useMemo(() => planLines.filter((line): line is PlanLine => line !== null && (line.id === selected || !hidden.has(line.id))),
@@ -351,16 +358,33 @@ export function useResultsModel() {
   const shownGhost = lastChange?.noGhost || (delta !== null && Math.abs(delta) < 1000) ? null : ghost;
   // Cash only (no staff effects), per plan, at the horizon: the headline and the ranking always lead with cash.
   const cashEnd = plans.map((_, index) => futures?.summary[`p${index}`]?.fan.cash_running.find(f => f.year === horizon)?.p50 ?? null);
-  // Share of the 200 futures in which the selected plan has paid for itself by the horizon.
-  const paidBackShare = futures?.summary[`p${selected}`]?.prob_paid_back_by_year?.find(y => y.year === horizon)?.share ?? null;
+  // Payback, worked out by the engine for each of the 200 futures on the chart's basis (same money, same years shown).
+  // Never read it off the band: its low and high lines are worked out separately for each year, not single futures.
+  const paybackStats = futures?.summary[`p${selected}`]?.payback?.[view]?.[horizon - 1] ?? null;
+  // Share of the futures in which the selected plan has paid for itself by the last year shown.
+  const paidBackShare = paybackStats?.share ?? null;
   const endValue = focus?.middle[horizon] ?? 0;
-  const payback = focus ? paybackYear(focus.middle) : null;
-  const goodPayback = focus ? paybackYear(focus.high) : null;
-  const badPayback = focus ? paybackYear(focus.low) : null;
+  // The middle future's payback: half of the futures pay back sooner, half later or not within the years shown.
+  const payback = paybackStats?.p50 ?? null;
+  // 8 in 10 futures pay back between these years (null = later than the years shown).
+  const goodPayback = paybackStats?.p10 ?? null;
+  const badPayback = paybackStats?.p90 ?? null;
   const residual = world?.finance.years.find(y => y.year === horizon)?.residual_value ?? 0;
   const breakdown = futures?.summary[`p${selected}`]?.npv_breakdown_mean ?? finance?.npv_breakdown;
   const risk = futures?.summary[`p${selected}`]?.risk ?? null;
   const riskYear = risk?.emergency_by_year[Math.min(horizon, risk.emergency_by_year.length) - 1] ?? null;
+  // One real middle future, so the headline's cash adds up to the value in today's money (see Overview).
+  const selectedSummary = futures?.summary[`p${selected}`];
+  const discountRate = engine.assumptions.data?.find(a => a.key === 'discount_rate_real')?.value ?? null;
+  const chain = selectedSummary?.middle_future
+    ? { ...selectedSummary.middle_future, npvPositiveShare: selectedSummary.prob_cash_positive, discountRate }
+    : null;
+  // Warnings about the plan that show up in a real share of the futures: shown next to the headline, not only in the details.
+  // The year is from the fixed run (your assumptions, no surprises), if it has that warning.
+  const planWarnings = Object.entries(selectedSummary?.flag_probability ?? {})
+    .filter(([type, share]) => share >= WARNING_SHARE && !isContextFlag({ type } as Flag))
+    .sort((a, b) => rank(a[0]) - rank(b[0]) || b[1] - a[1])
+    .map(([type, share]) => ({ type, share, fixed: finance?.flags.find(flag => flag.type === type) ?? null }));
   const flags = (finance?.flags ?? []).filter(flag => !isContextFlag(flag) && (flag.year === undefined || flag.year <= horizon));
   const contextFlags = (finance?.flags ?? []).filter(flag => isContextFlag(flag) && (flag.year === undefined || flag.year <= horizon));
   const subject = multi ? plans[selected]?.name ?? 'the plan' : 'the upgrade';
@@ -408,7 +432,7 @@ export function useResultsModel() {
     // Each change is tracked, so the chart can show the line before it and the verdict the difference.
     timing, changeTiming, price, setPrice, commitPrice, resetPrice, whatIf, changeWhatIf, staffEffects, changeStaffEffects,
     onPlan, changeOnPlan, horizon, setHorizon, resetAssumptions, changed, anyChanged,
-    lastChange, ghost: shownGhost, delta, cashEnd, paidBackShare,
+    lastChange, ghost: shownGhost, delta, cashEnd, paidBackShare, chain, planWarnings,
     // Play and example futures
     play, playState, playYear, playToken, onYear, exampleIndex, setExampleIndex, showAllFutures, example, exampleNumber, typicalIndex,
     // Engine

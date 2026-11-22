@@ -8,6 +8,8 @@ In the repo this folder sits at `model/`, next to the team's `data/`; the engine
 ```sh
 python test_engine.py        # 41 validation tests
 python test_search.py        # search: brute-force checks on small problems
+python test_limits.py        # spending limits: day-one reserve, loans needed, upgrade budget
+python judge_check.py        # judges' one-command check: today, upgrade, one changed assumption, cash ledger, 200 futures
 ```
 
 ```python
@@ -38,9 +40,17 @@ Timing per swap: `"now"` (default), `"end_of_life"`, or `"year": k` to phase it 
 | `scripted_futures.json` | Futures we control for demos of play mode, e.g. `ventilation_failure`. See "Play through one future". |
 
 ## Flags
-Each flag has a `type` and, except `over_budget`, the first `year` it happens:
-- `over_budget`: up-front spending is above `capex_budget_chf`.
-- `reserve_below_minimum`: the plan leaves less in the reserve than doing nothing would, and below `min_reserve_chf`.
+Each flag has a `type` and the first `year` it happens. Year 0 is today, right after the day-one purchase.
+
+Three money figures for day one come with every result:
+- `purchase_year0`: the full price of the plan's new equipment.
+- `capex_year0`: the extra cost over doing nothing, i.e. above replacing worn-out units like for like.
+- `paid_year0`: everything the reserve pays on day one, replacements due anyway included (`paid_year0_baseline` for doing nothing).
+
+The limits:
+- `over_budget`: `capex_year0` is above `capex_budget_chf`. The budget covers only the extra cost, because worn-out units must be replaced anyway. The flag carries `extra_cost`, `purchase` and `budget`.
+- `reserve_below_minimum`: the plan leaves less in the reserve than doing nothing would, and below `min_reserve_chf`. Checked right after the day-one payment (year 0) and at the end of every year.
+- `needs_financing`: the same test against zero. The reserve can't pay, so the plan needs a loan. It carries the `shortfall`, and `year_without_upgrades` when doing nothing runs the reserve out too.
 - `reserve_below_minimum_without_upgrades`: even doing nothing, like-for-like replacements run the reserve below its minimum. This is context, not a warning about the plan.
 - `desk_shortfall`: more staff than desks (e.g. after the new lab arrives).
 - `ventilation_over_capacity`: more people on a floor than its ventilation supports.
@@ -74,6 +84,8 @@ res["compare"]["Energy plan vs Wait for failures"]   # share of futures where A 
 res["stories"]                     # a bad, typical and good future, in words
 res["samples"]                     # 20 example futures from bad to good: paths per plan, events, old-unit failures
 res["summary"]["Energy plan"]["fan"]["cash_running"]   # fan without the value of equipment left at the end
+res["summary"]["Energy plan"]["payback"]["cash_running"][9]   # 10 years shown: share paid back, p10/p50/p90 payback year,
+                                                       # worked out per future on the chart's basis (None = not by then)
 pool = montecarlo.make_pool()      # worker processes: about 4x faster; the API uses one (same results as serial, tested)
 montecarlo.run(d, plans, pool=pool)
 engine.simulate(d, plan_a, future=res["futures"][42])  # replay any single future
@@ -84,6 +96,12 @@ What varies between futures (parameters in `model_assumptions.csv`, category `fu
 - **What we don't know (epistemic):** the strength of each people effect, drawn once per future from its low / central / high range.
 
 Every future is an ordinary `simulate()` run, so all accounting identities hold in each one. Every plan, and the "do nothing" path inside each run, faces the same futures, so differences come from the decision. Percentiles describe outcomes under these assumed distributions, not known real-world probabilities. A future with no randomness reproduces the deterministic run exactly (tested).
+
+How to read the results:
+- **Draws:** `montecarlo.run` defaults to `n=300` futures and seed 2026. The same seed gives the same futures, so results repeat exactly. `judge_check.py` uses 200 futures.
+- **Distributions:** people-effect strengths are triangular draws between the `low` and `high` of `assumptions.csv`, around the central value. The price path is a log random walk (`price_volatility_per_year`, kept between 0.5x and 3x today's price). Heatwaves, price spikes and the new lab are yes/no draws with the yearly probabilities in `model_assumptions.csv`. Failures follow the Weibull curve above.
+- **P10, P50, P90:** sort the futures from worst to best. P50 is the middle one. P10 is the value that 1 future in 10 falls below. P90 is the value that 1 in 10 beats. The band from P10 to P90 holds the middle 8 of 10 futures.
+- **Not real-world odds:** "chance" and "share of futures" mean a share of our 200 or 300 simulated futures. They come from our assumed distributions, which are estimates. They are not measured probabilities of anything happening in the real building.
 
 Note: in the deterministic run, overdue units are replaced as planned at year 0. In the futures they keep running until they fail, so upgrading now costs the full price rather than only the premium over a like-for-like replacement.
 
@@ -145,7 +163,7 @@ A problem:
 - `constraints`: limits. `max_change_pct` and `min_change_pct` are relative to doing nothing (-20 = at least 20% lower).
 - `locked`: things that stay as they are. `allowed`: the only options a group may use; one option forces it.
 - `per_floor`: choose floor by floor instead of once per group for the whole building.
-- By default a plan may not cause new warnings (over budget, reserve too low, and so on). Warnings doing nothing already has, such as too few desks once the new lab arrives, do not count against a plan. `allow_warnings: true` turns this off.
+- By default a plan may not cause new warnings (over budget, reserve too low on day one or later, needs a loan, and so on). Warnings doing nothing already has, such as too few desks once the new lab arrives, do not count against a plan. `allow_warnings: true` turns this off.
 - The metrics are listed in `METRICS` and at `GET /api/metrics`. Money and energy are yearly averages over the horizon; air quality and comfort are year 1. Every metric comes from `engine.simulate`.
 - Upgrades are bought now. "When it breaks" is not part of the search yet.
 
@@ -207,7 +225,7 @@ A zone is one decision: which option one group has in one place. `lighting@2` is
 
 Goals (`POST /api/search`):
 - `min_cost_for_target`: the cheapest plan whose `metric` reaches `target`, e.g. 10% off the energy bill. `budget` is optional.
-- `max_savings`: the plan with the highest `metric` that costs at most `budget` up front. No budget means no limit. Ties go to the cheaper plan.
+- `max_savings`: the plan with the highest `metric` that costs at most `budget` up front. No budget means no limit. Ties go to the cheaper plan. This `budget` is the caller's limit on the full price (`upfront_cost_chf`), not the building's `capex_budget_chf`, which `over_budget` checks.
 - `min_total_cost`: the lowest purchase plus running cost over `years` (`basis: "chf"`), or the least electricity used (`basis: "kwh"`). `budget` is optional.
 - `custom`: any `objective` (`{"metric", "sense"}`) with any `constraints` (`[{"metric", "min" | "max"}]`).
 

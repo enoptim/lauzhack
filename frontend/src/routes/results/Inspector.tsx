@@ -4,6 +4,7 @@ import { Slider as SliderPrimitive } from 'radix-ui';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import { cn } from '@/lib/utils';
+import AllAssumptions from './AllAssumptions';
 import AnimatedNumber from './AnimatedNumber';
 import { chfShort, pricePerKwh } from './format';
 import { whatIfDetails, whatIfLabels } from './labels';
@@ -237,6 +238,9 @@ export default function Inspector({ m }: { m: ResultsModel }) {
           onChange={value => m.changeOnPlan(value === 'plan')}
           options={[{ value: 'plan', label: 'On a plan' }, { value: 'break', label: 'When it breaks' }]} />
       </Row>
+
+      <Divider />
+      <AllAssumptions items={m.engine.assumptions.data} />
 
       <div className="mt-auto flex shrink-0 flex-wrap items-center gap-x-3 gap-y-2 border-t border-[var(--r-divider)] py-2.5 text-xs text-muted-foreground">
         <span className="flex items-center gap-1.5"><Kbd>Space</Kbd> Play</span>

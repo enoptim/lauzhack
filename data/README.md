@@ -95,3 +95,16 @@ kWh   = units × (power_on_w × on_h × (1 − control_savings_pct/100) + standb
 - About 1.1 GWh of electricity a year (78 kWh/m²), roughly CHF 220k.
 - Largest loads: lighting 24%, servers 24%, heating 19%, ventilation 11%.
 - Ground-floor ventilation supports about 250 people at once.
+
+## Sources and licenses
+
+Data sources (fetched 21 Nov 2026, see `data/raw/`):
+- EPFL plan portal, https://plan.epfl.ch: room outlines of building BC. Used for this hackathon only. Check EPFL's terms before any reuse.
+- Open-Meteo historical weather API, https://open-meteo.com: daily Lausanne temperature, 2015 onward. Data is CC BY 4.0. Attribution: Open-Meteo.com.
+- PVGIS v5.2, European Commission Joint Research Centre, https://re.jrc.ec.europa.eu/pvg_tools: solar yield per kWp at Lausanne (PVGIS-SARAH2, 2005 to 2020). Free to reuse with attribution.
+- Research papers behind the people effects are named in the `source` column of `assumptions.csv` (for example Milton et al. 2000, Seppänen et al. 2006).
+- Everything else is made up or estimated by us. See the `source` column.
+
+Main libraries (licenses as published by each project; check each package for the exact version):
+- Simulation: Python standard library only. API: FastAPI (MIT) and Uvicorn (BSD-3-Clause), from `model/requirements.txt`.
+- 3D app, from `frontend/package.json`: React and React DOM (MIT), Three.js (MIT), React Three Fiber and Drei (MIT), React Router (MIT), Radix UI (MIT), Recharts (MIT), Apache ECharts (Apache-2.0), Tailwind CSS (MIT), Vite (MIT), TypeScript (Apache-2.0), lucide-react (ISC), shadcn (MIT), class-variance-authority, clsx and tailwind-merge (MIT/Apache-2.0), tw-animate-css (MIT).

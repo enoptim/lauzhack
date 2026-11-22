@@ -26,7 +26,8 @@ function LegendKey({ kind, color }: { kind: 'band' | 'line' | 'dashed'; color: s
 
 /**
  * The chart section: money saved compared with doing nothing, year by year, for every plan.
- * The band shows where 8 in 10 futures land. Play tells one future year by year.
+ * The band shows where 8 in 10 futures land in each year (worked out year by year, so its edges are not single futures).
+ * Play tells one future year by year.
  */
 export default function ChartPanel({ m }: { m: ResultsModel }) {
   const color = m.colorOf(m.selected);
@@ -76,8 +77,8 @@ export default function ChartPanel({ m }: { m: ResultsModel }) {
         </div>
         {/* One fixed line under the plot: keys come and go without moving the chart. */}
         <ul aria-label="Legend" className="mt-2 flex h-5 items-center gap-4 overflow-hidden text-xs whitespace-nowrap text-muted-foreground">
-          <li className="flex items-center gap-1.5"><LegendKey kind="band" color={m.example ? '#9a968f' : color} />8 in 10 futures</li>
-          <li className="flex items-center gap-1.5"><LegendKey kind="line" color={color} />{m.example ? 'This future' : 'Middle future'}</li>
+          <li className="flex items-center gap-1.5"><LegendKey kind="band" color={m.example ? '#9a968f' : color} />8 in 10 futures, each year</li>
+          <li className="flex items-center gap-1.5"><LegendKey kind="line" color={color} />{m.example ? 'This future' : 'Middle of all futures'}</li>
           {m.ghost && !m.example && <li className="flex items-center gap-1.5"><LegendKey kind="dashed" color="#9a968f" />Before your change</li>}
           {m.staffEffects && <li className="flex items-center gap-1.5"><LegendKey kind="dashed" color={color} />Staff effects (a guess)</li>}
         </ul>
@@ -111,7 +112,8 @@ export default function ChartPanel({ m }: { m: ResultsModel }) {
           ) : (
             <span className="text-muted-foreground">
               We ran {m.futuresN} possible futures. In each, prices move, heatwaves come and old equipment fails earlier or later.
-              The line is the middle one. Show one future to see what happens in it.
+              The line is the middle result in each year. The band shows where 8 in 10 futures are that year.
+              Neither is one single future: show one to see what happens in it.
             </span>
           )}
         </p>

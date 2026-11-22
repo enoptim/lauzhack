@@ -1,5 +1,5 @@
 # Development commands. Run `make setup` once, then `make dev`.
-.PHONY: setup dev api frontend test
+.PHONY: setup dev api frontend test check
 
 setup:            ## install the API venv and frontend packages
 	python3 -m venv model/.venv
@@ -31,5 +31,8 @@ dev:              ## API and frontend together; Ctrl+C stops both
 	if [ "$${BASH_VERSINFO[0]}$${BASH_VERSINFO[1]}" -ge 43 ]; then wait -n; else wait; fi   # macOS bash 3.2 has no wait -n
 
 test:             ## engine, play mode, optimizer, search and assistant tests
-	cd model && python3 test_engine.py && python3 test_session.py && python3 test_optimize.py && python3 test_search.py
+	cd model && python3 test_engine.py && python3 test_session.py && python3 test_optimize.py && python3 test_search.py && python3 test_payback.py && python3 test_limits.py && python3 test_judge_check.py && .venv/bin/python test_validation.py
 	python3 -m chat.test_agent
+
+check:            ## one-command judge check: today, upgrade, one changed assumption, cash ledger, 200 futures
+	cd model && python3 judge_check.py

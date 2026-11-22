@@ -20,7 +20,11 @@
 
 \reportsection{3D model}
 
-The React and TypeScript frontend uses React Three Fiber to build the Three.js scene from reusable floor, room, and equipment components. Repeated geometry is drawn with instanced meshes to reduce draw calls. Vite imports the same room, inventory, and option CSVs that the Python engine reads. The frontend sends swaps as structured records with an equipment group, an option ID, and, where applicable, a floor.
+We built the 3D viewer with React, Three.js, React Three Fiber, and Drei. We assembled the building in code from reusable
+ components for floors, walls, windows, stairs, furniture, and clickable equipment, and used Drei’s OrbitControls for camera
+ movement. To get the modeling correct, we walked around the building, took photos of different rooms to get the interior of the model correct. We used the floor plan from EPFL's website to get the dimension right and used aerial photos to model the roof. 
+ To keep rendering efficient, we redraw only when the view changes, reuse the sun’s shadows while the camera moves,
+ and batch repeated pieces like window frames so the GPU can draw them together.
 
 \reportsection{AI assistant}
 

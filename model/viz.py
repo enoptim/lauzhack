@@ -34,6 +34,19 @@ def clean(x):
 
 
 # ------------------------------------------------------------------ static catalog
+def equipment_value(data):
+    """What today's equipment is worth: replacement price, less the share of its life already used."""
+    total = 0.0
+    for i in data["items"]:
+        o = data["options"][i["option"]]
+        life = engine._life(o)
+        if life == engine.INF or i["age"] is None:
+            continue
+        price = (o["purchase_chf_per_unit"] or 0) + (o["install_chf_per_unit"] or 0)
+        total += i["units"] * price * max(0.0, 1 - i["age"] / life)
+    return total
+
+
 def catalog(data):
     """Everything the UI needs to build menus and place things."""
     groups = {}
@@ -53,6 +66,7 @@ def catalog(data):
         "events": [{"event_id": e["id"], "name": e["name"], "description": e["description"], "kind": e["kind"],
                     "start_year": e["start_year"], "end_year": e["end_year"]} for e in data["events"].values()],
         "horizon_years": data["params"]["horizon_years"],
+        "equipment_value_chf": equipment_value(data),
         "limits": {k: data["params"][k] for k in ("capex_budget_chf", "opening_reserve_chf", "min_reserve_chf")},
     })
 
@@ -129,14 +143,15 @@ def finance(result):
     years = [{k: y[k] for k in ("year", "cash_cf", "economic_cf", "cumulative_cash_cf", "cumulative_economic_cf",
                                   "cash_closing", "cash_closing_baseline", "capex", "capex_baseline",
                                   "operating_cost", "operating_cost_baseline", "kwh", "kwh_baseline",
-                                  "price_chf_kwh", "staff", "desk_capacity", "residual_value")}
+                                  "price_chf_kwh", "staff", "desk_capacity", "residual_value", "book_value", "net_worth")}
              | {"people_value": y["people_value"], "savings": y["savings"],
                 "comfort_score": y["outcomes"]["comfort_score"], "comfort_score_baseline": y["outcomes_baseline"]["comfort_score"],
                 "meeting_co2_ppm": y["outcomes"]["meeting_co2_ppm"], "meeting_co2_ppm_baseline": y["outcomes_baseline"]["meeting_co2_ppm"]}
              for y in result["years"]]
     return clean({"npv_cash": result["npv_cash"], "npv_economic": result["npv_economic"],
                   "payback_cash": result["payback_cash"], "payback_economic": result["payback_economic"],
-                  "capex_year0": result["capex_year0"], "npv_breakdown": result["npv_breakdown"],
+                  "capex_year0": result["capex_year0"], "purchase_year0": result["purchase_year0"],
+                  "paid_year0": result["paid_year0"], "npv_breakdown": result["npv_breakdown"],
                   "flags": result["flags"], "years": years, "kind": KIND})
 
 

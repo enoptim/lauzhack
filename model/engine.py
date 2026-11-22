@@ -762,6 +762,8 @@ def simulate(data, scenario=None, events_on=(), overrides=None, detail_years=(1,
     cool_ref = ref["thermal"]["cooling_kwh_th"]
     lpp_today = office_air_per_person(data, environment(data, ref_ctx, baseline(data), cool_ref, cool_ref))
     upfront = capex_s[0] - capex_b[0]
+    # The plan's own new equipment paid on day one (purchase and install, after the solar subsidy).
+    purchase = sum(plan_money(data, {iid: plans_s[iid]}, final_s, H, p)[0][0] for iid in choices if iid in plans_s)
     cash_s = p["opening_reserve_chf"] - capex_s[0]
     cash_b = p["opening_reserve_chf"] - capex_b[0]
     npv = {"cash": -upfront, "economic": -upfront}
@@ -770,6 +772,25 @@ def simulate(data, scenario=None, events_on=(), overrides=None, detail_years=(1,
     parts = defaultdict(float)
     parts["capex_and_residual"] = -upfront
     years, flags = [], []
+
+    runs_out_b = []          # the first year doing nothing runs the reserve out, if it does
+
+    def reserve_flags(t, cash_s, cash_b):
+        """Reserve limits after year t's spending (t = 0: right after the day-one purchase). Like-for-like
+        replacements alone can run the reserve low, so a plan is only flagged when it leaves less in the
+        reserve than doing nothing would. Below zero, the reserve can't pay: the plan needs outside money."""
+        low, seen = p["min_reserve_chf"], {f["type"] for f in flags}
+        worse = cash_s < cash_b - 1e-6
+        if cash_s < low and worse and "reserve_below_minimum" not in seen:
+            flags.append({"year": t, "type": "reserve_below_minimum", "reserve": round(cash_s), "minimum": low})
+        if cash_s < 0 and worse and "needs_financing" not in seen:
+            flags.append({"year": t, "type": "needs_financing", "reserve": round(cash_s), "shortfall": round(-cash_s)})
+        if cash_b < 0 and not runs_out_b:
+            runs_out_b.append(t)
+        if cash_b < low and "reserve_below_minimum_without_upgrades" not in seen:
+            flags.append({"year": t, "type": "reserve_below_minimum_without_upgrades", "reserve": round(cash_b), "minimum": low})
+
+    reserve_flags(0, cash_s, cash_b)
 
     for t in range(1, H + 1):
         ctx = year_context(data, t, events_on, overrides)
@@ -808,13 +829,7 @@ def simulate(data, scenario=None, events_on=(), overrides=None, detail_years=(1,
                               "people": round(env["floor_population_peak"][f]), "capacity": round(cap)})
         if ys["desk_shortfall"] > 0:
             flags.append({"year": t, "type": "desk_shortfall", "people": round(ys["desk_shortfall"], 1)})
-        # Like-for-like replacements alone can run the reserve low, so a plan is only flagged
-        # when it leaves less in the reserve than doing nothing would.
-        low = p["min_reserve_chf"]
-        if cash_s < low and cash_s < cash_b - 1e-6 and not any(f["type"] == "reserve_below_minimum" for f in flags):
-            flags.append({"year": t, "type": "reserve_below_minimum", "reserve": round(cash_s), "minimum": low})
-        if cash_b < low and not any(f["type"] == "reserve_below_minimum_without_upgrades" for f in flags):
-            flags.append({"year": t, "type": "reserve_below_minimum_without_upgrades", "reserve": round(cash_b), "minimum": low})
+        reserve_flags(t, cash_s, cash_b)
         row = {"year": t, "cash_cf": cf, "economic_cf": cf_econ, "people_value": pv,
                "savings": saving, "capex": capex_s[t], "capex_baseline": capex_b[t], "residual_value": residual,
                "operating_cost": op_s, "operating_cost_baseline": op_b,
@@ -843,9 +858,17 @@ def simulate(data, scenario=None, events_on=(), overrides=None, detail_years=(1,
     risk = {"emergency_year": first_failure(plans_s), "emergency_year_baseline": first_failure(plans_b),
             "emergency_chf": failure_chf(plans_s, final_s), "emergency_chf_baseline": failure_chf(plans_b, baseline(data))}
 
+    for f in flags:
+        if f["type"] == "needs_financing":
+            f["year_without_upgrades"] = runs_out_b[0] if runs_out_b else None
+    # The upgrade budget applies to the extra cost over doing nothing (`upfront`), not the full price:
+    # worn-out units must be replaced like for like anyway, from the reserve, so only the part above that is
+    # an upgrade decision. The full day-one outflow is still checked, against the reserve (year-0 flags above).
     if upfront > p["capex_budget_chf"]:
-        flags.append({"year": 0, "type": "over_budget", "capex": round(upfront), "budget": p["capex_budget_chf"]})
+        flags.append({"year": 0, "type": "over_budget", "capex": round(upfront), "extra_cost": round(upfront),
+                      "purchase": round(purchase), "budget": p["capex_budget_chf"]})
     return {"choices": choices, "events": list(events_on), "capex_year0": upfront,
+            "purchase_year0": purchase, "paid_year0": capex_s[0], "paid_year0_baseline": capex_b[0],
             "npv_cash": npv["cash"], "npv_economic": npv["economic"],
             "payback_cash": payback(cums["cash"]), "payback_economic": payback(cums["economic"]),
             "npv_breakdown": dict(parts), "years": years, "flags": flags, "risk": risk,

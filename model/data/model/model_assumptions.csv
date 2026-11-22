@@ -1,13 +1,13 @@
 key,value,low,high,unit,category,description,source
-discount_rate_real,0.03,0.02,0.05,fraction/yr,financial,Real discount rate,placeholder until data team adds it
-horizon_years,15,15,15,years,financial,Analysis horizon,placeholder until data team adds it
-capex_budget_chf,1500000,1000000,2000000,CHF,financial,Upfront upgrade budget for facilities,placeholder until data team adds it
-opening_reserve_chf,3000000,3000000,3000000,CHF,financial,Building reserve the upgrades are paid from,placeholder until data team adds it
-min_reserve_chf,1000000,1000000,1000000,CHF,financial,Reserve must not fall below this,placeholder until data team adds it
-other_operating_cf_chf_year,600000,600000,600000,CHF/yr,financial,Yearly building budget inflow besides energy,placeholder until data team adds it
-pv_self_consumption_share,0.85,0.7,0.95,share,solar,Share of solar output used on site,placeholder until data team adds it
-pv_max_kwp_with_rooftop_hp,250,250,250,kWp,solar,Roof space for PV with today's rooftop heat-pump units,placeholder until data team adds it
-pv_max_kwp_without_rooftop_hp,350,300,400,kWp,solar,Roof space for PV if the lake-water heat pump frees the roof,placeholder until data team adds it
+discount_rate_real,0.03,0.02,0.05,fraction/yr,financial,Real discount rate,overridden by data/assumptions.csv
+horizon_years,15,15,15,years,financial,Analysis horizon,overridden by data/assumptions.csv
+capex_budget_chf,1500000,1000000,2500000,CHF,financial,Upfront upgrade budget for facilities,overridden by data/assumptions.csv
+opening_reserve_chf,2500000,2000000,3500000,CHF,financial,Building reserve the upgrades are paid from,overridden by data/assumptions.csv
+min_reserve_chf,1000000,500000,1500000,CHF,financial,Reserve must not fall below this,overridden by data/assumptions.csv
+other_operating_cf_chf_year,600000,500000,700000,CHF/yr,financial,Yearly building budget inflow besides energy,overridden by data/assumptions.csv
+pv_self_consumption_share,0.85,0.7,0.95,share,solar,Share of solar output used on site,overridden by data/assumptions.csv
+pv_max_kwp_with_rooftop_hp,250,250,250,kWp,solar,Roof space for PV with today's rooftop heat-pump units,our estimate
+pv_max_kwp_without_rooftop_hp,350,300,400,kWp,solar,Roof space for PV if the lake-water heat pump frees the roof,our estimate
 ventilation_share_of_heating,0.4,0.3,0.5,share,physics,Share of heating demand that is ventilation heat loss (at 50% heat recovery),model estimate
 solar_share_of_cooling,0.4,0.3,0.5,share,physics,Share of cooling demand from sun through windows (with today's blinds),model estimate
 internal_gain_heating_offset,0.8,0.5,1.0,share,physics,Share of lost internal gains that heating must replace in heating season,model estimate
