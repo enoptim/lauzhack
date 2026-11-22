@@ -198,7 +198,20 @@ def _life(o):
     return o["lifetime_years"] if o["lifetime_years"] else INF
 
 
-def item_plan(data, item, choice, horizon, remaining=None):
+# Big systems a manager replaces on a plan (policy `replace_on_plan` = 1); small items always run until they fail.
+PLANNED_GROUPS = {"ventilation", "heating_cooling", "water_heater", "servers"}
+
+
+def planned_swap(data, item, remaining, on_plan):
+    """Futures with the 'on a plan' policy: a big system still running in the year its normal life ends
+    is replaced then, at the normal price. True if that happens in this future."""
+    if not on_plan or remaining is None or item["group"] not in PLANNED_GROUPS:
+        return False
+    nominal = max(0.0, _life(data["options"][item["option"]]) - (item["age"] or 0))
+    return math.ceil(remaining) >= math.ceil(nominal)
+
+
+def item_plan(data, item, choice, horizon, remaining=None, on_plan=False):
     """Install timeline [(time, option, kind)].
 
     Current units are replaced like-for-like when they die; an upgrade goes in now or when the
@@ -207,6 +220,9 @@ def item_plan(data, item, choice, horizon, remaining=None):
     life); then the original unit's death is a surprise failure (kind "failure", which costs the
     emergency premium), while later replacements of new units are planned."""
     cur = data["options"][item["option"]]
+    phased = bool(choice) and isinstance(choice[1], int)
+    if not phased and planned_swap(data, item, remaining, on_plan):
+        remaining = None            # replaced on plan: the same timeline as the fixed run
     random_failure = remaining is not None
     if remaining is None:
         remaining = max(0.0, _life(cur) - (item["age"] or 0)) if _life(cur) != INF else INF
@@ -565,7 +581,8 @@ def people_value(out_s, out_b, ctx):
 
 
 # ---------------------------------------------------------------- layer 4: money
-def plan_money(data, plans, sel_final, horizon, params=None):
+def plan_money(data, plans, sel_final, horizon, params=None, only=None):
+    """Equipment spending per year, and the assets it buys. `only` = an install kind ("failure"): count just those."""
     p = params or data["params"]
     capex = [0.0] * (horizon + 1)
     assets = []
@@ -579,7 +596,8 @@ def plan_money(data, plans, sel_final, horizon, params=None):
                 cost *= 1 + p.get("failure_premium", 0)
             if item["group"] == "solar_pv" and oid != item["option"]:
                 cost -= u * p["pv_subsidy_chf_per_kwp"]
-            capex[t] += cost
+            if only is None or kind == only:
+                capex[t] += cost
             retire = installs[k + 1][0] if k + 1 < len(installs) else INF
             assets.append((t, cost, _life(o), min(t + _life(o), retire)))
     return capex, assets
@@ -612,7 +630,7 @@ def _year_state(data, ctx, sel, ref):
     key = (id(data), tuple(sel.values()), ctx["staff"], ctx["cooling_mult"], ctx["heating_mult"],
            tuple(sorted(ctx["params"].items())), ref["internal_gains_kwh"])
     if key not in _MEMO:
-        if len(_MEMO) > 20000:
+        if len(_MEMO) > 500:     # futures rarely repeat a state; a big cache only costs memory (about 0.3 MB each)
             _MEMO.clear()
         _MEMO[key] = _physical_state(data, ctx, sel, ref)
     st = _MEMO[key]
@@ -648,8 +666,9 @@ def simulate(data, scenario=None, events_on=(), overrides=None, detail_years=(1,
     r = p["discount_rate_real"]
     choices = resolve(data, scenario)
     rem = (future or {}).get("remaining_life") or {}
-    plans_b = {i["id"]: item_plan(data, i, None, H, rem.get(i["id"])) for i in data["items"]}
-    plans_s = {i["id"]: item_plan(data, i, choices.get(i["id"]), H, rem.get(i["id"])) for i in data["items"]}
+    on_plan = bool(p.get("replace_on_plan", 0))
+    plans_b = {i["id"]: item_plan(data, i, None, H, rem.get(i["id"]), on_plan) for i in data["items"]}
+    plans_s = {i["id"]: item_plan(data, i, choices.get(i["id"]), H, rem.get(i["id"]), on_plan) for i in data["items"]}
     final_s = {i["id"]: (plans_s[i["id"]][-1][1] if plans_s[i["id"]] else i["option"]) for i in data["items"]}
     final_s.update({iid: c[0] for iid, c in choices.items()})
     capex_b, assets_b = plan_money(data, plans_b, baseline(data), H, p)
@@ -728,12 +747,25 @@ def simulate(data, scenario=None, events_on=(), overrides=None, detail_years=(1,
             row["selection"], row["selection_baseline"] = sel_s, sel_b
         years.append(row)
 
+    # Emergencies of the equipment this plan touches: first year and total cost, with the plan and doing nothing.
+    touched = [iid for iid in choices if iid in plans_s]
+
+    def first_failure(plans):
+        years_ = [t for iid in touched for t, _, kind in plans[iid] if kind == "failure"]
+        return min(years_) if years_ else None
+
+    def failure_chf(plans, sel):
+        return sum(plan_money(data, {iid: plans[iid] for iid in touched}, sel, H, p, only="failure")[0])
+
+    risk = {"emergency_year": first_failure(plans_s), "emergency_year_baseline": first_failure(plans_b),
+            "emergency_chf": failure_chf(plans_s, final_s), "emergency_chf_baseline": failure_chf(plans_b, baseline(data))}
+
     if upfront > p["capex_budget_chf"]:
         flags.append({"year": 0, "type": "over_budget", "capex": round(upfront), "budget": p["capex_budget_chf"]})
     return {"choices": choices, "events": list(events_on), "capex_year0": upfront,
             "npv_cash": npv["cash"], "npv_economic": npv["economic"],
             "payback_cash": payback(cums["cash"]), "payback_economic": payback(cums["economic"]),
-            "npv_breakdown": dict(parts), "years": years, "flags": flags,
+            "npv_breakdown": dict(parts), "years": years, "flags": flags, "risk": risk,
             "plans": {k: v for k, v in plans_s.items() if v != plans_b[k]}}
 
 

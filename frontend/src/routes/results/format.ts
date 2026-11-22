@@ -26,3 +26,14 @@ export function years(value: number | null): string {
 export function pricePerKwh(value: number): string {
   return `CHF ${value.toFixed(2)} / kWh`;
 }
+
+/** A share of futures in plain words: "no future", "3 in 10 futures", "every future". */
+export function chances(share: number, n: number): string {
+  const k = Math.round(share * n);
+  if (k === 0) return 'no future';
+  if (k === n) return 'every future';
+  const tenths = Math.round(share * 10);
+  if (tenths === 0) return 'fewer than 1 in 10 futures';
+  if (tenths === 10) return 'more than 9 in 10 futures';
+  return `${tenths} in 10 futures`;
+}

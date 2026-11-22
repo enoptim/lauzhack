@@ -36,6 +36,15 @@ Date: 2026-11-21. Casper models the building we're sitting in. Tom Watts is its 
 
 Date: 2026-11-21. The loan's only stated benefit is a one-time bonus of CHF 2,000, and it isn't for public buildings like ours. Instead, the 5-minute pitch ends with one sentence: "For UBS, the same twin shows which buildings an upgrade could make green enough for green lending."
 
+## D9: The Results chart shows the range of possible futures
+
+Date: 2026-11-21.
+- The chart shows money saved compared with doing nothing, for 1 to 6 plans.
+- The line is the middle of 200 possible futures. A pale band shows where 8 in 10 futures land.
+- "Show one possible future" replays one real future, with its own story.
+- In the futures, old equipment fails on a wear-out curve, counted from its age today. It no longer dies exactly at the end of its normal life.
+- The single fixed run (no chance) stays in the engine for the optimizer, the assistant and hand checks.
+
 ## Open questions (remove when answered)
 
 - Which upgrade Tom makes in the demo.
