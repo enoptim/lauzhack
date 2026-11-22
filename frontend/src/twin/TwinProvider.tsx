@@ -47,6 +47,8 @@ type Twin = {
   /** Keeps an assistant plan as one of the plans (once) and makes it the plan being edited. */
   /** id is null when all six places hold plans you made or edited: nothing is replaced without asking. */
   keepPlan: (turnId: string, plan: ChatScenario, name: string) => { id: number | null; plans: Plan[] };
+  /** Explore: keeps a played path as a plan, or updates the plan it was kept as. null when six plans leave no room. */
+  savePath: (name: string, scenario: Scenario, id?: number | null) => number | null;
 
   focus: Focus | null;
   setFocus: (focus: Focus | null) => void;
@@ -174,6 +176,26 @@ export function TwinProvider({ children }: { children: ReactNode }) {
     savePlans(previous => previous.map(plan => plan.id === id ? { ...plan, scenario, edited: plan.source === 'assistant' || plan.edited } : plan));
   }, [savePlans]);
 
+  const savePath = useCallback((name: string, scenario: Scenario, id?: number | null) => {
+    const current = live.current.plans;
+    if (id != null && current.some(plan => plan.id === id)) {
+      savePlans(previous => previous.map(plan => plan.id === id ? { ...plan, scenario } : plan));
+      return id;
+    }
+    // An untouched first plan is just today's building: the path takes its place.
+    if (current.length === 1 && current[0].scenario.length === 0 && current[0].source === 'you') {
+      const only = current[0].id;
+      savePlans(previous => previous.map(plan => plan.id === only ? { ...plan, name, scenario } : plan));
+      setActiveId(only);
+      return only;
+    }
+    if (current.length >= MAX_PLANS) return null;
+    const next = current.reduce((last, plan) => Math.max(last, plan.id), 0) + 1;
+    savePlans(previous => [...previous, { id: next, name, scenario, source: 'you', color: freeColor(previous) }]);
+    setActiveId(next);
+    return next;
+  }, [savePlans]);
+
   const keepPlan = useCallback((turnId: string, chat: ChatScenario, name: string) => {
     // Worked out from the latest plans; the same rule runs again inside the state update, so nothing queued is lost.
     const place = (previous: Plan[], id: number): Plan[] => {
@@ -292,9 +314,9 @@ export function TwinProvider({ children }: { children: ReactNode }) {
   const newChat = useCallback(() => setTurns([]), []);
 
   const value = useMemo<Twin>(() => ({
-    catalog, plans, activePlan, storageError, setActivePlan: setActiveId, createPlan, removePlan, removePlans, undoRemoval, renamePlan, setScenario, keepPlan,
+    catalog, plans, activePlan, storageError, setActivePlan: setActiveId, createPlan, removePlan, removePlans, undoRemoval, renamePlan, setScenario, keepPlan, savePath,
     focus, setFocus, assistantOpen, setAssistantOpen, unread, turns, pending, send, newChat,
-  }), [catalog, plans, activePlan, storageError, createPlan, removePlan, removePlans, undoRemoval, renamePlan, setScenario, keepPlan,
+  }), [catalog, plans, activePlan, storageError, createPlan, removePlan, removePlans, undoRemoval, renamePlan, setScenario, keepPlan, savePath,
     focus, assistantOpen, setAssistantOpen, unread, turns, pending, send, newChat]);
 
   return <TwinContext.Provider value={value}>{children}</TwinContext.Provider>;

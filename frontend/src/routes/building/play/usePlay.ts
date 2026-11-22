@@ -1,10 +1,32 @@
 // Play mode's state: one game from the API (model/session.py), shared by the 3D view and the play panel.
 import { useEffect, useState } from 'react';
 import { api } from '@/api/client';
-import type { Catalog, PlaySwap, SessionState } from '@/api/types';
+import type { Catalog, PauseReason, PlaySwap, Scenario, SessionState } from '@/api/types';
 
 export const DEMO_FUTURE = 'ventilation_failure';
 const STORAGE_KEY = 'play-session-id';
+
+/** Each stop so far: when, and what happened. Kept here because the API only sends the current stop. */
+export type Stop = { t: number; reasons: Pick<PauseReason, 'type' | 'title'>[] };
+type Memory = { stops: Stop[]; planId: number | null; planName: string | null };
+const memoryKey = (id: string) => `play-memory:${id}`;
+
+function readMemory(id: string): Memory {
+  try {
+    const saved = JSON.parse(sessionStorage.getItem(memoryKey(id)) ?? 'null');
+    if (saved && Array.isArray(saved.stops)) return saved;
+  } catch { /* no storage */ }
+  return { stops: [], planId: null, planName: null };
+}
+
+function writeMemory(id: string, memory: Memory) {
+  try { sessionStorage.setItem(memoryKey(id), JSON.stringify(memory)); } catch { /* no storage */ }
+}
+
+/** A plan's changes as play decisions: undated ones happen today. */
+function toPlay(scenario: Scenario): PlaySwap[] {
+  return scenario.map(({ timing: _timing, year, ...swap }) => ({ ...swap, year: year ?? 'now' }));
+}
 
 export type PlayBusy = null | 'start' | 'next' | 'change';
 
@@ -30,6 +52,17 @@ export function usePlay(active: boolean) {
   const [busy, setBusy] = useState<PlayBusy>(null);
   const [error, setError] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
+  const [memory, setMemory] = useState<Memory>({ stops: [], planId: null, planName: null });
+
+  function rememberStops(next: SessionState, base?: Memory) {
+    const old = base ?? (memory && state?.session_id === next.session_id ? memory : readMemory(next.session_id));
+    const stops = next.reasons.length && !old.stops.some(stop => stop.t === next.t)
+      ? [...old.stops, { t: next.t, reasons: next.reasons.map(({ type, title }) => ({ type, title })) }]
+      : old.stops;
+    const updated = { ...old, stops };
+    setMemory(updated);
+    writeMemory(next.session_id, updated);
+  }
 
   useEffect(() => {
     if (!active || loaded) return;
@@ -37,7 +70,7 @@ export function usePlay(active: boolean) {
     api.catalog().then(setCatalog).catch(() => undefined);
     let saved: string | null = null;
     try { saved = sessionStorage.getItem(STORAGE_KEY); } catch { /* no storage */ }
-    if (saved) api.session(saved).then(setState).catch(() => remember(null));
+    if (saved) api.session(saved).then(next => { setState(next); rememberStops(next, readMemory(next.session_id)); }).catch(() => remember(null));
   }, [active, loaded]);
 
   async function run(kind: Exclude<PlayBusy, null>, call: () => Promise<SessionState>) {
@@ -47,6 +80,7 @@ export function usePlay(active: boolean) {
       const next = await call();
       setState(next);
       remember(next.session_id);
+      rememberStops(next, kind === 'start' ? { stops: [], planId: null, planName: null } : undefined);
     } catch (e) {
       setError(errorText(e));
       if (String(e).includes(' 404 ')) { setState(null); remember(null); }
@@ -58,12 +92,27 @@ export function usePlay(active: boolean) {
   const id = state?.session_id ?? '';
   return {
     state, catalog, busy, error,
-    start: (future: string | { seed: number }, years?: number) => run('start', () => api.sessionStart(future, years)),
+    stops: memory.stops,
+    /** The plan this path is kept as, once kept. */
+    planId: memory.planId,
+    planName: memory.planName,
+    linkPlan: (planId: number | null, planName: string | null) => {
+      if (!state) return;
+      const updated = { ...memory, planId, planName };
+      setMemory(updated);
+      writeMemory(state.session_id, updated);
+    },
+    /** Starts a new future; with a plan, its changes are already decided (they can still change at each stop). */
+    start: (future: string | { seed: number }, years?: number, scenario?: Scenario) => run('start', async () => {
+      const started = await api.sessionStart(future, years);
+      const fits = (scenario ?? []).filter(swap => (swap.year ?? 0) < started.horizon);
+      return fits.length ? api.sessionPlan(started.session_id, toPlay(fits)) : started;
+    }),
     next: () => run('next', () => api.sessionNext(id)),
     decide: (swaps: PlaySwap[]) => run('change', () => api.sessionDecide(id, swaps)),
     removePlanned: (index: number) => run('change', () =>
       api.sessionPlan(id, (state?.plan.planned ?? []).filter((_, k) => k !== index))),
-    restart: () => { setState(null); remember(null); setError(null); },
+    restart: () => { setState(null); remember(null); setError(null); setMemory({ stops: [], planId: null, planName: null }); },
   };
 }
 

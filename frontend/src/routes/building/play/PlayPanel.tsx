@@ -1,25 +1,21 @@
-// The right-hand panel in Play: start a game, then the year, what happened, what you can do, and your plan.
-// It uses the plan inspector's frame (header row, scrolling body, footer button), so Play feels like the same building.
-import { ArrowRight, Lock, RotateCcw, TriangleAlert, X } from 'lucide-react';
-import { useState, type ReactNode } from 'react';
-import { useNavigate } from 'react-router';
-import type { SessionState, SessionSwap } from '@/api/types';
+// The right-hand panel in Explore: change equipment now, and your path so far (kept as a plan if you like).
+// What happened at each stop shows in a card over the building; the year and numbers in the strip above it.
+import { ArrowRight, BookmarkPlus, Lock, RotateCcw, TriangleAlert, X } from 'lucide-react';
+import type { ReactNode } from 'react';
+import type { SessionSwap } from '@/api/types';
 import { Alert, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Spinner } from '@/components/ui/spinner';
 import { FLOOR_COUNT } from '@/data/building';
 import { cn } from '@/lib/utils';
-import { PLAN_COLORS } from '@/twin/plans';
 import { levelName } from '../PlanPins';
 import ChangeNow from './ChangeNow';
-import { chf, chfShort, gained, groupLabels, mwh, optionName, signedChf, whenLabel, whereLabel } from './format';
-import PlayChart from './PlayChart';
-import { DEMO_FUTURE, type Play } from './usePlay';
-import WhatHappened from './WhatHappened';
+import { groupLabels, optionName, whenLabel, whereLabel } from './format';
+import type { PathPlan } from './usePathPlan';
+import type { Play } from './usePlay';
 
 const levels: (number | null)[] = [null, ...Array.from({ length: FLOOR_COUNT + 1 }, (_, index) => FLOOR_COUNT - 1 - index)];
 const shortLevel = (level: number | null) => level === null ? 'All' : level === 0 ? 'G' : level === -1 ? 'B' : String(level);
-const LENGTHS = [5, 10, 15] as const;
 
 /** Equipment you can change from each view. The whole-building view offers everything, for the whole building. */
 function viewGroups(floor: number | null): string[] {
@@ -50,39 +46,7 @@ function Segments<T extends string | number | null>({ label, options, value, onC
   );
 }
 
-function YearBar({ t, horizon }: { t: number; horizon: number }) {
-  return (
-    <ol className="flex shrink-0 gap-0.5" aria-label={`Year ${t} of ${horizon}`}>
-      {Array.from({ length: horizon }, (_, k) => k + 1).map(year => (
-        <li key={year} title={`Year ${year}`} className={cn('h-1.5 flex-1 rounded-full', year <= t ? 'bg-primary' : 'bg-muted')} />
-      ))}
-    </ol>
-  );
-}
-
-/** Three numbers for the year just ended, the same way "The building today" shows them. */
-function Numbers({ state }: { state: SessionState }) {
-  const row = state.history.at(-1);
-  if (!row) return null;
-  const change = row.kwh_baseline ? (row.kwh / row.kwh_baseline - 1) * 100 : 0;
-  const items: [string, string, string][] = [
-    ['Money vs doing nothing', signedChf(gained(row)), 'So far, purchases included'],
-    [`Electricity, year ${row.year}`, mwh(row.kwh), Math.abs(change) < 0.5 ? 'Same as doing nothing' : `${change < 0 ? '' : '+'}${change.toFixed(0)}% vs doing nothing`],
-    ['Savings reserve', chfShort(row.cash_closing), `Doing nothing: ${chfShort(row.cash_closing_baseline)}`],
-  ];
-  return (
-    <dl className="flex shrink-0 flex-col divide-y text-sm">
-      {items.map(([label, value, note]) => (
-        <div key={label} className="flex items-baseline justify-between gap-3 py-2 first:pt-0">
-          <dt className="flex flex-col"><span className="text-muted-foreground">{label}</span><span className="text-xs text-muted-foreground">{note}</span></dt>
-          <dd className="font-semibold tabular-nums">{value}</dd>
-        </div>
-      ))}
-    </dl>
-  );
-}
-
-function PlanList({ play }: { play: Play }) {
+function PlanList({ play, path }: { play: Play; path: PathPlan }) {
   const { state, catalog, busy } = play;
   if (!state) return null;
   const row = (swap: SessionSwap, action: ReactNode, key: string) => (
@@ -96,7 +60,20 @@ function PlanList({ play }: { play: Play }) {
   );
   return (
     <section aria-labelledby="game-plan-heading" className="flex shrink-0 flex-col gap-2">
-      <h2 id="game-plan-heading" className="text-sm font-semibold">Your plan</h2>
+      <div className="flex h-8 items-center justify-between gap-2">
+        <h2 id="game-plan-heading" className="text-sm font-semibold">Your path</h2>
+        {path.plan ? (
+          <span className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
+            <span className="size-2 shrink-0 rounded-[3px]" style={{ background: path.plan.color }} />
+            <span className="truncate">Kept as {path.plan.name}</span>
+          </span>
+        ) : path.canSave && (
+          <Button size="xs" variant="outline" disabled={path.full} onClick={path.save} title={path.full ? 'Six plans already: remove one in Results first.' : undefined}>
+            <BookmarkPlus data-icon="inline-start" /> Keep as a plan
+          </Button>
+        )}
+      </div>
+      {path.plan && <p className="-mt-1 text-xs text-muted-foreground">Every move you make updates this plan in Building and Results.</p>}
       {state.plan.done.length + state.plan.planned.length === 0 ? (
         <p className="text-xs text-muted-foreground">No changes yet. Click equipment in 3D, or pick it above.</p>
       ) : (
@@ -111,129 +88,66 @@ function PlanList({ play }: { play: Play }) {
   );
 }
 
-function End({ state }: { state: SessionState }) {
-  const r = state.result;
-  const last = state.history.at(-1);
-  if (!r || !last) return null;
-  return (
-    <section className="flex shrink-0 flex-col gap-1 rounded-lg border bg-card p-4">
-      <h2 className="text-sm font-semibold">{state.horizon} years done</h2>
-      <p className="text-3xl font-semibold tracking-tight tabular-nums">{signedChf(gained(last))}</p>
-      <p className="text-xs text-pretty text-muted-foreground">
-        Gained compared with doing nothing in the same {state.horizon} years, after paying for your changes.
-        {Math.abs(last.residual_value ?? 0) >= 1000 && ` Your new equipment is still worth ${chfShort(last.residual_value)} on top.`}
-        {' '}Reserve at the end: {chf(r.reserve_at_end)} (doing nothing: {chf(r.reserve_at_end_doing_nothing)}).
-      </p>
-    </section>
-  );
-}
-
 type Props = {
   play: Play;
+  path: PathPlan;
   floor: number | null;
   onFloorChange: (floor: number | null) => void;
   selectedGroup: string | null;
   onSelectGroup: (group: string | null) => void;
 };
 
-export default function PlayPanel({ play, floor, onFloorChange, selectedGroup, onSelectGroup }: Props) {
+/** The right-hand panel while a run is on: change anything now, your path so far, and the button that moves time on. */
+export default function PlayPanel({ play, path, floor, onFloorChange, selectedGroup, onSelectGroup }: Props) {
   const { state, catalog, busy, error } = play;
-  const navigate = useNavigate();
-  const [years, setYears] = useState<(typeof LENGTHS)[number]>(10);
-  function start() {
-    // Every run draws a new future. ?story=demo plays the fixed demo story instead (handy to rehearse).
-    const demo = new URLSearchParams(window.location.search).get('story') === 'demo';
-    play.start(demo ? DEMO_FUTURE : { seed: Math.floor(Math.random() * 1e4) }, years);
-  }
-
-  /** Results, with the game as a plan and the future it played shown first. */
-  function seeHowYouDid() {
-    if (!state) return;
-    const config = { plans: [{ name: 'Your path', scenario: state.decisions, color: PLAN_COLORS[0] }], selected: 0,
-                     events: [], game: state.session_id, horizon: state.horizon };
-    navigate(`/results?config=${encodeURIComponent(JSON.stringify(config))}`, { state: { intro: true } });
-  }
-
-  const title = !state ? 'Explore the next years' : state.ended ? 'The end' : state.t === 0 ? 'Today' : `End of year ${state.t}`;
-  // Which future this is: "Future 4821" for a drawn one, so people can see each run is new.
-  const seed = /seed (\d+)/.exec(state?.future ?? '')?.[1];
-  const which = !state ? null : seed ? `Future ${seed}` : 'Demo story';
-
+  if (!state) return null;
   return (
-    <aside aria-label="Explore" className="flex min-h-0 min-w-0 flex-col border-t bg-background md:border-t-0 md:border-l">
-      <div className="flex h-12 shrink-0 items-center justify-between gap-2 border-b px-4">
-        <h2 className="text-sm font-semibold">
-          {title}{state && !state.ended && <span className="font-normal text-muted-foreground"> of {state.horizon}</span>}
-          {which && <span className="font-normal text-muted-foreground"> · {which}</span>}
-        </h2>
-        {state && (
-          <button type="button" onClick={play.restart} className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
-            <RotateCcw aria-hidden="true" className="size-3.5" /> Start over
-          </button>
-        )}
+    <aside aria-label="Explore" className="flex min-h-0 min-w-0 flex-col border-t border-[var(--r-line)] bg-[var(--r-panel)] md:border-t-0 md:border-l">
+      <div className="flex h-12 shrink-0 items-center justify-between gap-2 border-b border-[var(--r-divider)] px-5">
+        <h2 className="text-sm font-semibold">{state.ended ? 'Done' : 'Your moves'}</h2>
+        <Button variant="ghost" size="xs" className="text-muted-foreground hover:text-foreground" onClick={play.restart}>
+          <RotateCcw data-icon="inline-start" /> Start over
+        </Button>
       </div>
 
-      <div className="flex min-h-0 flex-1 flex-col gap-4 p-4 pb-8 md:overflow-y-auto md:[mask-image:linear-gradient(to_bottom,black_calc(100%-1.5rem),transparent)] md:overscroll-contain md:[scrollbar-gutter:stable]">
+      <div className="flex min-h-0 flex-1 flex-col gap-6 p-5 pb-8 md:overflow-y-auto md:overscroll-contain md:[scrollbar-gutter:stable]">
         {error && <Alert variant="destructive"><TriangleAlert /><AlertTitle>{error}</AlertTitle></Alert>}
-        {!state ? (
-          <>
-            <p className="text-sm text-pretty text-muted-foreground">
-              Live through the building’s next years. Your plan runs until something important happens, like a big
-              breakdown, news or a price shock. Then you decide. What has happened can’t be undone. At the end you see how
-              your choices did, against doing nothing and against 200 other possible futures.
-            </p>
-            <section className="flex flex-col gap-2">
-              <h3 className="text-sm font-semibold">How long</h3>
-              <Segments label="How long" options={LENGTHS} value={years} onChange={setYears} text={y => `${y} years`} />
-            </section>
-            <p className="text-xs text-pretty text-muted-foreground">
-              Each run draws a new future: prices, events and breakdowns, drawn the same way as the 200 futures in Results.
-            </p>
-          </>
-        ) : (
-          <>
-            <YearBar t={state.t} horizon={state.horizon} />
-            {state.ended && <End state={state} />}
-            <Numbers state={state} />
-            {state.history.length > 0 && (
-              <PlayChart history={state.history} horizon={state.horizon} now={state.t} ended={state.ended} className="h-36 shrink-0" />
-            )}
-            {!state.ended && <WhatHappened state={state} catalog={catalog} busy={busy !== null} onDecide={play.decide} />}
-            {!state.ended && (selectedGroup ? (
-              <ChangeNow key={`${selectedGroup}|${floor}`} state={state} catalog={catalog} group={selectedGroup} floor={floor}
-                busy={busy !== null} onDecide={play.decide} onClose={() => onSelectGroup(null)} />
-            ) : (
-              <section aria-labelledby="change-heading" className="flex shrink-0 flex-col gap-2">
-                <h2 id="change-heading" className="text-sm font-semibold">Change something now</h2>
-                <Segments label="Floor" options={levels} value={floor} onChange={onFloorChange} text={shortLevel} />
-                <div className="flex flex-wrap gap-1.5">
-                  {viewGroups(floor).map(group => (
-                    <Button key={group} size="sm" variant="outline" onClick={() => onSelectGroup(group)}>{groupLabels[group]}</Button>
-                  ))}
-                </div>
-                <p className="text-xs text-muted-foreground">{levelName(floor)}. Or click an outlined part in 3D.</p>
-              </section>
-            ))}
-            <PlanList play={play} />
-          </>
+        {!state.ended && state.t === 0 && state.reasons.length === 0 && (
+          <p className="rounded-lg border border-dashed border-[var(--r-line)] p-3 text-sm text-pretty text-muted-foreground">
+            Make changes today if you like, then press <span className="font-medium text-foreground">Start the clock</span>.
+            The years run until something happens.
+          </p>
         )}
+        {!state.ended && (selectedGroup ? (
+          <ChangeNow key={`${selectedGroup}|${floor}`} state={state} catalog={catalog} group={selectedGroup} floor={floor}
+            busy={busy !== null} onDecide={play.decide} onClose={() => onSelectGroup(null)} />
+        ) : (
+          <section aria-labelledby="change-heading" className="flex shrink-0 flex-col gap-3">
+            <h2 id="change-heading" className="text-sm font-semibold">Change something now</h2>
+            <Segments label="Floor" options={levels} value={floor} onChange={onFloorChange} text={shortLevel} />
+            <div className="grid grid-cols-2 gap-1.5">
+              {viewGroups(floor).map(group => (
+                <Button key={group} variant="outline" className="justify-start bg-card" onClick={() => onSelectGroup(group)}>{groupLabels[group]}</Button>
+              ))}
+            </div>
+            <p className="text-xs text-muted-foreground">{levelName(floor)}. Or click an outlined part in 3D.</p>
+          </section>
+        ))}
+        <PlanList play={play} path={path} />
       </div>
 
-      <footer className="flex shrink-0 flex-col gap-2 border-t bg-background px-4 py-3.5">
-        {!state ? (
-          <Button size="lg" className="w-full justify-between" disabled={busy !== null} onClick={start}>
-            Start exploring
-            {busy === 'start' ? <Spinner data-icon="inline-end" /> : <ArrowRight data-icon="inline-end" />}
-          </Button>
-        ) : state.ended ? (
-          <Button size="lg" className="w-full justify-between" onClick={seeHowYouDid}>
-            See how you did
-            <ArrowRight data-icon="inline-end" />
+      <footer className="flex shrink-0 flex-col gap-2 border-t border-[var(--r-divider)] px-5 py-4">
+        {state.ended ? (
+          <Button size="lg" className="h-11 w-full justify-between text-base" onClick={path.seeResults}>
+            See it across 200 futures <ArrowRight data-icon="inline-end" />
           </Button>
         ) : (
-          <Button size="lg" className="w-full justify-between" disabled={busy !== null} onClick={play.next}>
+          <Button size="lg" className="h-11 w-full justify-between text-base" disabled={busy !== null} onClick={play.next}>
             {state.t === 0 ? 'Start the clock' : 'Continue'}
-            {busy === 'next' ? <Spinner data-icon="inline-end" /> : <ArrowRight data-icon="inline-end" />}
+            <span className="flex items-center gap-2">
+              <kbd className="grid h-5 place-items-center rounded border border-white/30 px-1.5 font-mono text-[11px] text-primary-foreground/80">Space</kbd>
+              {busy === 'next' ? <Spinner /> : <ArrowRight />}
+            </span>
           </Button>
         )}
       </footer>

@@ -8,8 +8,12 @@ import BuildingInspector, { keepCurrent } from './BuildingInspector';
 import ExteriorBlinds from './ExteriorBlinds';
 import PlanPins, { levelName } from './PlanPins';
 import RoofEquipment from './RoofEquipment';
+import { EndCard, EventCard, StartCard } from './play/Overlays';
+import PlayChart from './play/PlayChart';
+import PlayHud from './play/PlayHud';
 import PlayPanel from './play/PlayPanel';
-import { brokenNow, sceneView, usePlay, type Play } from './play/usePlay';
+import { usePathPlan } from './play/usePathPlan';
+import { brokenNow, DEMO_FUTURE, sceneView, usePlay, type Play } from './play/usePlay';
 
 const selectableOutline = '#f5ad20';
 const selectedOutline = '#b7530c'; // Matches the inspector's brand-orange selection.
@@ -75,6 +79,32 @@ export default function BuildingPage({ mode = 'plan' }: { mode?: 'plan' | 'play'
 
   usePublishFocus(playing ? playFocus(play) : focusFor(floor, selectedGroup));
 
+  // Which future this is: "Future 4821" for a drawn one, so people can see each run is new.
+  const seed = /seed (\d+)/.exec(play.state?.future ?? '')?.[1];
+  const which = !play.state ? null : seed ? `Future ${seed}` : 'Demo story';
+  const path = usePathPlan(play, which);
+  const game = playing ? play.state : null;
+
+  function startGame(years: number, withPlan: boolean) {
+    // Every run draws a new future. ?story=demo plays the fixed demo story instead (handy to rehearse).
+    const demo = new URLSearchParams(window.location.search).get('story') === 'demo';
+    play.start(demo ? DEMO_FUTURE : { seed: Math.floor(Math.random() * 1e4) }, years, withPlan ? activePlan.scenario : undefined);
+  }
+
+  // Space moves time on, as in a game. Not while typing, and not while the simulation is busy.
+  useEffect(() => {
+    if (!playing) return;
+    const onKey = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (event.code !== 'Space' || event.repeat || target?.closest('input, textarea, select, button, [contenteditable="true"]')) return;
+      if (!play.state || play.state.ended || play.busy !== null) return;
+      event.preventDefault();
+      play.next();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  });
+
   // Play: when the game stops because something broke, look at it (its floor, or the roof).
   const pauseKey = play.state ? `${play.state.session_id}|${play.state.t}` : '';
   useEffect(() => {
@@ -111,8 +141,12 @@ export default function BuildingPage({ mode = 'plan' }: { mode?: 'plan' | 'play'
   }
 
   return (
-    <main aria-label="Building viewer" className="grid min-h-full grid-rows-[minmax(20rem,55dvh)_auto] md:h-full md:grid-cols-[minmax(0,1fr)_clamp(20rem,25vw,24rem)] md:grid-rows-[minmax(0,1fr)]">
-      <div className="relative min-h-0">
+    <main aria-label="Building viewer" className={playing
+      ? `results-root grid min-h-full md:h-full md:grid-rows-[minmax(0,1fr)] ${game ? 'md:grid-cols-[minmax(0,1fr)_clamp(22rem,28vw,28rem)]' : ''}`
+      : 'grid min-h-full grid-rows-[minmax(20rem,55dvh)_auto] md:h-full md:grid-cols-[minmax(0,1fr)_clamp(20rem,25vw,24rem)] md:grid-rows-[minmax(0,1fr)]'}>
+      <div className={playing ? 'flex min-h-[32rem] min-w-0 flex-col md:min-h-0' : 'contents'}>
+      {game && <PlayHud state={game} stops={play.stops} which={which} />}
+      <div className="relative min-h-0 flex-1">
         <BuildingScene floor={floor} showBanner={showBanner} equipmentSelection={floor !== null ? {
           monitors: selectionFor('monitors'), computers: selectionFor('computers'), coffee: selectionFor('coffee'),
           water_heater: selectionFor('water_heater'), servers: selectionFor('servers'),
@@ -144,9 +178,20 @@ export default function BuildingPage({ mode = 'plan' }: { mode?: 'plan' | 'play'
             <ArrowLeft aria-hidden="true" className="size-4" /> Whole building
           </button>
         )}
+        {playing && !play.state && <StartCard plan={activePlan} busy={play.busy === 'start'} onStart={startGame} />}
+        {game && !game.ended && game.reasons.length > 0 && (
+          <EventCard key={`${game.session_id}|${game.t}`} state={game} catalog={play.catalog} busy={play.busy} onDecide={play.decide} onContinue={play.next} />
+        )}
+        {game?.ended && <EndCard key={game.session_id} state={game} path={path} onAgain={play.restart} />}
+      </div>
+      {game && (
+        <div className="h-48 shrink-0 border-t border-[var(--r-line)] bg-background px-5 pt-2">
+          <PlayChart history={game.history} horizon={game.horizon} now={game.t} ended={game.ended} stops={play.stops} className="h-full" />
+        </div>
+      )}
       </div>
       {playing ? (
-        <PlayPanel play={play} floor={floor} onFloorChange={level => goTo(level)}
+        <PlayPanel play={play} path={path} floor={floor} onFloorChange={level => goTo(level)}
           selectedGroup={selectedGroup} onSelectGroup={group => setSelectedGroup(group as EquipmentGroup | null)} />
       ) : <BuildingInspector
         floor={floor}

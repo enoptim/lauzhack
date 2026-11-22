@@ -470,3 +470,17 @@
 /* Scrollbars, caret and selection carry the theme too. */
 * { scrollbar-width: thin; scrollbar-color: color-mix(in oklch, var(--foreground) 18%, transparent) transparent; }
 textarea, input { caret-color: var(--primary); }
+
+/* Explore: an event card lands over the building; a number that just changed glows once. */
+@media (prefers-reduced-motion: no-preference) {
+  .play-pop { animation: play-pop 420ms cubic-bezier(0.23, 1, 0.32, 1) both; }
+  .play-flash { animation: play-flash 1.4s ease-out both; }
+}
+@keyframes play-pop {
+  from { opacity: 0; transform: translateY(12px) scale(0.98); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes play-flash {
+  0% { background-color: color-mix(in oklch, var(--primary) 14%, transparent); }
+  100% { background-color: transparent; }
+}
