@@ -40,6 +40,8 @@ function colorFor(plan: { color?: string } | undefined, index: number) {
 /** The same plan, bought at the chosen time. The engine keeps the old units running until then. */
 function withTiming(scenario: Scenario, timing: Timing): Scenario {
   return scenario.map(swap => {
+    // A played game's decisions keep the years they were made in (Play mode, "firm").
+    if ((swap as Swap & { firm?: boolean }).firm) return swap;
     const { timing: _t, year: _y, ...rest } = swap;
     if (timing === 'now') return rest;
     return timing === 'end_of_life' ? { ...rest, timing: 'end_of_life' as const } : { ...rest, year: timing };
@@ -136,14 +138,14 @@ export function useResultsModel() {
   const [staffEffects, setStaffEffects] = useState(false);
   // How the building manager replaces old big systems: on a plan at the end of their normal life, or when they break.
   const [onPlan, setOnPlan] = useState(true);
-  const [horizon, setHorizon] = useState<number>(15);
+  const [horizon, setHorizon] = useState<number>(read?.config.horizon ?? 15);
   const [playToken, setPlayToken] = useState(0);
   const [playYear, setPlayYear] = useState<number | null>(null);
   const [playState, setPlayState] = useState<'idle' | 'playing' | 'paused'>('idle');
 
   const overrides = useMemo(() => ({ ...(read?.config.overrides ?? {}), [PRICE_KEY]: price }), [price, params]); // eslint-disable-line react-hooks/exhaustive-deps
   const settled = useMemo(() => ({ ...(read?.config.overrides ?? {}), [PRICE_KEY]: settledPrice, [POLICY_KEY]: onPlan ? 1 : 0 }), [settledPrice, onPlan, params]); // eslint-disable-line react-hooks/exhaustive-deps
-  const engine = useEngine(scenario, allScenarios, overrides, settled, whatIf);
+  const engine = useEngine(scenario, allScenarios, overrides, settled, whatIf, read?.config.game);
   // What the selected plan costs to buy, after the solar subsidy: the engine's figure, as in the top bar and the assistant.
   const [upfront, setUpfront] = useState<{ key: string; value: number } | null>(null);
   const chosenKey = JSON.stringify(chosen);
@@ -177,6 +179,8 @@ export function useResultsModel() {
   // When Play (or the intro) picked the future itself, the chart goes back to all 200 futures shortly after Play ends,
   // so the page never shows one future's numbers next to the middle of all of them.
   const pinnedByPlay = useRef(false);
+  // A played game keeps its own future on the chart after Play: that future is the point of the page.
+  const isGame = Boolean(read?.config.game);
   const backTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   useEffect(() => () => clearTimeout(backTimer.current), []);
 
@@ -184,7 +188,7 @@ export function useResultsModel() {
     clearTimeout(backTimer.current);
     if (playState === 'playing') { setPlayState('paused'); return; }
     if (playState === 'idle') {
-      if (exampleIndex === null) { pinnedByPlay.current = true; setExampleIndex(typicalRef.current); }
+      if (exampleIndex === null) { pinnedByPlay.current = !isGame; setExampleIndex(typicalRef.current); }
       setPlayToken(token => token + 1);
       setPlayYear(0);
     }
@@ -195,7 +199,7 @@ export function useResultsModel() {
   const endIntro = useCallback(() => {
     setIntro(false);
     setExampleIndex(index => {
-      if (index === null) pinnedByPlay.current = true;
+      if (index === null) pinnedByPlay.current = !isGame;
       return index ?? typicalRef.current;
     });
     setPlayToken(token => token + 1);
@@ -242,6 +246,7 @@ export function useResultsModel() {
   const typicalIndex = useMemo(() => {
     const middle = planLines[selected]?.middle;
     if (!futures?.samples.length || !middle) return 0;
+    if (futures.samples[0].pinned) return 0;          // a played game: its own future is the one to tell
     const distance = (sample: FutureSample) => sample.paths[`p${selected}`][view].slice(0, horizon)
       .reduce((sum, value, k) => sum + Math.abs(value - middle[k + 1]), 0);
     return futures.samples.reduce((best, sample, k, all) => (distance(sample) < distance(all[best]) ? k : best), 0);

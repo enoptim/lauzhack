@@ -6,8 +6,6 @@ import type {
 } from '@/api/types';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Separator } from '@/components/ui/separator';
 import { chf, groupLabels, optionName, signedChf, whenLabel } from './format';
 import OptionRow from './OptionRow';
 
@@ -60,13 +58,13 @@ function Replacements({ reaction, state, catalog, busy, onDecide }: Props & { re
           const yearly = -((option.preview.delta_operating_cost ?? 0) - (same.preview.delta_operating_cost ?? 0));
           const isChosen = option.option_id === chosen;
           return (
-            <li key={option.option_id} className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-lg border p-3">
+            <li key={option.option_id} className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg border bg-background p-2.5">
               <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-                <span className="flex flex-wrap items-center gap-2 font-medium">
+                <span className="flex flex-wrap items-center gap-2 text-sm font-medium">
                   {option.name}
                   {option.like_for_like && <Badge variant="secondary">Same model</Badge>}
                 </span>
-                <span className="text-sm text-muted-foreground">
+                <span className="text-xs text-muted-foreground">
                   {option.like_for_like ? 'What goes in if you just continue.'
                     : `${signedChf(extra)} up front vs the same model · ${yearly >= 0 ? `saves ${chf(yearly)} a year` : `costs ${chf(-yearly)} more a year`}`}
                 </span>
@@ -124,41 +122,32 @@ export default function WhatHappened(props: Props) {
   const { state } = props;
   if (state.t === 0 && state.reasons.length === 0) {
     return (
-      <Card className="gap-3">
-        <CardHeader>
-          <CardTitle>Nothing has happened yet</CardTitle>
-          <CardDescription>Change equipment if you like, then press Start the clock. The years run until something happens.</CardDescription>
-        </CardHeader>
-      </Card>
+      <p className="shrink-0 text-sm text-pretty text-muted-foreground">
+        Nothing has happened yet. Change equipment if you like, then press Start the clock: the years run until something happens.
+      </p>
     );
   }
   return (
-    <Card className="gap-4">
-      <CardHeader>
-        <CardTitle>What happened</CardTitle>
-        <CardDescription>The game stopped at the end of year {state.t}. Decide now, or press Continue.</CardDescription>
-      </CardHeader>
-      <CardContent className="flex flex-col gap-4">
-        {state.reasons.map((reason, index) => {
-          const Icon = ICONS[reason.type];
-          const reaction = state.reactions.find(r => r.reason === index);
-          const text = explanation(reason);
-          return (
-            <section key={`${reason.type}-${reason.title}`} className="flex flex-col gap-3">
-              {index > 0 && <Separator />}
-              <div className="flex gap-3">
-                <Icon className="mt-0.5 size-5 shrink-0 text-primary" aria-hidden />
-                <div className="flex flex-col gap-1">
-                  <h3 className="font-medium">{reason.title}</h3>
-                  {text && <p className="text-sm text-muted-foreground">{text}</p>}
-                </div>
+    <section aria-labelledby="happened-heading" className="flex shrink-0 flex-col gap-3">
+      <h2 id="happened-heading" className="text-sm font-semibold">What happened</h2>
+      {state.reasons.map((reason, index) => {
+        const Icon = ICONS[reason.type];
+        const reaction = state.reactions.find(r => r.reason === index);
+        const text = explanation(reason);
+        return (
+          <div key={`${reason.type}-${reason.title}`} className="flex flex-col gap-2 rounded-lg border bg-card p-3">
+            <div className="flex gap-2.5">
+              <Icon className={reason.type === 'failure' ? 'mt-0.5 size-4 shrink-0 text-destructive' : 'mt-0.5 size-4 shrink-0 text-primary'} aria-hidden />
+              <div className="flex flex-col gap-0.5">
+                <h3 className="text-sm font-medium text-pretty">{reason.title}</h3>
+                {text && <p className="text-xs text-pretty text-muted-foreground">{text}</p>}
               </div>
-              {reaction?.type === 'failure' && <Replacements {...props} reaction={reaction} />}
-              {reaction && reaction.type !== 'failure' && <Suggestions {...props} reaction={reaction} />}
-            </section>
-          );
-        })}
-      </CardContent>
-    </Card>
+            </div>
+            {reaction?.type === 'failure' && <Replacements {...props} reaction={reaction} />}
+            {reaction && reaction.type !== 'failure' && <Suggestions {...props} reaction={reaction} />}
+          </div>
+        );
+      })}
+    </section>
   );
 }

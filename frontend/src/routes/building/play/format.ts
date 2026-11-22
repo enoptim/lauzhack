@@ -1,7 +1,13 @@
 // Words and number formats for the play page. Every number shown comes from the API; this file only formats it.
-import type { Catalog, PlaySwap, SessionSwap } from '@/api/types';
+import type { Catalog, FinanceYear, PlaySwap, SessionSwap } from '@/api/types';
 
 const NUMBER = new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 });
+
+/** Money gained vs doing nothing so far, without the value of equipment still standing at the end: the same
+ *  way Results counts it, so the game's last number matches the line Results draws for the future you played. */
+export function gained(row: FinanceYear): number {
+  return row.cumulative_cash_cf - (row.residual_value ?? 0);
+}
 
 /** CHF rounded to the hundred, with a real minus sign. */
 export function chf(value: number): string {

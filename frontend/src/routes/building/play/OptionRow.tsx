@@ -17,7 +17,7 @@ export default function OptionRow({ title, preview, inPlan, busy, onAdd }: {
   title: string; preview: SessionPreview | undefined; inPlan: boolean; busy: boolean; onAdd: () => void;
 }) {
   return (
-    <li className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg border bg-card p-3">
+    <li className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg border bg-background p-2.5">
       <div className="flex min-w-0 flex-1 flex-col gap-0.5">
         <span className="text-sm font-medium">{title}</span>
         <span className="text-xs text-muted-foreground">{inPlan ? 'In your plan.' : costText(preview)}</span>

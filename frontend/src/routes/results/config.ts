@@ -8,7 +8,14 @@ export type Plan = { name: string; scenario: Scenario; color?: string };
  * `plans` holds every plan to compare; `selected` is the one shown in detail.
  * An older address with only `scenario` still works: it becomes one plan.
  */
-export type Config = Required<Pick<RunRequest, 'events' | 'overrides'>> & { plans: Plan[]; selected: number };
+export type Config = Required<Pick<RunRequest, 'events' | 'overrides'>> & {
+  plans: Plan[];
+  selected: number;
+  /** A played game (session id): the future it played is shown first, and Play replays it. */
+  game?: string;
+  /** Years to show first (5, 10 or 15), e.g. the length of the game. */
+  horizon?: number;
+};
 
 /** Shown when the page address has no configuration. */
 export const demoConfig: Config = {
@@ -27,12 +34,14 @@ export function readConfig(params: URLSearchParams): { config: Config; isDemo: b
   if (!raw) return { config: demoConfig, isDemo: true };
   try {
     const parsed = JSON.parse(raw) as Partial<Config> & { scenario?: Scenario };
+    const game = typeof parsed.game === 'string' ? parsed.game : undefined;
+    const horizon = [5, 10, 15].includes(parsed.horizon as number) ? parsed.horizon : undefined;
     const plans = Array.isArray(parsed.plans)
       ? parsed.plans.filter(plan => plan && typeof plan.name === 'string' && Array.isArray(plan.scenario)).slice(0, MAX_PLANS)
       : Array.isArray(parsed.scenario) ? [{ name: 'Your plan', scenario: parsed.scenario }] : null;
     if (!plans?.length) return null;
     const selected = Number.isInteger(parsed.selected) && parsed.selected! >= 0 && parsed.selected! < plans.length ? parsed.selected! : 0;
-    return { config: { plans, selected, events: parsed.events ?? [], overrides: parsed.overrides ?? {} }, isDemo: false };
+    return { config: { plans, selected, events: parsed.events ?? [], overrides: parsed.overrides ?? {}, game, horizon }, isDemo: false };
   } catch {
     return null;
   }

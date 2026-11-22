@@ -39,16 +39,17 @@ export const FUTURES_N = 200;
 /** Futures results by request, kept for the whole visit: going back to a world you saw is instant. */
 const futuresCache = new Map<string, Promise<FuturesResult>>();
 
-function futuresRequest(scenarios: Scenario[], whatIf: WhatIf | null, overrides: Record<string, number>) {
+function futuresRequest(scenarios: Scenario[], whatIf: WhatIf | null, overrides: Record<string, number>, game?: string) {
   const body = {
     scenarios: Object.fromEntries(scenarios.map((scenario, index) => [`p${index}`, scenario])),
     n: FUTURES_N, seed: 2026, events: whatIf ? [whatIf] : [], overrides,
+    ...(game ? { pinned_session: game } : {}),
   };
   return { key: JSON.stringify(body), body };
 }
 
-function fetchFutures(scenarios: Scenario[], whatIf: WhatIf | null, overrides: Record<string, number>) {
-  const { key, body } = futuresRequest(scenarios, whatIf, overrides);
+function fetchFutures(scenarios: Scenario[], whatIf: WhatIf | null, overrides: Record<string, number>, game?: string) {
+  const { key, body } = futuresRequest(scenarios, whatIf, overrides, game);
   let pending = futuresCache.get(key);
   if (!pending) {
     pending = api.futures(body);
@@ -65,7 +66,7 @@ function fetchFutures(scenarios: Scenario[], whatIf: WhatIf | null, overrides: R
  * - `futures`: 200 possible futures for every plan at once (1–3 s). They follow `settled`, the slider value after release.
  */
 export function useEngine(scenario: Scenario, allScenarios: Scenario[], overrides: Record<string, number>,
-  settled: Record<string, number>, whatIf: WhatIf | null) {
+  settled: Record<string, number>, whatIf: WhatIf | null, game?: string) {
   const base = useMemo(() => JSON.stringify({ scenario, overrides }), [scenario, overrides]);
 
   const catalog = useCall<Catalog>('catalog', () => api.catalog());
@@ -80,8 +81,8 @@ export function useEngine(scenario: Scenario, allScenarios: Scenario[], override
     return Object.fromEntries(ids.map((id, index) => [id, results[index]]));
   }, 80);
 
-  const futuresKey = useMemo(() => futuresRequest(allScenarios, whatIf, settled).key, [allScenarios, whatIf, settled]);
-  const futures = useCall<FuturesResult>(futuresKey, () => fetchFutures(allScenarios, whatIf, settled), 50);
+  const futuresKey = useMemo(() => futuresRequest(allScenarios, whatIf, settled, game).key, [allScenarios, whatIf, settled, game]);
+  const futures = useCall<FuturesResult>(futuresKey, () => fetchFutures(allScenarios, whatIf, settled, game), 50);
 
   // Once the plain world is ready, work out the three what-ifs in the background, one after the other.
   const ready = futures.data !== null && !futures.loading && whatIf === null;
@@ -91,7 +92,7 @@ export function useEngine(scenario: Scenario, allScenarios: Scenario[], override
     void (async () => {
       for (const id of WHAT_IFS) {
         if (!live) return;
-        await fetchFutures(allScenarios, id, settled).catch(() => undefined);
+        await fetchFutures(allScenarios, id, settled, game).catch(() => undefined);
       }
     })();
     return () => { live = false; };

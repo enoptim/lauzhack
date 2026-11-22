@@ -1,7 +1,7 @@
 import * as echarts from 'echarts';
 import { useEffect, useRef } from 'react';
 import type { FinanceYear } from '@/api/types';
-import { chfShort, signedChf } from './format';
+import { chfShort, gained, signedChf } from './format';
 
 /** Canvas colours. They mirror the tokens in styles.css (ECharts cannot read CSS variables). */
 const C = {
@@ -46,10 +46,10 @@ export default function PlayChart({ history, horizon, now, ended, className = 'h
     const first = history[0];
     // Today: what was bought today (the first year's total minus that year's own flow).
     const today = first ? first.cumulative_cash_cf - first.cash_cf : 0;
-    const points = [[0, today], ...history.map(row => [row.year, row.cumulative_cash_cf])];
+    const points = [[0, today], ...history.map(row => [row.year, gained(row)])];
     const marks: object[] = [{
       yAxis: 0, lineStyle: { color: C.zero, type: 'solid', width: 1 },
-      label: { formatter: 'Doing nothing', position: 'insideEndTop', color: C.muted, fontSize: 12 },
+      label: { formatter: 'Doing nothing', position: 'insideStartBottom', color: C.muted, fontSize: 11 },
     }];
     if (!ended) {
       marks.push({ xAxis: now, lineStyle: { color: C.line, type: 'dashed', width: 1.5 },
@@ -68,6 +68,7 @@ export default function PlayChart({ history, horizon, now, ended, className = 'h
       yAxis: {
         type: 'value',
         // At least ±CHF 100k, so an empty start doesn't zoom in on rounding noise.
+        splitNumber: 3,
         min: (v: { min: number }) => Math.min(Math.floor((v.min * 1.05) / 100_000) * 100_000, -100_000),
         max: (v: { max: number }) => Math.max(Math.ceil((v.max * 1.05) / 100_000) * 100_000, 100_000),
         axisLabel: { color: C.muted, fontSize: 12, formatter: (v: number) => chfShort(v) },
@@ -89,7 +90,7 @@ export default function PlayChart({ history, horizon, now, ended, className = 'h
         markLine: { silent: true, symbol: 'none', data: marks },
         markArea: ended || now >= horizon ? undefined : {
           silent: true, itemStyle: { color: C.future },
-          label: { show: true, position: 'inside', color: C.muted, fontSize: 12, formatter: 'Not happened yet' },
+          label: { show: true, position: 'insideTop', color: C.muted, fontSize: 11, formatter: 'Not happened yet' },
           data: [[{ xAxis: now }, { xAxis: horizon }]],
         },
       }],
@@ -98,7 +99,7 @@ export default function PlayChart({ history, horizon, now, ended, className = 'h
 
   const last = history.at(-1);
   const summary = last
-    ? `After year ${last.year}: ${signedChf(last.cumulative_cash_cf)} compared with doing nothing.`
+    ? `After year ${last.year}: ${signedChf(gained(last))} compared with doing nothing.`
     : 'Nothing has happened yet.';
   return <div ref={host} className={`${className} w-full`} role="img" aria-label={`Money compared with doing nothing. ${summary}`} />;
 }

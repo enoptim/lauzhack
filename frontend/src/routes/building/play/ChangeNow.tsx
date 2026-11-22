@@ -3,7 +3,6 @@ import { useEffect, useState } from 'react';
 import { api } from '@/api/client';
 import type { Catalog, PlaySwap, SessionPreview, SessionState } from '@/api/types';
 import { Button } from '@/components/ui/button';
-import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { floorLabel, groupLabels } from './format';
 import OptionRow from './OptionRow';
@@ -46,29 +45,27 @@ export default function ChangeNow({ state, catalog, group, floor, busy, onDecide
     && d.option === option && (onFloor ? d.floor === floor : d.floor === undefined && !d.item_id));
 
   return (
-    <Card className="gap-3 py-4">
-      <CardHeader className="px-4">
-        <CardTitle>Change {(groupLabels[group] ?? group).toLowerCase()} now</CardTitle>
-        <CardDescription>{onFloor ? `Only on the ${floorLabel(floor as number)}.` : 'For the whole building.'} It goes in now and works from next year.</CardDescription>
-        <CardAction>
-          <Button size="icon-sm" variant="ghost" aria-label="Close" onClick={onClose}><X /></Button>
-        </CardAction>
-      </CardHeader>
-      <CardContent className="flex flex-col gap-3 px-4">
-        {perFloor && (
-          <ToggleGroup type="single" variant="outline" size="sm" value={scope} aria-label="Where"
-            onValueChange={value => value && setScope(value as 'all' | 'floor')}>
-            <ToggleGroupItem value="all">Whole building</ToggleGroupItem>
-            <ToggleGroupItem value="floor">Only the {floorLabel(floor as number)}</ToggleGroupItem>
-          </ToggleGroup>
-        )}
-        <ul className="flex flex-col gap-2">
-          {options.map(option => (
-            <OptionRow key={option.option_id} title={option.name} preview={previews[option.option_id]}
-              inPlan={inPlan(option.option_id)} busy={busy} onAdd={() => onDecide([swapFor(option.option_id)])} />
-          ))}
-        </ul>
-      </CardContent>
-    </Card>
+    <section aria-labelledby="change-now-heading" className="flex shrink-0 flex-col gap-2">
+      <div className="flex items-center justify-between gap-2">
+        <h2 id="change-now-heading" className="text-sm font-semibold">Change {(groupLabels[group] ?? group).toLowerCase()} now</h2>
+        <Button size="icon-xs" variant="ghost" aria-label="Close" onClick={onClose}><X /></Button>
+      </div>
+      <p className="text-xs text-muted-foreground">
+        {onFloor ? `Only on the ${floorLabel(floor as number)}.` : 'For the whole building.'} It goes in now and works from next year.
+      </p>
+      {perFloor && (
+        <ToggleGroup type="single" variant="outline" size="sm" value={scope} aria-label="Where"
+          onValueChange={value => value && setScope(value as 'all' | 'floor')}>
+          <ToggleGroupItem value="all">Whole building</ToggleGroupItem>
+          <ToggleGroupItem value="floor">Only the {floorLabel(floor as number)}</ToggleGroupItem>
+        </ToggleGroup>
+      )}
+      <ul className="flex flex-col gap-2">
+        {options.map(option => (
+          <OptionRow key={option.option_id} title={option.name} preview={previews[option.option_id]}
+            inPlan={inPlan(option.option_id)} busy={busy} onAdd={() => onDecide([swapFor(option.option_id)])} />
+        ))}
+      </ul>
+    </section>
   );
 }

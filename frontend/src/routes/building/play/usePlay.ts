@@ -58,7 +58,7 @@ export function usePlay(active: boolean) {
   const id = state?.session_id ?? '';
   return {
     state, catalog, busy, error,
-    start: (future: string | { seed: number }) => run('start', () => api.sessionStart(future)),
+    start: (future: string | { seed: number }, years?: number) => run('start', () => api.sessionStart(future, years)),
     next: () => run('next', () => api.sessionNext(id)),
     decide: (swaps: PlaySwap[]) => run('change', () => api.sessionDecide(id, swaps)),
     removePlanned: (index: number) => run('change', () =>

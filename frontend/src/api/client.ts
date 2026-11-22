@@ -48,7 +48,9 @@ export const api = {
 
   // Play through one future (model/session.py). Sessions live in the API's memory.
   sessionFutures: () => request<ScriptedFuture[]>('/api/session/futures'),
-  sessionStart: (future: string | { seed: number }) => request<SessionState>('/api/session/start', { future }),
+  /** years: how long the game runs (5, 10 or 15). */
+  sessionStart: (future: string | { seed: number }, years?: number) =>
+    request<SessionState>('/api/session/start', { future, ...(years ? { years } : {}) }),
   session: (sessionId: string) => request<SessionState>(`/api/session/${sessionId}`),
   sessionNext: (sessionId: string) => request<SessionState>('/api/session/next', { session_id: sessionId }),
   /** Add to the plan: changes for now ("now") or later years. */

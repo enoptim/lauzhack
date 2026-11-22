@@ -95,7 +95,12 @@ export default function ChartPanel({ m }: { m: ResultsModel }) {
           </Button>
         </div>
         <p className="min-h-[3.75rem] text-[13px] leading-5 text-pretty @min-[36rem]/chart:pt-1" aria-live="polite">
-          {m.example && m.exampleNumber !== null ? (
+          {m.example?.pinned ? (
+            <>
+              <span className="font-medium text-foreground">The future you played. </span>
+              <span className="text-muted-foreground">{storyText(m.example, m.failures)}</span>
+            </>
+          ) : m.example && m.exampleNumber !== null ? (
             <>
               <span className="font-medium text-foreground">
                 Example <span className={num}>{m.exampleNumber + 1}</span> of <span className={num}>{count}</span>, picked from the <span className={num}>{m.futuresN}</span>

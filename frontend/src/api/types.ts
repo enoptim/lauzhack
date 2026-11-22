@@ -42,6 +42,8 @@ export interface FuturesRequest {
   events?: string[];
   /** Assumptions fixed in every future. */
   overrides?: Record<string, number>;
+  /** A played game (session id): its future becomes the first example future, marked pinned. */
+  pinned_session?: string;
 }
 
 export interface BreakevenRequest {
@@ -339,7 +341,9 @@ export interface FutureFailure {
 
 /** One example future, replayable: what happened, and each plan's cumulative money per year. */
 export interface FutureSample {
-  id: number;
+  /** "pinned" for the future the player played (see FuturesRequest.pinned_session). */
+  id: number | 'pinned';
+  pinned?: boolean;
   what_happened: string;
   failures: FutureFailure[];
   events: { id: string; start_year: number; end_year: number | null }[];
