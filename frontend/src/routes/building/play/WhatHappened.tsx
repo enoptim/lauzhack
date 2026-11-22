@@ -18,19 +18,11 @@ const ICONS = {
 
 const TIERS = ['current', 'budget', 'mid', 'premium', 'upgrade'];
 
-/** "lighting", "coffee machines", but "3D printers": lower case inside a sentence, except the acronym. */
-const inSentence = (group: string) => {
-  const label = groupLabels[group] ?? group;
-  return label.startsWith('3D') ? label : label.toLowerCase();
-};
-
 type Props = {
   state: SessionState;
   catalog: Catalog | null;
   busy: boolean;
   onDecide: (swaps: PlaySwap[]) => void;
-  /** The event card already says what this is. */
-  hideHeading?: boolean;
 };
 
 /** Why the clock stopped here, in plain words: what kind of moment this is and why it is worth a decision. */
@@ -100,13 +92,13 @@ function Replacements({ reaction, state, catalog, busy, onDecide }: Props & { re
           Choosing now replaces that.
         </p>
       )}
-      <p className="flex justify-between px-1 text-xs text-muted-foreground"><span>What goes in now</span><span>Compared with the same model</span></p>
+      <p className="px-1 text-right text-xs text-muted-foreground">Compared with the same model</p>
       <ul role="radiogroup" aria-label="What goes in now" className="flex flex-col gap-1.5">
         {options.map(option => {
           const extra = option.preview.extra_capex_chf - same.preview.extra_capex_chf;
           const yearly = -((option.preview.delta_operating_cost ?? 0) - (same.preview.delta_operating_cost ?? 0));
           return (
-            <ChoiceRow key={option.option_id} name={option.name} note={option.like_for_like ? 'Same model: goes in if you just continue' : undefined}
+            <ChoiceRow key={option.option_id} name={option.name} note={option.like_for_like ? 'Same model' : undefined}
               cost={option.like_for_like ? 'Base price' : Math.abs(extra) < 50 ? 'Same price' : extra > 0 ? `+${chf(extra)}` : `${chf(-extra)} cheaper`}
               saving={option.like_for_like ? 'Running cost as today' : perYear(yearly)}
               checked={option.option_id === chosen} disabled={busy} onPick={() => onDecide(option.swaps)} />
@@ -138,7 +130,6 @@ function Suggestions({ reaction, state, catalog, busy, onDecide }: Props & { rea
     .some(d => d.group === main.group && d.option === option && (main.floor === null || d.floor === main.floor));
   return (
     <div className="flex flex-col gap-2">
-    <p className="px-1 text-xs text-muted-foreground">Related upgrades, if you want to act now. Not a recommendation: you can also just continue.</p>
     <ul className="flex flex-col gap-1.5">
       {main.options.map(option => {
         const preview = previews[option];
@@ -154,70 +145,86 @@ function Suggestions({ reaction, state, catalog, busy, onDecide }: Props & { rea
   );
 }
 
-/** One thing that happened. Breakdowns open with their options; news and warnings fold away when a breakdown is there too. */
-function Happening({ reason, index, folded, ...props }: Props & { reason: PauseReason; index: number; folded: boolean }) {
-  const [open, setOpen] = useState(!folded);
-  const Icon = ICONS[reason.type];
-  const reaction = props.state.reactions.find(r => r.reason === index);
-  const { kind, text } = why(reason);
-  const failure = reason.type === 'failure';
-  // What is at stake: the biggest yearly saving on offer, compared with the same model.
-  const stake = reaction?.type === 'failure' ? (() => {
-    const same = reaction.options.find(o => o.like_for_like) ?? reaction.options[0];
-    return Math.max(0, ...reaction.options.map(o => (same.preview.delta_operating_cost ?? 0) - (o.preview.delta_operating_cost ?? 0)));
-  })() : 0;
+function stakeOf(reaction: FailureReaction | GroupReaction | undefined): number {
+  if (reaction?.type !== 'failure') return 0;
+  const same = reaction.options.find(o => o.like_for_like) ?? reaction.options[0];
+  return Math.max(0, ...reaction.options.map(o => (same.preview.delta_operating_cost ?? 0) - (o.preview.delta_operating_cost ?? 0)));
+}
+
+/** Breakdowns first: they need an answer. */
+function ordered(state: SessionState) {
+  return state.reasons.map((reason, index) => ({ reason, index, reaction: state.reactions.find(r => r.reason === index) }))
+    .sort((a, b) => Number(b.reason.type === 'failure') - Number(a.reason.type === 'failure'));
+}
+
+/** The card over the building: only what happened and why it matters. You act in the panel. */
+export function Story({ state }: { state: SessionState }) {
+  const items = ordered(state);
   return (
-    <div className="flex flex-col gap-3">
-      <div className="flex items-start gap-3">
-        <span className={cn('grid size-8 shrink-0 place-items-center rounded-lg', failure ? 'bg-destructive/10 text-destructive' : 'bg-primary/10 text-primary')}>
-          <Icon className="size-4" aria-hidden />
-        </span>
-        <div className="flex min-w-0 flex-1 flex-col gap-1">
-          <span className={cn('text-xs font-medium', failure ? 'text-destructive' : 'text-primary')}>{kind}</span>
-          <h3 className="text-[15px] leading-6 font-semibold text-pretty">{reason.title}</h3>
-          {text && open && <p className="text-sm text-pretty text-muted-foreground">{text}</p>}
-          {stake >= 100 && (
-            <p className="text-sm font-medium text-pretty">The best option here saves up to {chf(stake)} a year.</p>
-          )}
-        </div>
-        {reaction && reaction.type !== 'failure' && (
-          <Button variant="ghost" size="xs" className="mt-0.5 text-muted-foreground" aria-expanded={open} onClick={() => setOpen(!open)}>
-            {open ? 'Hide' : 'Options'} {open ? <ChevronUp data-icon="inline-end" /> : <ChevronDown data-icon="inline-end" />}
-          </Button>
-        )}
-      </div>
-      {reaction?.type === 'failure' && <Replacements {...props} reaction={reaction} />}
-      {open && reaction && reaction.type !== 'failure' && <Suggestions {...props} reaction={reaction} />}
-    </div>
+    <ul className="flex flex-col gap-2.5">
+      {items.length > 1 && <li className="sr-only">{items.length} things happened</li>}
+      {items.map(({ reason, reaction }, k) => {
+        const Icon = ICONS[reason.type];
+        const failure = reason.type === 'failure';
+        const { kind, text } = why(reason);
+        const stake = stakeOf(reaction);
+        if (k > 0) {
+          return (
+            <li key={`${reason.type}-${reason.title}`} className="flex items-center gap-2 text-sm">
+              <Icon aria-hidden className={cn('size-4 shrink-0', failure ? 'text-destructive' : 'text-primary')} />
+              <span className="min-w-0 truncate" title={reason.title}>{reason.title}</span>
+            </li>
+          );
+        }
+        return (
+          <li key={`${reason.type}-${reason.title}`} className="mb-1.5 flex items-start gap-3">
+            <span className={cn('grid size-8 shrink-0 place-items-center rounded-lg', failure ? 'bg-destructive/10 text-destructive' : 'bg-primary/10 text-primary')}>
+              <Icon className="size-4" aria-hidden />
+            </span>
+            <div className="flex min-w-0 flex-col gap-0.5">
+              <span className={cn('text-xs font-medium', failure ? 'text-destructive' : 'text-primary')}>{kind}</span>
+              <h3 className="text-[15px] leading-6 font-semibold text-pretty">{reason.title}</h3>
+              {k === 0 && text && <p className="text-sm text-pretty text-muted-foreground">{text}</p>}
+              {k === 0 && stake >= 100 && <p className="text-sm font-medium">The best option saves up to {chf(stake)} a year.</p>}
+            </div>
+          </li>
+        );
+      })}
+    </ul>
   );
 }
 
+/** The panel's "Decide now": options for each breakdown; related upgrades for news fold away. */
 export default function WhatHappened(props: Props) {
-  const { state } = props;
-  if (state.t === 0 && state.reasons.length === 0) {
-    return (
-      <p className="shrink-0 text-sm text-pretty text-muted-foreground">
-        Nothing has happened yet. Change equipment if you like, then press Start the clock: the years run until something happens.
-      </p>
-    );
-  }
-  const anyFailure = state.reasons.some(reason => reason.type === 'failure');
-  // Breakdowns first: they need an answer.
-  const order = state.reasons.map((reason, index) => ({ reason, index }))
-    .sort((a, b) => Number(b.reason.type === 'failure') - Number(a.reason.type === 'failure'));
+  const items = ordered(props.state).filter(item => item.reaction);
+  if (!items.length) return null;
   return (
-    <section aria-labelledby="happened-heading" className="flex shrink-0 flex-col gap-5">
-      <h2 id="happened-heading" className={props.hideHeading ? 'sr-only' : 'text-sm font-semibold'}>What happened</h2>
-      {order.map(({ reason, index }, k) => (
-        <div key={`${reason.type}-${reason.title}`} className={cn(k > 0 && 'border-t pt-4')}>
-          <Happening {...props} reason={reason} index={index} folded={anyFailure && reason.type !== 'failure'} />
-        </div>
+    <section aria-labelledby="decide-heading" className="flex shrink-0 flex-col gap-4">
+      <h2 id="decide-heading" className="text-sm font-semibold">Decide now</h2>
+      {items.map(({ reason, reaction }) => (
+        <Decision key={`${reason.type}-${reason.title}`} {...props} reason={reason} reaction={reaction!} />
       ))}
-      {(state.routine?.length ?? 0) > 0 && (
-        <p className="text-xs text-pretty text-muted-foreground">
-          Also worn out and replaced like-for-like: {[...new Set(state.routine!.map(r => inSentence(r.group)))].join(', ')}.
-        </p>
-      )}
     </section>
+  );
+}
+
+function Decision({ reason, reaction, ...props }: Props & { reason: PauseReason; reaction: FailureReaction | GroupReaction }) {
+  const [open, setOpen] = useState(false);
+  const failure = reaction.type === 'failure';
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="flex items-center justify-between gap-2">
+        <h3 className={cn('min-w-0 text-[13px] font-medium text-pretty', failure ? 'text-foreground' : 'text-muted-foreground')}>
+          {failure ? `Replace: ${reason.title.replace(/ reached end of life.*$/, '')}` : reason.title.replace(/ \(year \d+\)$/, '')}
+        </h3>
+        {!failure && (
+          <Button variant="ghost" size="xs" className="shrink-0 text-muted-foreground" aria-expanded={open} onClick={() => setOpen(!open)}>
+            {open ? 'Hide' : 'Related upgrades'} {open ? <ChevronUp data-icon="inline-end" /> : <ChevronDown data-icon="inline-end" />}
+          </Button>
+        )}
+      </div>
+      {reaction.type === 'failure' && <Replacements {...props} reaction={reaction} />}
+      {open && reaction.type !== 'failure' && <Suggestions {...props} reaction={reaction} />}
+    </div>
   );
 }

@@ -180,7 +180,7 @@ export default function BuildingPage({ mode = 'plan' }: { mode?: 'plan' | 'play'
         )}
         {playing && !play.state && <StartCard plan={activePlan} busy={play.busy === 'start'} onStart={startGame} />}
         {game && !game.ended && game.reasons.length > 0 && (
-          <EventCard key={`${game.session_id}|${game.t}`} state={game} catalog={play.catalog} busy={play.busy} onDecide={play.decide} onContinue={play.next} />
+          <EventCard key={`${game.session_id}|${game.t}`} state={game} />
         )}
         {game?.ended && <EndCard key={game.session_id} state={game} path={path} onAgain={play.restart} />}
       </div>
