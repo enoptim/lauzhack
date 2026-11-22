@@ -14,7 +14,7 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-from . import tools
+from . import grounding, tools
 
 HERE = Path(__file__).resolve().parent
 API_URL = "https://openrouter.ai/api/v1/chat/completions"
@@ -40,7 +40,8 @@ The people asking are the building's energy manager and the finance director who
 They want to know what to change, what it costs up front, what it saves, and when it pays back.
 
 Rules:
-- Every number you give must come from a tool. Never estimate or do your own sums on savings.
+- Every number you give must come from a tool. Never estimate or do your own sums on savings. A program checks
+  every figure in your reply against this turn's tool results and sends back any it can't find.
 - For a goal or limits ("cheapest way to cut electricity by 20%", "lowest running costs for at most CHF 200k",
   "we can't touch the ventilation", "only mid-range coffee machines"), set up an optimization and let the user
   confirm it before anything runs:
@@ -83,7 +84,7 @@ How to read the money numbers. The model compares each plan with doing nothing o
 - simple_roi_pct_per_year: the yearly saving as a share of the upfront cost. Report this as the ROI.
 - npv_chf: the total gain over the horizon in today's money, after all costs. Use it for "is it worth it overall".
 - people_effects_chf: the value of better health, comfort and productivity. It is an uncertain estimate. Keep it out of the cost, saving and ROI figures; mention it separately as a possible extra.
-- flags: warn if you see over_budget, reserve_below_minimum, ventilation_over_capacity or desk_shortfall.
+- flags: warn if you see over_budget (the extra cost over like-for-like replacements, not the full price, is above the upgrade budget), reserve_below_minimum (year 0 means paying on day one), needs_financing (the reserve runs out, a loan is needed), ventilation_over_capacity or desk_shortfall.
 
 How to answer:
 - Never use Markdown tables, even when asked for one: use a short list instead, without saying why.
@@ -209,17 +210,19 @@ def chat(messages, scenario=None, confirm=None, on_tool=None, context=None, on_e
     on_tool:  optional callback(name, args) for logging
     on_event: optional callback(event) for showing progress live. Events are dicts with a "type":
               "thinking" and "text" (with "text": the next piece), "tool_start" (id, name, args) and
-              "tool_end" (id, name, ok, seconds).
+              "tool_end" (id, name, ok, seconds), and "check" (see `verification` below).
     context:  optional words from the app about what the user is looking at, e.g. "Building view, floor 2, lighting"
     plans:    optional list of the user's plans in the app: [{"id", "name", "changes", "source"}, ...]. With it the
               model can remove plans (remove_plans); the ids it removed come back in `removed_plan_ids`.
 
-    Returns {"reply", "scenario", "scenarios", "proposal", "optimization", "chart", "removed_plan_ids"}:
+    Returns {"reply", "scenario", "scenarios", "proposal", "optimization", "chart", "removed_plan_ids", "verification"}:
     - scenario: the last plan the model showed (see tools.app_scenario), or None.
     - scenarios: every plan the model showed this turn, in order (the last one is `scenario`).
     - proposal: the problem the model proposed this turn, with today's values, for the user to confirm; or None.
     - optimization: after a confirmed run, the problem and whether all limits were met; or None.
     - chart: the cost-vs-savings curve if the model called upgrade_tradeoffs (see tools.tradeoff_chart); or None.
+    - verification: whether every figure in the reply is in this turn's tool results (see grounding.check), plus
+      `repaired`: the first draft had figures that weren't, and the model rewrote it once. Also sent as a "check" event.
     """
     system = SYSTEM
     if scenario:
@@ -239,6 +242,12 @@ def chat(messages, scenario=None, confirm=None, on_tool=None, context=None, on_e
     removed = []
     shown = proposal = optimization = chart = None
     shown_all = []  # every plan shown this turn, in order: the app draws a card for each
+    # What the reply's figures may come from: the building's parameters, today's values in the tool descriptions,
+    # what the app said in the system message, and (added below) every tool result of this turn.
+    given = [tools.DATA["params"], system[len(SYSTEM):]] + [s["function"]["description"] for s in schemas]
+    question = "\n".join(str(m.get("content") or "") for m in messages if m.get("role") == "user")
+    verification = None
+    repaired = []  # figures the first draft stated without a source
 
     def show(plan):
         nonlocal shown
@@ -249,7 +258,7 @@ def chat(messages, scenario=None, confirm=None, on_tool=None, context=None, on_e
     def out(reply):
         return {"reply": reply, "scenario": shown, "scenarios": list(shown_all), "proposal": proposal, "optimization": optimization,
                 "removed_plan_ids": list(removed),
-                "chart": chart}
+                "chart": chart, "verification": verification}
 
     emit = on_event or (lambda event: None)
 
@@ -298,6 +307,7 @@ def chat(messages, scenario=None, confirm=None, on_tool=None, context=None, on_e
                 "function": {"name": "optimize", "arguments": json.dumps(args)}}
         convo += [{"role": "assistant", "content": "", "tool_calls": [call]},
                   {"role": "tool", "tool_call_id": call["id"], "content": json.dumps(result)}]
+        given.append(result)
 
     for _ in range(MAX_STEPS):
         msg = _post({"model": MODEL, "messages": convo, "tools": schemas}, on_delta)["choices"][0]["message"]
@@ -307,7 +317,17 @@ def chat(messages, scenario=None, confirm=None, on_tool=None, context=None, on_e
                       # Claude must get its thinking back when a tool result follows it.
                       **({"reasoning_details": msg["reasoning_details"]} if msg.get("reasoning_details") else {})})
         if not calls:
-            return out(msg.get("content") or "")
+            reply = msg.get("content") or ""
+            verification = grounding.check(reply, grounding.sources(*given), question)
+            if not verification["ok"] and not repaired:
+                # One repair round: name the figures no tool returned, and let the model fix or drop them.
+                repaired = verification["unsupported"]
+                emit({"type": "check", "status": "retry", "unsupported": repaired})
+                convo.append({"role": "user", "content": grounding.repair_message(verification)})
+                continue
+            verification = {**verification, "repaired": bool(repaired), "first_draft_unsupported": repaired}
+            emit({"type": "check", "status": "done", "result": verification})
+            return out(reply)
         for call in calls:
             name = call["function"]["name"]
             try:
@@ -330,6 +350,8 @@ def chat(messages, scenario=None, confirm=None, on_tool=None, context=None, on_e
             except Exception as e:  # the model sees the error and can fix its call
                 result = {"error": str(e)}
             convo.append({"role": "tool", "tool_call_id": call["id"], "content": json.dumps(result)})
+            given.append(result)
+    verification = None
     return out("Sorry, I couldn't finish that. Try a simpler question.")
 
 
@@ -344,6 +366,12 @@ def _show(event):
         print(f"\n  ▶ running {event['name']} {json.dumps(event['args']) if event['args'] else ''}", file=sys.stderr)
     elif kind == "tool_end":
         print(f"  {'✓' if event['ok'] else '✗'} {event['name']} ({event['seconds']} s)\n", file=sys.stderr)
+    elif kind == "check" and event["status"] == "retry":
+        print(f"\n  ✗ not in the tool results: {', '.join(event['unsupported'])}. Rewriting.\n", file=sys.stderr)
+    elif kind == "check":
+        r = event["result"]
+        print(f"\n  {'✓' if r['ok'] else '✗'} {r['matched']} of {r['checked']} figures match the engine"
+              + (f"; not found: {', '.join(r['unsupported'])}" if r["unsupported"] else ""), file=sys.stderr)
 
 
 def main():

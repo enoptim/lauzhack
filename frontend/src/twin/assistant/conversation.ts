@@ -1,4 +1,4 @@
-import type { ChatChart, ChatEvent, ChatOptimization, ChatProposal, ChatScenario } from '@/api/types';
+import type { ChatChart, ChatEvent, ChatOptimization, ChatProposal, ChatScenario, ChatVerification } from '@/api/types';
 import type { Plan } from '../plans';
 
 /** What the assistant did on the way to its reply, in order. */
@@ -36,6 +36,8 @@ export type Turn = {
   steps?: Step[];
   /** The reply is still arriving. */
   streaming?: boolean;
+  /** Whether the reply's figures match the building model's results. */
+  verification?: ChatVerification | null;
 };
 
 // The conversation survives a reload of this browser tab.
@@ -114,6 +116,12 @@ export function applyEvent(turn: Turn, event: ChatEvent, now: number): Turn {
       // Words written before a job are a note about it, not the reply.
       if (turn.content.trim()) steps.push({ kind: 'note', text: turn.content.trim() });
       steps.push({ kind: 'job', id: event.id, name: event.name, args: event.args ?? {}, status: 'running', startedAt: now });
+      return { ...turn, steps, content: '' };
+    case 'check':
+      endThinking();
+      if (event.status === 'done') return { ...turn, steps, verification: event.result };
+      // The draft is dropped: its figures are not in the results. The rewrite streams in next.
+      steps.push({ kind: 'note', text: `Checked the figures. Not in the building model’s results: ${event.unsupported.join(', ')}. Rewriting the reply.` });
       return { ...turn, steps, content: '' };
     case 'tool_end':
       return {
