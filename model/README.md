@@ -72,10 +72,15 @@ res = montecarlo.run(d, {"Energy plan": plan_a, "Wait for failures": plan_b}, n=
 res["summary"]["Energy plan"]      # P10/P50/P90 NPV, probability of paying off, flag probabilities, fan chart per year
 res["compare"]["Energy plan vs Wait for failures"]   # share of futures where A beats B
 res["stories"]                     # a bad, typical and good future, in words
+res["samples"]                     # 20 example futures from bad to good: paths per plan, events, old-unit failures
+res["summary"]["Energy plan"]["fan"]["cash_running"]   # fan without the value of equipment left at the end
+pool = montecarlo.make_pool()      # worker processes: about 4x faster; the API uses one (same results as serial, tested)
+montecarlo.run(d, plans, pool=pool)
 engine.simulate(d, plan_a, future=res["futures"][42])  # replay any single future
 ```
 What varies between futures (parameters in `model_assumptions.csv`, category `future`):
-- **The world (aleatoric):** a yearly electricity price path (log random walk), heatwave summers and price spikes each year with a probability, whether and when the new lab arrives, when each old unit actually fails (lifetime spread; overdue units fail with a yearly hazard and cost a `failure_premium` as an emergency replacement), and how long each unit installed later lasts. New units get the same lifetime spread, drawn per item and per install from a seed in the future (`engine.unit_life`), so rerunning a future always gives the same lives; when a new unit dies it is also an emergency replacement.
+- **The world (aleatoric):** a yearly electricity price path (log random walk), heatwave summers and price spikes each year with a probability, whether and when the new lab arrives, and when each old unit actually fails. Failures follow a wear-out (Weibull) curve with shape `lifetime_weibull_shape` and a mean equal to the nominal `lifetime_years`, counted from the unit's age today: a unit that still runs has a spread of remaining life (a 21-year-old ventilation unit with a 25-year life has about 9 years left on average, 2 to 18 years in most futures). Each inventory row (one room, or one floor's ventilation) fails and is replaced as one batch. A surprise failure costs a `failure_premium` as an emergency replacement.
+- **In play mode only:** units installed during the game wear out on the same curve, starting new (`engine.unit_life`, seeded per item and install so replaying never changes the past). The many-futures runs don't use this, so their results are unchanged.
 - **What we don't know (epistemic):** the strength of each people effect, drawn once per future from its low / central / high range.
 
 Every future is an ordinary `simulate()` run, so all accounting identities hold in each one. Every plan, and the "do nothing" path inside each run, faces the same futures, so differences come from the decision. Percentiles describe outcomes under these assumed distributions, not known real-world probabilities. A future with no randomness reproduces the deterministic run exactly (tested).

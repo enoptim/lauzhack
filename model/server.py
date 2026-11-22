@@ -113,6 +113,7 @@ class Chat(BaseModel):
     messages: list
     scenario: list = []
     confirm: dict | None = None
+    context: str | None = None  # what the user is looking at in the app, in words
 
 
 @app.get("/api/catalog")
@@ -150,10 +151,38 @@ def bands(body: Run):
     return viz.clean(engine.bands(DATA, body.scenario, body.events, overrides=body.overrides))
 
 
+_POOL = None
+_POOL_LOCK = threading.Lock()
+
+
+def _futures_pool():
+    """Worker processes for the futures run, started on first use. None means: run in this process."""
+    global _POOL
+    with _POOL_LOCK:
+        if _POOL is None:
+            try:
+                _POOL = montecarlo.make_pool()
+            except Exception:  # noqa: BLE001 - no processes available: fall back to one process
+                _POOL = False
+        return _POOL or None
+
+
+@app.on_event("shutdown")
+def _stop_futures_pool():
+    if _POOL:
+        _POOL.shutdown(wait=False, cancel_futures=True)
+
+
 @app.post("/api/futures")
 def futures(body: Futures):
-    res = montecarlo.run(DATA, body.scenarios, n=min(body.n, 500), seed=body.seed,
-                         events=body.events, overrides=body.overrides)
+    if len(body.scenarios) > 6:
+        raise HTTPException(status_code=400, detail="At most 6 plans at once.")
+    args = dict(n=min(body.n, 500), seed=body.seed, events=body.events, overrides=body.overrides)
+    pool = _futures_pool()
+    try:
+        res = montecarlo.run(DATA, body.scenarios, pool=pool, **args)
+    except Exception:  # noqa: BLE001 - a broken worker pool: answer from this process instead
+        res = montecarlo.run(DATA, body.scenarios, **args)
     res.pop("futures")
     return viz.clean(res)
 
@@ -164,7 +193,7 @@ def chat(body: Chat):
     if not body.messages or body.messages[-1].get("role") != "user":
         raise HTTPException(400, "The last message must be from the user.")
     try:
-        return viz.clean(agent.chat(body.messages, body.scenario, body.confirm))
+        return viz.clean(agent.chat(body.messages, body.scenario, body.confirm, context=body.context))
     except RuntimeError as e:  # missing key or OpenRouter error
         raise HTTPException(502, str(e))
 

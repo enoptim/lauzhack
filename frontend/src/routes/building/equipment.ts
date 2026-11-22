@@ -68,3 +68,53 @@ export const lightingItems = inventory.flatMap(item => {
   }];
 });
 
+
+/** What the plan sets for one kind of equipment, as the inspector shows it. */
+export type Planned = Swap | 'mixed' | { some: Swap; floors: number[] } | undefined;
+
+/** The option a plan sets, if one is set everywhere or on some floors; undefined when none or when floors differ. */
+export const optionOf = (planned: Planned) =>
+  planned === undefined || planned === 'mixed' ? undefined : 'some' in planned ? planned.some.option : planned.option;
+
+/** The floors a group's equipment serves. Ventilation sits in the basement and on the roof but serves every floor. */
+export function servedFloors(group: EquipmentGroup | string): number[] {
+  if (group === 'ventilation') return Array.from({ length: FLOOR_COUNT + 1 }, (_, index) => index - 1);
+  return [...new Set(inventory.filter(item => item.group === group).map(item => Number(item.floor)))]
+    .filter(floor => floor < FLOOR_COUNT).sort((a, b) => a - b);
+}
+
+/**
+ * The plan's choice for a group where you are looking. Later swaps win, as in the engine.
+ * Building-wide groups can come from the assistant set floor by floor: one option on every floor is that option,
+ * one option on some floors is `{ some }`, several options are 'mixed'.
+ */
+export function plannedFor(scenario: Swap[], floor: number | null, group: EquipmentGroup): Planned {
+  if (isBuildingWide(group)) {
+    const swaps = scenario.filter(swap => swap.group === group);
+    if (!swaps.length) return undefined;
+    if (new Set(swaps.map(swap => swap.option)).size > 1) return 'mixed';
+    const last = swaps.at(-1)!;
+    if (swaps.some(swap => swap.floor === undefined)) return last;
+    const covered = new Set(swaps.map(swap => swap.floor));
+    return servedFloors(group).every(level => covered.has(level)) ? last : { some: last, floors: [...covered] as number[] };
+  }
+  return scenario.filter(swap => swap.group === group && (swap.floor === floor || swap.floor === undefined)).at(-1);
+}
+
+/**
+ * The plan with one choice changed. Only the swaps for that group (and floor) are replaced: everything else in the
+ * plan, including changes this panel can't show, stays exactly as it was. A swap for every floor is split into one
+ * per floor first, so changing one floor never needs a "back to today" swap.
+ */
+export function withChoice(scenario: Swap[], floor: number | null, group: EquipmentGroup, option: string | null): Swap[] {
+  if (isBuildingWide(group)) {
+    const rest = scenario.filter(swap => swap.group !== group);
+    return option === null ? rest : [...rest, { group, option }];
+  }
+  if (floor === null) return scenario;
+  const split = scenario.flatMap(swap => swap.group === group && swap.floor === undefined
+    ? servedFloors(group).map(level => ({ ...swap, floor: level }))
+    : [swap]);
+  const rest = split.filter(swap => !(swap.group === group && swap.floor === floor));
+  return option === null ? rest : [...rest, { group, floor, option }];
+}

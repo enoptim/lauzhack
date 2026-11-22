@@ -58,9 +58,10 @@ Rules:
 - When the user confirms, the server runs optimize on exactly that problem and you see the result. The app already
   shows the plan, so don't call show_scenario for it; just explain it. If all_limits_met is false, say which limit
   could not be met and how close the plan gets, and offer a revised problem. Never call optimize yourself.
-- For "what are my options" or "how does cost trade against savings", call upgrade_tradeoffs. Describe three
-  packages: the cheapest useful one, the balanced one (knee_index) and the biggest saving. The app plots them and
-  shows the balanced one; call show_scenario only if the user wants another.
+- For "what are my options" or "how does cost trade against savings", call upgrade_tradeoffs. The app plots every
+  package and shows the balanced one (knee_index) as a card with its figures. In at most 3 short sentences, no lists:
+  the cheapest useful package and the biggest saving, each with its upfront cost and yearly saving copied exactly from
+  the tool result, and why the balanced one is the sweet spot. Call show_scenario only if the user wants another.
 - For a quick question about single upgrades ("what pays back fastest?"), use rank_upgrades.
 - When the user asks for a specific change, call show_scenario with it. It simulates too.
 - For what-if questions about the future (price spike, heatwave, new lab), pass the matching events. The single-year figures are for year 1; use what_if.by_year for the years the event hits.
@@ -77,11 +78,25 @@ How to read the money numbers. The model compares each plan with doing nothing o
 - flags: warn if you see over_budget, reserve_below_minimum, ventilation_over_capacity or desk_shortfall.
 
 How to answer:
-- Main point first. Plain words for people outside energy and finance. Keep it under 150 words.
+- Main point first. Plain words for people outside energy and finance.
+- Name floors in words: basement, ground floor, floor 1 to floor 4. Never write floor -1 or floor 0.
+- Money in CHF with thousands separators, rounded sensibly (CHF 26,100, not CHF 26,145.37).
+
+When the app shows a plan (after a confirmed optimization, upgrade_tradeoffs or show_scenario), a card under your
+reply already lists the changes per floor, the upfront cost, the yearly energy bill and the yearly saving, and says
+they are model estimates. The Results page shows payback and long-term value across 200 possible futures. Then:
+- Reply in 2 or 3 short sentences, with no headings, no lists and no bold labels: why this plan is worth it, and one
+  thing to watch.
+- Don't list the changes. Give no figures except the ROI, copied exactly from the tool result.
+- Don't define terms and don't add the estimates disclaimer: the card and the app do both.
+- Avoid finance jargon such as "negative extra cost": say "it costs no more than replacing the worn-out units like
+  for like".
+
+Otherwise (no plan card):
+- Keep it under 150 words.
 - Use a short list for the changes: what, where (floors), cost.
 - Then give: upfront cost, saving per month and per year, payback time in years, and ROI.
 - Explain once in plain words: payback = years until the savings repay the cost; ROI = what the upgrade earns back each year as a share of its cost.
-- Money in CHF with thousands separators, rounded sensibly (CHF 26,100, not CHF 26,145.37).
 - If it helps, offer one alternative in a sentence (e.g. cheaper up front, or bigger savings).
 - Say once, briefly, that the numbers are model estimates based on our assumptions.
 - Answer in the user's language."""
@@ -102,7 +117,7 @@ def _post(payload):
         raise RuntimeError(f"OpenRouter error {e.code}: {e.read().decode()[:500]}") from None
 
 
-def chat(messages, scenario=None, confirm=None, on_tool=None):
+def chat(messages, scenario=None, confirm=None, on_tool=None, context=None):
     """Answer the last user message.
 
     messages: [{"role": "user" | "assistant", "content": str}, ...]
@@ -110,6 +125,7 @@ def chat(messages, scenario=None, confirm=None, on_tool=None):
     confirm:  a problem the user confirmed (from an earlier `proposal`). The optimizer runs on exactly this problem
               before the model answers, so the model can't change it.
     on_tool:  optional callback(name, args) for logging
+    context:  optional words from the app about what the user is looking at, e.g. "Building view, floor 2, lighting"
 
     Returns {"reply", "scenario", "proposal", "optimization", "chart"}:
     - scenario: the plan the model showed (see tools.app_scenario), or None.
@@ -120,6 +136,9 @@ def chat(messages, scenario=None, confirm=None, on_tool=None):
     system = SYSTEM
     if scenario:
         system += f"\n\nThe app currently shows this scenario: {json.dumps(scenario)}"
+    if context:
+        system += (f"\n\nWhere the user is in the app right now: {context[:600]}\n"
+                   "Use it to resolve words like \"this\", \"here\" or \"this plan\". Don't repeat it back.")
     convo = [{"role": "system", "content": system}] + [
         {"role": m["role"], "content": m["content"]} for m in messages if m.get("role") in ("user", "assistant")
     ]

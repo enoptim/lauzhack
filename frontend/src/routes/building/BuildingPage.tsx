@@ -1,123 +1,90 @@
 import { Edges } from '@react-three/drei';
-import { useEffect, useState } from 'react';
-import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
-import { readSavedConfigurations, storeConfigurations, type SavedConfiguration } from './configurations';
+import { ArrowLeft } from 'lucide-react';
+import { useState } from 'react';
 import BuildingScene from '@/components/BuildingScene';
-import { draftKey, isBuildingWide, lightingItems, type EquipmentGroup } from './equipment';
-
+import { usePublishFocus, useTwin, type Focus } from '@/twin/TwinProvider';
+import { equipmentForFloor, equipmentLabels, isBuildingWide, lightingItems, optionOf, plannedFor, withChoice, type EquipmentGroup } from './equipment';
 import BuildingInspector, { keepCurrent } from './BuildingInspector';
 import ExteriorBlinds from './ExteriorBlinds';
+import PlanPins, { levelName } from './PlanPins';
 import RoofEquipment from './RoofEquipment';
-import PlayPanel from './play/PlayPanel';
-import { brokenNow, sceneView, usePlay } from './play/usePlay';
 
 const selectableOutline = '#f5ad20';
 const selectedOutline = '#b7530c'; // Matches the inspector's brand-orange selection.
-const brokenOutline = '#d4361f'; // Play mode: equipment that just broke.
 
-type Mode = 'plan' | 'play';
-const MODE_KEY = 'building-mode';
-
-function savedMode(): Mode {
-  try { return sessionStorage.getItem(MODE_KEY) === 'play' ? 'play' : 'plan'; } catch { return 'plan'; }
+/** What the assistant should know about the view, and what it could usefully be asked here. */
+function focusFor(floor: number | null, group: EquipmentGroup | null): Focus {
+  const where = levelName(floor);
+  if (!group) {
+    return floor === null ? {
+      label: 'Whole building',
+      describe: 'The user is in the 3D building view, looking at the whole building from outside.',
+      suggestions: ['Which single upgrades pay back fastest?', 'Cheapest way to cut our energy bill by 10%?'],
+    } : {
+      label: where,
+      describe: `The user is in the 3D building view, looking inside ${where.toLowerCase()}.`,
+      suggestions: [`What is worth changing on ${where.toLowerCase()}?`],
+    };
+  }
+  const label = equipmentLabels[group];
+  const { installed, choices } = equipmentForFloor(floor, group);
+  const scope = isBuildingWide(group) ? 'the whole building' : where.toLowerCase();
+  return {
+    label: `${isBuildingWide(group) ? 'Whole building' : where} · ${label}`,
+    describe: `The user is in the 3D building view, looking at the ${label.toLowerCase()} (group "${group}") for ${scope}`
+      + `${floor !== null && !isBuildingWide(group) ? ` (floor ${floor})` : ''}. Installed now: ${installed?.name ?? 'mixed equipment'}.`
+      + ` Options: ${choices.map(option => `${option.name} (${option.option_id})`).join('; ')}.`,
+    suggestions: [`Which ${label.toLowerCase()} option pays back fastest for ${scope}?`, `Is new ${label.toLowerCase()} worth it for ${scope}?`],
+  };
 }
 
 export default function BuildingPage() {
-  // Plan: choose upgrades and simulate them. Play: live through the next 15 years and react when something happens.
-  const [mode, setMode] = useState<Mode>(savedMode);
-  const play = usePlay(mode === 'play');
-  const broken = mode === 'play' ? brokenNow(play.state) : [];
+  const twin = useTwin();
+  const { activePlan } = twin;
   const [floor, setFloor] = useState<number | null>(null);
   const [selectedGroup, setSelectedGroup] = useState<EquipmentGroup | null>(null);
-  const [configurations, setConfigurations] = useState(() => {
-    const saved = readSavedConfigurations();
-    return saved.length ? saved : [{ id: 1, scenario: [] }];
-  });
-  const [activeId, setActiveId] = useState(() => configurations[0].id);
-  const active = configurations.find(configuration => configuration.id === activeId) ?? configurations[0];
-  const draft = new Map(active.scenario.map(swap => [draftKey(swap.floor ?? null, swap.group), swap]));
-  const [storageError, setStorageError] = useState(false);
+  const scenario = activePlan.scenario;
+  const color = activePlan.color;
   const floorLights = lightingItems.filter(item => item.floor === floor);
-  const playSolar = [...(play.state?.plan.done ?? []), ...(play.state?.plan.planned ?? [])].some(swap => swap.group === 'solar_pv');
-  const solarDraft = mode === 'play' ? playSolar : draft.get(draftKey(null, 'solar_pv'));
-  const showBanner = mode === 'plan' && draft.get(draftKey(0, 'lauzhack_banner'))?.option === 'lauzhack_banner_add';
+  const planned = (group: EquipmentGroup, level = floor) => plannedFor(scenario, level, group);
+  const solar = planned('solar_pv', null);
+  const banner = plannedFor(scenario, 0, 'lauzhack_banner');
+  const showBanner = optionOf(banner) === 'lauzhack_banner_add';
 
-  function switchMode(next: Mode) {
-    setMode(next);
-    setSelectedGroup(null);
-    try { sessionStorage.setItem(MODE_KEY, next); } catch { /* no storage */ }
-  }
-
-  // When the game stops because something broke, look at it: the floor (or roof) it's on.
-  const pauseKey = play.state ? `${play.state.session_id}|${play.state.t}` : '';
-  useEffect(() => {
-    if (mode !== 'play' || !play.state) return;
-    const first = play.state.reasons.find(reason => reason.type === 'failure' && reason.group
-      && sceneView(reason.group, reason.floors) !== undefined);
-    if (first?.group) {
-      setFloor(sceneView(first.group, first.floors) ?? null);
-      setSelectedGroup(null);
-    }
-  }, [pauseKey]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  /** Outline colour for a group in the current view: red if it just broke here (play), brand if selected. */
-  function outlineFor(group: EquipmentGroup) {
-    if (broken.some(b => b.group === group && b.view === floor)) return brokenOutline;
-    return selectedGroup === group ? selectedOutline : selectableOutline;
-  }
+  usePublishFocus(focusFor(floor, selectedGroup));
 
   function chooseOption(group: EquipmentGroup, option: string) {
-    const key = draftKey(floor, group);
-    const next = new Map(draft);
-    if (option === keepCurrent) next.delete(key);
-    else if (isBuildingWide(group)) next.set(key, { group, option });
-    else if (floor !== null) next.set(key, { group, floor, option });
-    saveConfigurations(configurations.map(configuration => configuration.id === active.id
-      ? { ...configuration, scenario: Array.from(next.values()) }
-      : configuration));
+    twin.setScenario(activePlan.id, withChoice(scenario, floor, group, option === keepCurrent ? null : option));
   }
 
-  function saveConfigurations(next: SavedConfiguration[]) {
-    setConfigurations(next);
-    try {
-      storeConfigurations(next);
-      setStorageError(false);
-    } catch {
-      setStorageError(true);
-    }
+  function goTo(level: number | null, group?: string | null) {
+    if (level !== floor) setFloor(level);
+    setSelectedGroup(group && group in equipmentLabels ? group as EquipmentGroup : null);
   }
 
-  function createConfiguration() {
-    const id = configurations.reduce((last, configuration) => Math.max(last, configuration.id), 0) + 1;
-    saveConfigurations([...configurations, { id, scenario: [] }]);
-    setActiveId(id);
-    return id;
-  }
-
-  function removeConfiguration(id: number) {
-    const remaining = configurations.filter(configuration => configuration.id !== id);
-    if (!remaining.length) return;
-    if (active.id === id) setActiveId(remaining[0].id);
-    saveConfigurations(remaining);
+  /** Planned equipment wears the plan's colour; the open one is darker. */
+  function outlineFor(group: EquipmentGroup) {
+    if (selectedGroup === group) return selectedOutline;
+    const choice = planned(group);
+    const installed = equipmentForFloor(floor, group).installed?.option_id;
+    return choice && (choice === 'mixed' || optionOf(choice) !== installed) ? color : selectableOutline;
   }
 
   function selectionFor(group: EquipmentGroup) {
-    return {
-      outline: outlineFor(group),
-      onSelect: () => setSelectedGroup(group),
-    };
+    return { outline: outlineFor(group), onSelect: () => setSelectedGroup(group) };
   }
 
   return (
-    <main aria-label="Building viewer" className="grid min-h-full grid-rows-[minmax(20rem,55dvh)_auto] md:h-full md:grid-cols-[minmax(0,1fr)_clamp(21rem,26vw,25rem)] md:grid-rows-[minmax(0,1fr)]">
+    <main aria-label="Building viewer" className="grid min-h-full grid-rows-[minmax(20rem,55dvh)_auto] md:h-full md:grid-cols-[minmax(0,1fr)_clamp(20rem,25vw,24rem)] md:grid-rows-[minmax(0,1fr)]">
       <div className="relative min-h-0">
         <BuildingScene floor={floor} showBanner={showBanner} equipmentSelection={floor !== null ? {
           monitors: selectionFor('monitors'), computers: selectionFor('computers'), coffee: selectionFor('coffee'),
           water_heater: selectionFor('water_heater'), servers: selectionFor('servers'),
         } : undefined}>
           {floor === null && <>
-            <RoofEquipment ventilation={selectionFor('ventilation')} solar={solarDraft ? selectionFor('solar_pv') : undefined} />
+            <RoofEquipment ventilation={selectionFor('ventilation')} solar={optionOf(solar) && optionOf(solar) !== 'solar_pv_none' ? selectionFor('solar_pv') : undefined} />
             <ExteriorBlinds {...selectionFor('blinds')} />
+            <PlanPins scenario={activePlan.scenario} color={color} onPick={goTo} />
           </>}
           {floor !== null && floorLights.map(item => (
             <mesh
@@ -135,35 +102,22 @@ export default function BuildingPage() {
             </mesh>
           ))}
         </BuildingScene>
-        <ToggleGroup type="single" variant="outline" value={mode} aria-label="Mode"
-          onValueChange={value => value && switchMode(value as Mode)}
-          className="absolute top-3 left-3 bg-background/95 shadow-sm">
-          <ToggleGroupItem value="plan" className="px-4">Plan</ToggleGroupItem>
-          <ToggleGroupItem value="play" className="px-4">Play</ToggleGroupItem>
-        </ToggleGroup>
+        {floor !== null && (
+          <button type="button" onClick={() => goTo(null)}
+            className="absolute top-3 left-3 flex h-8 items-center gap-2 rounded-lg border bg-card/95 px-3 text-sm font-medium shadow-sm backdrop-blur-sm hover:bg-card focus-visible:outline-2 focus-visible:outline-ring">
+            <ArrowLeft aria-hidden="true" className="size-4" /> Whole building
+          </button>
+        )}
       </div>
-      {mode === 'play' ? (
-        <PlayPanel play={play} floor={floor}
-          onFloorChange={level => { if (level !== floor) { setFloor(level); setSelectedGroup(null); } }}
-          selectedGroup={selectedGroup} onSelectGroup={group => setSelectedGroup(group as EquipmentGroup | null)} />
-      ) : <BuildingInspector
+      <BuildingInspector
         floor={floor}
         selectedGroup={selectedGroup}
-        draft={draft}
-        onFloorChange={level => {
-          if (level === floor) return;
-          setFloor(level);
-          setSelectedGroup(null);
-        }}
+        planned={planned}
+        onFloorChange={level => goTo(level)}
         onSelectGroup={setSelectedGroup}
         onChooseOption={chooseOption}
-        configurations={configurations}
-        activeId={active.id}
-        storageError={storageError}
-        onCreateConfiguration={createConfiguration}
-        onEditConfiguration={setActiveId}
-        onRemoveConfiguration={removeConfiguration}
-      />}
+        onGoTo={goTo}
+      />
     </main>
   );
 }

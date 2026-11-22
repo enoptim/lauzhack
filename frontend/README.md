@@ -10,20 +10,26 @@ pnpm install
 pnpm dev
 ```
 
-Open the URL printed by Vite. Use the page picker in the header or enter a route directly in the address bar.
+Open the URL printed by Vite. The top bar switches between the two views of the twin: **Building** and **Results**.
 
-- `/` — 3D building viewer. It requires WebGL. Left-drag to orbit, scroll to zoom, and right-drag to pan. Equipment changes are saved to the configuration you’re editing. Open **Review configurations** to create a configuration, see its planned changes, or switch which one you’re editing. In that same dialog, **Simulate and compare** runs every configuration with planned changes against the current setup.
-- `/assistant` — Chat with the building: describe a goal and limits, and it finds and explains the best plan.
-- `/results` — Results placeholder.
-- `/` has two modes, switched at the top left of the 3D view. **Plan**: pick upgrades and simulate them. **Play**: live through the next 15 years. The plan runs until something happens (a breakdown, news, a price jump), the 3D view jumps to it and outlines broken equipment in red, and you decide. Play uses the `/api/session` endpoints (see `model/README.md`, "Play through one future"); its code is in `src/routes/building/play/`.
+- `/`: the 3D building. It needs WebGL. Left-drag to orbit, scroll to zoom, right-drag to pan. The panel on the right lists your plans, a floor picker and the equipment on that floor. Pick an option and it goes into the plan you're editing. The plan's changes are pinned onto the building.
+- `/results`: the plans compared over 200 possible futures. The building opens it with the plans in the page address (`?config=`). Three columns: the plans (left), the verdict, key numbers and chart (middle), and the assumptions you can change (right). When the assistant is open and the view is narrower, the plans and the assumptions share one column on the right. Every change reruns the futures; the chart keeps a dashed "before" line and the verdict says how much the change moved the result. Keys: Space plays one future, 1–6 choose a plan. All state lives in `src/routes/results/useResultsModel.ts`; the parts only read it.
+- `/assistant`: old links open the assistant beside the building.
 
-The Assistant page calls `POST /api/chat` (see [chat/README.md](../chat/README.md)), so it needs the API running (`make dev`) and an OpenRouter key in `chat/.env`. “Show results” on a recommended plan opens it on `/results`.
+Three things are part of every view (they live in `src/twin/`):
+- **The pulse** in the top bar: what the plan on screen does to the energy bill and the meeting-room air, and what it costs up front. It reruns the engine on every change.
+- **The assistant**: press **Ask the building** (or `/`, or Cmd/Ctrl-K). It docks on the left of either view and keeps the conversation. It knows what is on screen (floor, equipment, the plan on Results). A plan it finds becomes one of your plans: **Show in 3D** puts it on the building, **Compare in Results** opens it next to your own.
+- **Plans**: one list, shared by the building, the assistant and Results. Each plan keeps one colour in every view. They are saved in this browser.
 
-`pnpm build` typechecks and builds the app. `pnpm preview` serves the production build locally. In production, configure the host to serve `index.html` for direct page URLs such as `/assistant` and `/results`.
+The assistant calls `POST /api/chat` (see [chat/README.md](../chat/README.md)), so it needs the API running (`make dev`) and an OpenRouter key in `chat/.env`.
+
+`pnpm build` typechecks and builds the app. `pnpm preview` serves the production build locally. In production, configure the host to serve `index.html` for direct page URLs such as `/results`.
 
 ## Working on a route
 
-Keep each route mostly self-contained. For Assistant, work in `src/routes/assistant/`; for Results, work in `src/routes/results/`.
+Keep each route mostly self-contained. For the building, work in `src/routes/building/`; for Results, work in `src/routes/results/`.
+
+The shell shared by every view is in `src/twin/`: the top bar (`AppShell.tsx`), the pulse, the shared plans and conversation (`TwinProvider.tsx`, `plans.ts`) and the assistant column (`assistant/`). A view tells the assistant what is on screen with `usePublishFocus` from `TwinProvider.tsx`.
 
 - Keep page-specific components, hooks, styles, mock data, and tests in the route folder. Start with the page file and add files as needed.
 - A route can import existing shared UI from `@/components/ui` and shared utilities from `@/lib`. Do not import from another route folder.

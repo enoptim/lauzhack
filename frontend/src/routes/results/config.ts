@@ -1,7 +1,7 @@
 import type { RunRequest, Scenario } from '@/api/types';
 
 /** One plan from the building view: a name and its equipment changes. */
-export type Plan = { name: string; scenario: Scenario };
+export type Plan = { name: string; scenario: Scenario; color?: string };
 
 /**
  * The configuration the building view sends in the page address: /results?config=<JSON>.
