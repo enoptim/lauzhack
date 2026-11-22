@@ -66,7 +66,12 @@ Rules:
   the cheapest useful package and the biggest saving, each with its upfront cost and yearly saving copied exactly from
   the tool result, and why the balanced one is the sweet spot. Call show_scenario only if the user wants another.
 - For a quick question about single upgrades ("what pays back fastest?"), use rank_upgrades.
+- To remove or clear plans, call remove_plans with their ids, then say in one sentence which plans you removed.
+  The app shows an undo button. Never remove plans the user didn't ask to remove.
 - When the user asks for a specific change, call show_scenario with it. It simulates too.
+- To make several plans at once ("make 3 plans", "compare A, B and C"), call show_scenario once per plan, each with
+  its own short title. The app shows a card for every plan you show in one reply, and the user can keep them all.
+  Then compare them in prose; don't repeat each card's figures.
 - For what-if questions about the future (price spike, heatwave, new lab), pass the matching events. The single-year figures are for year 1; use what_if.by_year for the years the event hits.
 - "Energy bill" means the electricity bill. Running costs also include maintenance and supplies such as coffee capsules. Point out when an upgrade lowers the energy bill but raises running costs.
 - Mention comfort and health effects from the product descriptions when they matter (flicker-free light, fresher air, particle filters).
@@ -81,6 +86,7 @@ How to read the money numbers. The model compares each plan with doing nothing o
 - flags: warn if you see over_budget, reserve_below_minimum, ventilation_over_capacity or desk_shortfall.
 
 How to answer:
+- Never use Markdown tables, even when asked for one: use a short list instead, without saying why.
 - Main point first. Plain words for people outside energy and finance.
 - Name floors in words: basement, ground floor, floor 1 to floor 4. Never write floor -1 or floor 0.
 - Money in CHF with thousands separators, rounded sensibly (CHF 26,100, not CHF 26,145.37).
@@ -183,7 +189,17 @@ def _post(payload, on_delta=None):
     return {"choices": [{"message": msg}]}
 
 
-def chat(messages, scenario=None, confirm=None, on_tool=None, context=None, on_event=None):
+REMOVE_PLANS_SCHEMA = {"type": "function", "function": {
+    "name": "remove_plans",
+    "description": "Removes plans from the user's plan list in the app. Only when the user asks to remove, delete or "
+                   "clear plans. Use the ids from the plan list in your instructions. Removing every plan leaves one "
+                   "empty plan (today's building). The app offers an undo.",
+    "parameters": {"type": "object", "properties": {
+        "plan_ids": {"type": "array", "items": {"type": "integer"}, "description": "Ids of the plans to remove."}},
+        "required": ["plan_ids"]}}}
+
+
+def chat(messages, scenario=None, confirm=None, on_tool=None, context=None, on_event=None, plans=None):
     """Answer the last user message.
 
     messages: [{"role": "user" | "assistant", "content": str}, ...]
@@ -195,9 +211,12 @@ def chat(messages, scenario=None, confirm=None, on_tool=None, context=None, on_e
               "thinking" and "text" (with "text": the next piece), "tool_start" (id, name, args) and
               "tool_end" (id, name, ok, seconds).
     context:  optional words from the app about what the user is looking at, e.g. "Building view, floor 2, lighting"
+    plans:    optional list of the user's plans in the app: [{"id", "name", "changes", "source"}, ...]. With it the
+              model can remove plans (remove_plans); the ids it removed come back in `removed_plan_ids`.
 
-    Returns {"reply", "scenario", "proposal", "optimization", "chart"}:
-    - scenario: the plan the model showed (see tools.app_scenario), or None.
+    Returns {"reply", "scenario", "scenarios", "proposal", "optimization", "chart", "removed_plan_ids"}:
+    - scenario: the last plan the model showed (see tools.app_scenario), or None.
+    - scenarios: every plan the model showed this turn, in order (the last one is `scenario`).
     - proposal: the problem the model proposed this turn, with today's values, for the user to confirm; or None.
     - optimization: after a confirmed run, the problem and whether all limits were met; or None.
     - chart: the cost-vs-savings curve if the model called upgrade_tradeoffs (see tools.tradeoff_chart); or None.
@@ -208,14 +227,28 @@ def chat(messages, scenario=None, confirm=None, on_tool=None, context=None, on_e
     if context:
         system += (f"\n\nWhere the user is in the app right now: {context[:600]}\n"
                    "Use it to resolve words like \"this\", \"here\" or \"this plan\". Don't repeat it back.")
+    plans = [p for p in plans or [] if isinstance(p, dict) and isinstance(p.get("id"), int)]
+    if plans:
+        system += "\n\nThe user's plans in the app (id: name, changes):\n" + "\n".join(
+            f"- {p['id']}: {str(p.get('name', ''))[:60]}, {p.get('changes', 0)} change(s)"
+            + (", from the assistant" if p.get("source") == "assistant" else "") for p in plans[:12])
     convo = [{"role": "system", "content": system}] + [
         {"role": m["role"], "content": m["content"]} for m in messages if m.get("role") in ("user", "assistant")
     ]
-    schemas = tools.SCHEMAS
+    schemas = tools.SCHEMAS + ([REMOVE_PLANS_SCHEMA] if plans else [])
+    removed = []
     shown = proposal = optimization = chart = None
+    shown_all = []  # every plan shown this turn, in order: the app draws a card for each
+
+    def show(plan):
+        nonlocal shown
+        if plan:
+            shown = plan
+            shown_all[:] = [p for p in shown_all if p["scenario"] != plan["scenario"]] + [plan]
 
     def out(reply):
-        return {"reply": reply, "scenario": shown, "proposal": proposal, "optimization": optimization,
+        return {"reply": reply, "scenario": shown, "scenarios": list(shown_all), "proposal": proposal, "optimization": optimization,
+                "removed_plan_ids": list(removed),
                 "chart": chart}
 
     emit = on_event or (lambda event: None)
@@ -235,6 +268,21 @@ def chat(messages, scenario=None, confirm=None, on_tool=None, context=None, on_e
             emit({"type": "tool_end", "id": call_id, "name": name, "ok": ok,
                   "seconds": round(time.monotonic() - started, 1)})
 
+    def remove_plans(call_id, args):
+        """Nothing runs here: the app removes the plans. Only ids from the app's list count."""
+        emit({"type": "tool_start", "id": call_id, "name": "remove_plans", "args": args})
+        known = {p["id"]: p.get("name") for p in plans}
+        ids = [i for i in args.get("plan_ids") or [] if i in known and i not in removed]
+        unknown = [i for i in args.get("plan_ids") or [] if i not in known]
+        removed.extend(ids)
+        emit({"type": "tool_end", "id": call_id, "name": "remove_plans", "ok": bool(ids), "seconds": 0})
+        out = {"removed": [known[i] for i in ids]}
+        if unknown:
+            out["unknown_ids"] = unknown
+        if removed and len(removed) == len(known):
+            out["note"] = "Every plan is removed; the app keeps one empty plan, today's building."
+        return out
+
     if confirm:
         # Run the confirmed problem ourselves and hand the model the result as if it had called optimize.
         keys = ("objective", "constraints", "locked", "allowed", "per_floor", "allow_warnings", "events")
@@ -244,8 +292,8 @@ def chat(messages, scenario=None, confirm=None, on_tool=None, context=None, on_e
         result = run_tool("confirmed_optimize", "optimize", args)
         optimization = {"problem": result["problem"], "all_limits_met": result["all_limits_met"],
                         "limits_missed": result["limits_missed"]}
-        shown = tools.app_scenario("Optimized plan", result["scenario"], args.get("events"))
-        schemas = tools.SCHEMAS + [tools.OPTIMIZE_SCHEMA]  # the call below must name a known tool
+        show(tools.app_scenario("Optimized plan", result["scenario"], args.get("events")))
+        schemas = schemas + [tools.OPTIMIZE_SCHEMA]  # the call below must name a known tool
         call = {"id": "confirmed_optimize", "type": "function",
                 "function": {"name": "optimize", "arguments": json.dumps(args)}}
         convo += [{"role": "assistant", "content": "", "tool_calls": [call]},
@@ -268,14 +316,17 @@ def chat(messages, scenario=None, confirm=None, on_tool=None, context=None, on_e
                 args = json.loads(call["function"].get("arguments") or "{}")
                 if on_tool:
                     on_tool(name, args)
-                result = run_tool(call["id"], name, args)
+                if name == "remove_plans":
+                    result = remove_plans(call["id"], args)
+                else:
+                    result = run_tool(call["id"], name, args)
                 if name == "show_scenario":
-                    shown = tools.app_scenario(**args)
+                    show(tools.app_scenario(**args))
                 if name == "propose_problem":
                     proposal = {"problem": result["problem"], "today": result["today"]}
                 if name == "upgrade_tradeoffs":  # shows its balanced package itself
                     chart = tools.tradeoff_chart(result)
-                    shown = tools.knee_scenario(result, args.get("events")) or shown
+                    show(tools.knee_scenario(result, args.get("events")))
             except Exception as e:  # the model sees the error and can fix its call
                 result = {"error": str(e)}
             convo.append({"role": "tool", "tool_call_id": call["id"], "content": json.dumps(result)})

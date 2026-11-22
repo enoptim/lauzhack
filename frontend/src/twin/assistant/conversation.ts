@@ -1,4 +1,5 @@
 import type { ChatChart, ChatEvent, ChatOptimization, ChatProposal, ChatScenario } from '@/api/types';
+import type { Plan } from '../plans';
 
 /** What the assistant did on the way to its reply, in order. */
 export type Step =
@@ -16,6 +17,8 @@ export type Turn = {
   /** Where the user was when they asked, e.g. "Floor 2 · Lighting". Shown above their message. */
   where?: string;
   scenario?: ChatScenario | null;
+  /** Every plan shown in this reply when there were several; the last one is `scenario`. */
+  scenarios?: ChatScenario[];
   /** An optimization the assistant set up, waiting for the user's OK. */
   proposal?: ChatProposal | null;
   /** Set once the user ran this turn's proposal. */
@@ -25,6 +28,10 @@ export type Turn = {
   /** The plan this turn's scenario became, once the user kept it. */
   planId?: number;
   failed?: boolean;
+  /** Plans the assistant removed in this reply, kept for its undo button. */
+  removedPlans?: Plan[];
+  /** Set once the user undid the removal. */
+  restored?: boolean;
   /** How the assistant got to this reply: thinking and jobs. */
   steps?: Step[];
   /** The reply is still arriving. */
@@ -50,7 +57,9 @@ export function loadTurns(): Turn[] {
     return Array.isArray(saved) ? saved.filter((turn): turn is Turn => typeof turn?.id === 'string'
       && (turn.role === 'user' || turn.role === 'assistant') && typeof turn.content === 'string'
       && !turn.streaming && (turn.steps == null || Array.isArray(turn.steps))
-      && (turn.scenario == null || validScenario(turn.scenario))) : [];
+      && (turn.removedPlans == null || Array.isArray(turn.removedPlans))
+      && (turn.scenario == null || validScenario(turn.scenario))
+      && (turn.scenarios == null || (Array.isArray(turn.scenarios) && turn.scenarios.every(validScenario)))) : [];
   } catch {
     return [];
   }
@@ -66,6 +75,12 @@ export function saveTurns(turns: Turn[]) {
 
 // getRandomValues also works over plain http (e.g. the LAN address), unlike randomUUID.
 export const newId = () => crypto.getRandomValues(new Uint32Array(2)).join('-');
+
+/** The plans a reply shows, one card each: several if the assistant made several, else its one plan. */
+export function turnPlans(turn: Turn): ChatScenario[] {
+  if (turn.scenarios && turn.scenarios.length > 1) return turn.scenarios;
+  return turn.scenario ? [turn.scenario] : [];
+}
 
 export function errorText(error: unknown) {
   const detail = /"detail":"((?:[^"\\]|\\.)*)"/.exec(String(error))?.[1];

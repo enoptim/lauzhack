@@ -36,7 +36,12 @@ type Twin = {
   storageError: boolean;
   setActivePlan: (id: number) => void;
   createPlan: () => number;
+  /** Removes a plan. Removing the last one leaves an empty Plan 1: the app always shows a plan. */
   removePlan: (id: number) => void;
+  /** Removes several plans at once (the assistant does this) and returns them, for an undo. */
+  removePlans: (ids: number[]) => Plan[];
+  /** Puts back the plans the assistant removed in one reply, as far as there is room. */
+  undoRemoval: (turnId: string) => void;
   renamePlan: (id: number, name: string) => void;
   setScenario: (id: number, scenario: Scenario) => void;
   /** Keeps an assistant plan as one of the plans (once) and makes it the plan being edited. */
@@ -116,13 +121,49 @@ export function TwinProvider({ children }: { children: ReactNode }) {
     return id;
   }, [savePlans]);
 
-  const removePlan = useCallback((id: number) => {
-    const remaining = live.current.plans.filter(plan => plan.id !== id);
-    if (!remaining.length) return;
-    if (live.current.activePlan.id === id) setActiveId(remaining[0].id);
-    savePlans(previous => previous.filter(plan => plan.id !== id));
-    setTurns(previous => previous.map(turn => turn.planId === id ? { ...turn, planId: undefined } : turn));
+  const removePlans = useCallback((ids: number[]) => {
+    const current = live.current.plans;
+    const removed = current.filter(plan => ids.includes(plan.id));
+    if (!removed.length) return [];
+    // An empty Plan 1 is already as removed as a plan gets.
+    if (current.length === 1 && removed[0].scenario.length === 0 && removed[0].source === 'you') return [];
+    let next = current.filter(plan => !ids.includes(plan.id));
+    if (!next.length) {
+      const id = current.reduce((last, plan) => Math.max(last, plan.id), 0) + 1;
+      next = [{ id, name: 'Plan 1', scenario: [], source: 'you', color: PLAN_COLORS[0] }];
+    }
+    live.current.plans = next;
+    if (ids.includes(live.current.activePlan.id)) setActiveId(next[0].id);
+    savePlans(() => next);
+    setTurns(previous => previous.map(turn => turn.planId !== undefined && ids.includes(turn.planId) ? { ...turn, planId: undefined } : turn));
+    return removed;
   }, [savePlans]);
+
+  const removePlan = useCallback((id: number) => { removePlans([id]); }, [removePlans]);
+
+  const restorePlans = useCallback((removed: Plan[]) => {
+    let next = live.current.plans;
+    // The empty plan left after removing everything gives way to the plans coming back.
+    if (next.length === 1 && next[0].scenario.length === 0 && next[0].source === 'you' && removed.length) next = [];
+    for (const plan of removed) {
+      if (next.length >= MAX_PLANS || next.some(p => sameScenario(p.scenario, plan.scenario) && p.scenario.length)) continue;
+      const taken = next.some(p => p.id === plan.id);
+      const id = taken ? next.reduce((last, p) => Math.max(last, p.id), 0) + 1 : plan.id;
+      const color = next.some(p => p.color === plan.color) ? freeColor(next) : plan.color;
+      next = [...next, { ...plan, id, color }];
+    }
+    if (!next.length) return;
+    live.current.plans = next;
+    if (!next.some(p => p.id === live.current.activePlan.id)) setActiveId(next[0].id);
+    savePlans(() => next);
+  }, [savePlans]);
+
+  const undoRemoval = useCallback((turnId: string) => {
+    const turn = live.current.turns.find(t => t.id === turnId);
+    if (!turn?.removedPlans?.length || turn.restored) return;
+    restorePlans(turn.removedPlans);
+    setTurns(previous => previous.map(t => t.id === turnId ? { ...t, restored: true } : t));
+  }, [restorePlans]);
 
   const renamePlan = useCallback((id: number, name: string) => {
     const clean = name.trim().slice(0, 48);
@@ -206,9 +247,12 @@ export function TwinProvider({ children }: { children: ReactNode }) {
     try {
       let result: ChatResult | null = null;
       await api.chatStream({
-        messages: history.filter(turn => !turn.failed).map(({ role, content: words }) => ({ role, content: words })),
+        // An undo happens in the app, not in the chat: tell the model, or it thinks those plans are still gone.
+        messages: history.filter(turn => !turn.failed).map(({ role, content: words, restored }) =>
+          ({ role, content: restored ? `${words}\n\n(The user then pressed undo: those plans are back in the app.)` : words })),
         scenario: onScreen.length ? onScreen : latest,
         confirm: confirm?.problem,
+        plans: live.current.plans.map(plan => ({ id: plan.id, name: plan.name, changes: plan.scenario.length, source: plan.source })),
         context: seen ? `${seen.describe}${seen.plan ? '' : ` The plan being edited is "${active.name}" with ${active.scenario.length} change(s).`}` : undefined,
       }, event => {
         if (event.type === 'done') result = event.result;
@@ -222,10 +266,13 @@ export function TwinProvider({ children }: { children: ReactNode }) {
       flush();
       if (!result) throw new Error('The answer was cut off. Please ask again.');
       const reply: ChatResult = result;
+      const removedPlans = reply.removed_plan_ids?.length ? removePlans(reply.removed_plan_ids) : [];
       update(turn => ({
+        ...(removedPlans.length ? { removedPlans } : {}),
         ...applyEvent(turn, { type: 'text', text: '' }, Date.now()),  // closes any open thinking
         content: reply.reply, streaming: false,
-        scenario: reply.scenario, proposal: reply.proposal, optimization: reply.optimization, chart: reply.chart,
+        scenario: reply.scenario, scenarios: reply.scenarios && reply.scenarios.length > 1 ? reply.scenarios : undefined,
+        proposal: reply.proposal, optimization: reply.optimization, chart: reply.chart,
       }));
       if (!live.current.assistantOpen) setUnread(true);
     } catch (error) {
@@ -240,14 +287,14 @@ export function TwinProvider({ children }: { children: ReactNode }) {
     } finally {
       setPending(null);
     }
-  }, [setAssistantOpen]);
+  }, [setAssistantOpen, removePlans]);
 
   const newChat = useCallback(() => setTurns([]), []);
 
   const value = useMemo<Twin>(() => ({
-    catalog, plans, activePlan, storageError, setActivePlan: setActiveId, createPlan, removePlan, renamePlan, setScenario, keepPlan,
+    catalog, plans, activePlan, storageError, setActivePlan: setActiveId, createPlan, removePlan, removePlans, undoRemoval, renamePlan, setScenario, keepPlan,
     focus, setFocus, assistantOpen, setAssistantOpen, unread, turns, pending, send, newChat,
-  }), [catalog, plans, activePlan, storageError, createPlan, removePlan, renamePlan, setScenario, keepPlan,
+  }), [catalog, plans, activePlan, storageError, createPlan, removePlan, removePlans, undoRemoval, renamePlan, setScenario, keepPlan,
     focus, assistantOpen, setAssistantOpen, unread, turns, pending, send, newChat]);
 
   return <TwinContext.Provider value={value}>{children}</TwinContext.Provider>;

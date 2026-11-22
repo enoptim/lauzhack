@@ -20,6 +20,7 @@ The tools:
 - `propose_problem`: turns the user's goal and limits (budget, things that must not change, only certain options) into a problem for the optimizer in `model/optimize.py`. It checks the problem and adds today's values, but runs nothing.
 - `optimize`: runs the optimizer. Only the server calls it, after the user confirms (see below). If the model tries, it is told to propose instead.
 - `upgrade_tradeoffs`: the best packages from cheapest to biggest saving (the cost-vs-savings curve from `model/search.py`), so people can see what more saving costs. It shows the balanced package in the app itself.
+- `remove_plans`: removes plans from the app's plan list when the user asks. It's only offered when the app sends its `plans`. The app removes them and shows an Undo button.
 - `show_scenario`: simulates a package and sends it to the app. The confirmed optimization and `upgrade_tradeoffs` show their own plan, so the model uses this for a specific change or another package.
 
 The model never does the maths. Every number it gives comes from the engine.
@@ -74,9 +75,13 @@ The reply:
   - `events`: any what-if events it used.
   - `item_ids`: the items that change. They match the mesh names, so they can be highlighted in 3D.
   - `summary`: the figures the assistant quoted, such as `upfront_cost_chf`, `energy_bill_chf_month` and `payback_years`.
+- `removed_plan_ids`: the plans the assistant removed. The app removes them and offers an undo. Removing every plan leaves one empty plan, today's building.
+- `scenarios`: every plan the assistant showed in this reply, in order. Ask for "3 plans" and you get 3; the app draws a card for each and can add them all to the plan list. The last one is `scenario`.
 - `chart`: `null`, or the cost-vs-savings curve when the assistant compared packages: `x_label`, `y_label`, `points` (each with `x`, `y`, a `label` of the changes and its `scenario`) and `knee_index`, the balanced point.
 - `proposal`: `null`, or a problem waiting for the user's OK: `problem` (already checked, with relative limits turned into absolute ones and a "no new warnings" limit added) and `today` (today's value of the goal and each limit). To run it, send the next message with `"confirm": proposal.problem`. The format is in [model/README.md](../model/README.md#optimizer-optimizepy).
 - `optimization`: `null`, or after a confirmed run: `problem`, `all_limits_met` and `limits_missed`.
+
+`plans` is optional: the plans in the app, as `{"id", "name", "changes", "source"}`. With it the assistant can remove plans; the ids it removed come back in `removed_plan_ids`.
 
 `confirm` is optional: a problem from an earlier `proposal` that the user confirmed.
 

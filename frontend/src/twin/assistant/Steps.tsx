@@ -16,6 +16,7 @@ const jobText: Record<string, [string, string]> = {
   list_metrics: ['Listing the goals and limits I can use', 'Listed the goals and limits'],
   propose_problem: ['Setting up the optimization for you to check', 'Set up the optimization'],
   optimize: ['Running the optimizer: testing plans', 'Ran the optimizer'],
+  remove_plans: ['Removing plans', 'Removed plans'],
   upgrade_tradeoffs: ['Comparing packages: cost against saving', 'Compared packages by cost and saving'],
 };
 

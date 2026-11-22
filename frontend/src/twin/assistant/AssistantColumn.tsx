@@ -1,6 +1,6 @@
 // The assistant, docked beside whatever view is open. It reads what is on screen (the focus),
 // and the plans it finds become plans you can edit in 3D and compare in Results.
-import { ArrowUp, LocateFixed, PanelLeftClose, SquarePen } from 'lucide-react';
+import { ArrowUp, ListPlus, LocateFixed, PanelLeftClose, SquarePen, Trash2, Undo2 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router';
 import { Button } from '@/components/ui/button';
@@ -15,7 +15,8 @@ import { planName, PlanCard, ProposalCard, type ProposalState } from './cards';
 import Markdown from './Markdown';
 import Steps, { Waiting } from './Steps';
 import TradeoffChart from './TradeoffChart';
-import type { Turn } from './conversation';
+import { turnPlans, type Turn } from './conversation';
+import type { ChatScenario } from '@/api/types';
 
 const starters = [
   'Cut our electricity use by 10% as cheaply as possible.',
@@ -75,23 +76,33 @@ export default function AssistantColumn() {
     return turn.id === latestProposalId ? 'open' : 'replaced';
   }
 
-  function keep(turn: Turn) {
-    const scenario = turn.scenario!;
-    return twin.keepPlan(turn.id, scenario, planName(scenario, turn.optimization));
+  /** The reply's main plan (its last) is tied to the turn; the others in a set of several are found by their swaps. */
+  const isMain = (turn: Turn, scenario: ChatScenario) => !!turn.scenario && sameScenario(scenario.scenario, turn.scenario.scenario);
+  function keep(turn: Turn, scenario: ChatScenario) {
+    const main = isMain(turn, scenario);
+    return twin.keepPlan(main ? turn.id : `${turn.id}:${scenario.title}`, scenario, planName(scenario, main ? turn.optimization : null));
+  }
+  function keptPlan(turn: Turn, scenario: ChatScenario) {
+    return isMain(turn, scenario) ? plans.find(p => p.id === turn.planId)
+      : plans.find(p => sameScenario(p.scenario, scenario.scenario));
+  }
+  /** Adds every plan of a reply to the plan list at once; the last one ends up on the building. */
+  function keepAll(turn: Turn) {
+    if (turnPlans(turn).some(scenario => keep(turn, scenario).id === null)) setFull(turn.id);
   }
 
   const [full, setFull] = useState<string | null>(null);
 
-  function showOnBuilding(turn: Turn) {
-    if (keep(turn).id === null) { setFull(turn.id); return; }
+  function showOnBuilding(turn: Turn, scenario: ChatScenario) {
+    if (keep(turn, scenario).id === null) { setFull(turn.id); return; }
     if (pathname !== '/') navigate('/');
     if (narrow()) setAssistantOpen(false);
   }
 
-  function compare(turn: Turn) {
-    const { id, plans: next } = keep(turn);
+  function compare(turn: Turn, scenario: ChatScenario) {
+    const { id, plans: next } = keep(turn, scenario);
     if (id === null) { setFull(turn.id); return; }
-    navigate(resultsHref(next, id, turn.scenario?.events ?? []), { state: { intro: true } });
+    navigate(resultsHref(next, id, scenario.events ?? []), { state: { intro: true } });
     if (narrow()) setAssistantOpen(false);
   }
 
@@ -171,6 +182,20 @@ export default function AssistantColumn() {
                               <Markdown text={turn.content} caret={turn.streaming} />
                             </div>
                           )}
+                          {turn.removedPlans && turn.removedPlans.length > 0 && (
+                            <div role="status" className="flex items-center gap-2 rounded-lg border bg-card px-3 py-2 text-xs">
+                              <Trash2 aria-hidden="true" className="size-3.5 shrink-0 text-muted-foreground" />
+                              <span className="min-w-0 flex-1 text-pretty">
+                                {turn.restored ? 'Put back: ' : 'Removed from your plans: '}
+                                <span className="font-medium">{turn.removedPlans.map(plan => plan.name).join(', ')}</span>
+                              </span>
+                              {!turn.restored && (
+                                <Button variant="ghost" size="xs" onClick={() => twin.undoRemoval(turn.id)}>
+                                  <Undo2 data-icon="inline-start" />Undo
+                                </Button>
+                              )}
+                            </div>
+                          )}
                           {turn.proposal && (
                             <ProposalCard proposal={turn.proposal} state={proposalState(turn)} catalog={twin.catalog}
                               onRun={() => void send('Looks good. Run the optimization.', { turnId: turn.id, problem: turn.proposal!.problem })} />
@@ -181,14 +206,33 @@ export default function AssistantColumn() {
                               There are already six plans you made or changed. Remove one in the plan list, then try again.
                             </p>
                           )}
-                          {turn.scenario && (() => {
-                            const plan = plans.find(p => p.id === turn.planId);
+                          {(() => {
+                            const cards = turnPlans(turn);
+                            const waiting = cards.filter(scenario => !keptPlan(turn, scenario)).length;
                             return (
-                              <PlanCard scenario={turn.scenario} catalog={twin.catalog} optimization={turn.optimization}
-                                kept={plan ? { name: plan.name, color: planColor(plans, plan.id) } : null}
-                                shown={pathname === '/' && plan?.id === twin.activePlan.id ? 'building'
-                                  : pathname.startsWith('/results') && focus?.plan && sameScenario(focus.plan.scenario, turn.scenario.scenario) ? 'results' : null}
-                                onShow={() => showOnBuilding(turn)} onCompare={() => compare(turn)} />
+                              <>
+                                {cards.length > 1 && (
+                                  <div className="flex items-center justify-between gap-2">
+                                    <span className="text-xs text-muted-foreground">{cards.length} plans</span>
+                                    {waiting > 0 ? (
+                                      <Button variant="outline" size="sm" onClick={() => keepAll(turn)}>
+                                        <ListPlus />Add all {cards.length} to my plans
+                                      </Button>
+                                    ) : <span className="text-xs text-muted-foreground">All in your plans</span>}
+                                  </div>
+                                )}
+                                {cards.map(scenario => {
+                                  const plan = keptPlan(turn, scenario);
+                                  return (
+                                    <PlanCard key={scenario.title + JSON.stringify(scenario.scenario)} scenario={scenario} catalog={twin.catalog}
+                                      optimization={isMain(turn, scenario) ? turn.optimization : null}
+                                      kept={plan ? { name: plan.name, color: planColor(plans, plan.id) } : null}
+                                      shown={pathname === '/' && plan?.id === twin.activePlan.id ? 'building'
+                                        : pathname.startsWith('/results') && focus?.plan && sameScenario(focus.plan.scenario, scenario.scenario) ? 'results' : null}
+                                      onShow={() => showOnBuilding(turn, scenario)} onCompare={() => compare(turn, scenario)} />
+                                  );
+                                })}
+                              </>
                             );
                           })()}
                         </div>
