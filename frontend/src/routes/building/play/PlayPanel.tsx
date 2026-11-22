@@ -1,7 +1,7 @@
 // The right-hand panel in Explore: change equipment now, and your path so far (kept as a plan if you like).
 // What happened at each stop shows in a card over the building; the year and numbers in the strip above it.
-import { ArrowRight, BookmarkPlus, Lock, RotateCcw, TriangleAlert, X } from 'lucide-react';
-import type { ReactNode } from 'react';
+import { ArrowRight, BookmarkPlus, ChevronDown, Lock, RotateCcw, TriangleAlert, X } from 'lucide-react';
+import { useEffect, useState, type ReactNode } from 'react';
 import type { SessionSwap } from '@/api/types';
 import { Alert, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
@@ -13,6 +13,7 @@ import ChangeNow from './ChangeNow';
 import { groupLabels, optionName, whenLabel, whereLabel } from './format';
 import type { PathPlan } from './usePathPlan';
 import type { Play } from './usePlay';
+import WhatHappened from './WhatHappened';
 
 const levels: (number | null)[] = [null, ...Array.from({ length: FLOOR_COUNT + 1 }, (_, index) => FLOOR_COUNT - 1 - index)];
 const shortLevel = (level: number | null) => level === null ? 'All' : level === 0 ? 'G' : level === -1 ? 'B' : String(level);
@@ -100,7 +101,12 @@ type Props = {
 /** The right-hand panel while a run is on: change anything now, your path so far, and the button that moves time on. */
 export default function PlayPanel({ play, path, floor, onFloorChange, selectedGroup, onSelectGroup }: Props) {
   const { state, catalog, busy, error } = play;
+  const [more, setMore] = useState(false);
+  const stop = state ? `${state.session_id}|${state.t}` : '';
+  useEffect(() => setMore(false), [stop]);
   if (!state) return null;
+  // While a stop asks for a decision, other changes fold into one row, so the decision stands out.
+  const folded = state.reasons.length > 0 && !more && !selectedGroup;
   return (
     <aside aria-label="Explore" className="flex min-h-0 min-w-0 flex-col border-t border-[var(--r-line)] bg-[var(--r-panel)] md:border-t-0 md:border-l">
       <div className="flex h-12 shrink-0 items-center justify-between gap-2 border-b border-[var(--r-divider)] px-5">
@@ -118,12 +124,21 @@ export default function PlayPanel({ play, path, floor, onFloorChange, selectedGr
             The years run until something happens.
           </p>
         )}
-        {!state.ended && (selectedGroup ? (
+        {!state.ended && state.reasons.length > 0 && (
+          <WhatHappened state={state} catalog={catalog} busy={busy !== null} onDecide={play.decide} />
+        )}
+        {!state.ended && folded && (
+          <button type="button" onClick={() => setMore(true)}
+            className="flex h-10 shrink-0 items-center justify-between rounded-lg border border-dashed border-[var(--r-line)] px-3 text-sm font-medium text-muted-foreground hover:border-foreground/30 hover:text-foreground">
+            Change something else <ChevronDown aria-hidden="true" className="size-4" />
+          </button>
+        )}
+        {!state.ended && !folded && (selectedGroup ? (
           <ChangeNow key={`${selectedGroup}|${floor}`} state={state} catalog={catalog} group={selectedGroup} floor={floor}
             busy={busy !== null} onDecide={play.decide} onClose={() => onSelectGroup(null)} />
         ) : (
           <section aria-labelledby="change-heading" className="flex shrink-0 flex-col gap-3">
-            <h2 id="change-heading" className="text-sm font-semibold">Change something now</h2>
+            <h2 id="change-heading" className="text-sm font-semibold">{state.reasons.length > 0 ? "Change something else" : "Change something now"}</h2>
             <Segments label="Floor" options={levels} value={floor} onChange={onFloorChange} text={shortLevel} />
             <div className="grid grid-cols-2 gap-1.5">
               {viewGroups(floor).map(group => (

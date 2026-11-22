@@ -1,8 +1,8 @@
 // Cards that sit over the 3D building in Explore, the way a strategy game shows them: a start card, a card for
 // each stop (what happened and what you can do), and an end card. The building stays visible around them.
-import { ArrowRight, ChartSpline, ChevronDown, ChevronUp, Hourglass, RotateCcw, Wrench } from 'lucide-react';
+import { ArrowRight, ChartSpline, ChevronDown, Hourglass, RotateCcw, Wrench } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
-import type { Catalog, PlaySwap, SessionState } from '@/api/types';
+import type { SessionState } from '@/api/types';
 import { Button } from '@/components/ui/button';
 import { Spinner } from '@/components/ui/spinner';
 import { cn } from '@/lib/utils';
@@ -10,7 +10,7 @@ import AnimatedNumber from '@/routes/results/AnimatedNumber';
 import type { Plan } from '@/twin/plans';
 import { chf, chfShort, gained, signedChf } from './format';
 import type { PathPlan } from './usePathPlan';
-import WhatHappened from './WhatHappened';
+import { Story } from './WhatHappened';
 
 const card = 'play-pop flex flex-col rounded-xl border bg-card shadow-[0_1px_2px_oklch(0_0_0/0.06),0_16px_40px_-16px_oklch(0.3_0.02_60/0.35)]';
 
@@ -95,45 +95,30 @@ export function StartCard({ plan, busy, onStart }: {
   );
 }
 
-export function EventCard({ state, catalog, busy, onDecide, onContinue }: {
-  state: SessionState; catalog: Catalog | null; busy: 'next' | 'change' | 'start' | null;
-  onDecide: (swaps: PlaySwap[]) => void; onContinue: () => void;
-}) {
+/** What happened at this stop, as a short story over the building. Choices are made in the panel on the right. */
+export function EventCard({ state }: { state: SessionState }) {
   const [open, setOpen] = useState(true);
-  const count = state.reasons.length;
+  const when = state.t === 0 ? 'Today' : `Year ${state.t}`;
+  const failure = state.reasons.some(r => r.type === 'failure');
   if (!open) {
     return (
       <button type="button" onClick={() => setOpen(true)}
         className="play-pop absolute top-3 right-3 z-10 flex h-10 max-w-[min(26rem,calc(100%-1.5rem))] items-center gap-2 rounded-lg border bg-card px-3 text-sm font-medium shadow-[0_4px_12px_-6px_oklch(0.3_0.02_60/0.3)] hover:bg-secondary">
-        <span className="size-2 shrink-0 rounded-full bg-destructive" />
-        <span className="truncate">{state.t === 0 ? 'Today' : `Year ${state.t}`}: {state.reasons[0]?.title}</span>
+        <span className={cn('size-2 shrink-0 rounded-full', failure ? 'bg-destructive' : 'bg-primary')} />
+        <span className="truncate">{when}: {state.reasons[0]?.title}</span>
         <ChevronDown aria-hidden="true" className="size-4 shrink-0 text-muted-foreground" />
       </button>
     );
   }
   return (
-    <section key={`${state.session_id}|${state.t}`} aria-label={state.t === 0 ? 'What happened today' : `What happened in year ${state.t}`}
-      className={cn(card, 'absolute top-3 right-3 z-10 max-h-[calc(100%-1.5rem)] w-[min(30rem,calc(100%-1.5rem))]')}>
-      <header className="flex h-12 shrink-0 items-center justify-between gap-2 border-b px-5">
-        <h2 className="text-sm font-semibold">
-          {state.t === 0 ? 'Today' : `Year ${state.t}`}
-          <span className="font-normal text-muted-foreground"> · the clock stopped{count > 1 ? ` for ${count} things` : ''}</span>
-        </h2>
-        <Button variant="ghost" size="xs" className="text-muted-foreground hover:text-foreground" onClick={() => setOpen(false)}>
-          Look at the building <ChevronUp data-icon="inline-end" />
-        </Button>
-      </header>
-      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-5">
-        <WhatHappened state={state} catalog={catalog} busy={busy !== null} onDecide={onDecide} hideHeading />
+    <section aria-label={`What happened: ${when}`}
+      className={cn(card, 'absolute top-3 right-3 z-10 max-h-[calc(100%-1.5rem)] w-[min(26rem,calc(100%-1.5rem))] gap-4 p-5')}>
+      <span className="text-xs font-medium text-muted-foreground">{when} · the clock stopped</span>
+      <div className="min-h-0 overflow-y-auto overscroll-contain"><Story state={state} /></div>
+      <div className="flex items-center justify-between gap-3">
+        <span className="text-xs text-muted-foreground">{failure ? 'Choose a replacement on the right.' : 'Act on the right, or just continue.'}</span>
+        <Button variant="outline" onClick={() => setOpen(false)}>Got it</Button>
       </div>
-      <footer className="flex shrink-0 items-center justify-between gap-3 border-t px-5 py-3">
-        <span className="text-xs text-pretty text-muted-foreground">
-          If you just continue: {state.reasons.some(r => r.type === 'failure') ? 'the same model goes in, and nothing else changes.' : 'nothing changes.'}
-        </span>
-        <Button disabled={busy !== null} onClick={onContinue}>
-          Continue {busy === 'next' ? <Spinner data-icon="inline-end" /> : <ArrowRight data-icon="inline-end" />}
-        </Button>
-      </footer>
     </section>
   );
 }
