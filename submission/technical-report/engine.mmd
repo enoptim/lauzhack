@@ -4,6 +4,11 @@ config:
   htmlLabels: false
 ---
 flowchart LR
-    A["Inventory, options,<br/>and assumptions"] --> B["Build replacement schedules<br/>for plan and baseline"]
-    B --> C["Compute yearly energy,<br/>room CO₂, and cash flows"]
-    C --> D["Compare with baseline<br/>and aggregate results"]
+    E["Equipment<br/>choices"] --> P["Electricity"]
+    E --> H["Heat given off"]
+    E --> A["Air and light"]
+    H --> C["Heating and<br/>cooling"] --> P
+    A --> S["Staff: work output,<br/>sick days"]
+    P --> M["Money vs<br/>doing nothing"]
+    S -. "estimate" .-> M
+    F["A future: prices,<br/>events, failures"] --> M

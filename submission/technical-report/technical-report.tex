@@ -14,7 +14,7 @@
 
 \begin{document}
 
-{\LARGE\bfseries What-If LauzHack\par}
+{\LARGE\bfseries DigiBuild\par}
 {\large Technical Report\par}
 \medskip\hrule
 
@@ -36,10 +36,12 @@ A stateful FastAPI session runs the same Python engine against one scripted or s
 
 \reportsection{Simulation engine}
 
-{\centering\includegraphics[width=\linewidth]{.build/engine.pdf}\par}
+{\centering\includegraphics[width=0.9\linewidth]{.build/engine.pdf}\par}
 
-The Python engine, served through FastAPI, simulates the upgrade plan and a like-for-like replacement baseline over 15 years by default. It calculates electricity use from equipment power and runtime, adjusts heating and cooling for internal heat gains and ventilation heat recovery, and estimates peak room \coTwo{} from occupancy and fresh airflow. It compares yearly operating and investment costs, including remaining equipment value at the horizon. Discounted differences give net present value; cumulative differences give payback.
+The Python engine, served through FastAPI, is a graph of coupled effects rather than a list of independent items. Each piece of equipment changes electricity use, the heat it gives off, and the air and light people work in, and these channels feed into each other. Efficient lights give off less heat, so cooling falls in summer and heating rises in winter, which the heat pumps turn back into electricity. Blinds set both the sun let in and the daylight reaching the lighting sensors. Ventilation airflow per person sets room \coTwo{}, and laptops allow hot-desking, which avoids renting space when staff grow. Air, heat, and light drive staff effects from published studies, such as work output and sick days; these are shown as an estimate, apart from cash.
 
-The optimizer uses a fixed run. Results uses 200 seeded Monte Carlo draws: electricity prices follow a random walk, events such as heatwaves are sampled, and existing equipment failures follow an age-conditioned Weibull wear-out curve. Every plan and its baseline face the same draws. The chart shows the median and the 10th--90th percentile band of cumulative savings under those assumptions.
+The engine runs the plan and a like-for-like replacement baseline year by year, 15 years by default, and compares operating and investment costs, including remaining equipment value at the horizon. Discounted differences give net present value; cumulative differences give payback.
+
+The same engine runs in three modes. One fixed run serves the optimizer and the assistant. Results uses 200 seeded Monte Carlo draws: electricity prices follow a random walk, events such as heatwaves are sampled, and existing equipment fails on an age-conditioned Weibull wear-out curve. Every plan and its baseline face the same draws, and the chart shows the median and the 10th--90th percentile band of cumulative savings under those assumptions. Explore plays one future drawn the same way, step by step, as described above.
 
 \end{document}
