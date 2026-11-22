@@ -12,8 +12,22 @@ api:              ## engine API on http://localhost:8000
 frontend:         ## Vite dev server (proxies /api to the engine)
 	cd frontend && pnpm dev
 
+dev: private SHELL := bash
+# Put each service in its own process group so cleanup also stops its workers.
 dev:              ## API and frontend together; Ctrl+C stops both
-	@trap 'kill 0' INT TERM EXIT; $(MAKE) api & $(MAKE) frontend & wait
+	@set -m; \
+	pids=(); \
+	cleanup() { \
+		trap '' INT TERM; \
+		for pid in "$${pids[@]}"; do kill -TERM -- "-$$pid" 2>/dev/null || :; done; \
+		wait; \
+	}; \
+	trap cleanup EXIT; \
+	trap 'exit 130' INT; \
+	trap 'exit 143' TERM; \
+	$(MAKE) api & pids+=("$$!"); \
+	$(MAKE) frontend & pids+=("$$!"); \
+	wait -n
 
 test:             ## engine, optimizer, search and assistant tests
 	cd model && python3 test_engine.py && python3 test_optimize.py && python3 test_search.py
