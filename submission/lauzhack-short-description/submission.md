@@ -2,7 +2,7 @@
 What-If LauzHack
 # Short description
 
-Explore a 3D twin of the LauzHack BC building, plan equipment upgrades, and see 15-year savings, payback, and risk against doing nothing. You can also raise the LauzHack banner!
+Explore a 3D twin of the LauzHack BC building, plan equipment upgrades, and explore the future.
 
 # Long description
 
