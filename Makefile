@@ -12,7 +12,8 @@ api:              ## engine API on http://localhost:8000
 frontend:         ## Vite dev server (proxies /api to the engine)
 	cd frontend && pnpm dev
 
-dev: private SHELL := bash
+# bash for the recipe below. No `private`: macOS ships GNU Make 3.81, which doesn't know it.
+dev: SHELL := bash
 # Put each service in its own process group so cleanup also stops its workers.
 dev:              ## API and frontend together; Ctrl+C stops both
 	@set -m; \
@@ -27,7 +28,7 @@ dev:              ## API and frontend together; Ctrl+C stops both
 	trap 'exit 143' TERM; \
 	$(MAKE) api & pids+=("$$!"); \
 	$(MAKE) frontend & pids+=("$$!"); \
-	wait -n
+	if [ "$${BASH_VERSINFO[0]}$${BASH_VERSINFO[1]}" -ge 43 ]; then wait -n; else wait; fi   # macOS bash 3.2 has no wait -n
 
 test:             ## engine, play mode, optimizer, search and assistant tests
 	cd model && python3 test_engine.py && python3 test_session.py && python3 test_optimize.py && python3 test_search.py
