@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useSearchParams } from 'react-router';
 import { api } from '@/api/client';
-import type { Catalog, FutureSample, FuturePathView, Scenario, Swap } from '@/api/types';
+import type { Catalog, Flag, FutureSample, FuturePathView, Scenario, Swap } from '@/api/types';
 import { PLAN_COLORS, sameScenario } from '@/twin/plans';
 import { usePublishFocus, useTwin } from '@/twin/TwinProvider';
 import { readConfig } from './config';
@@ -22,6 +22,11 @@ export const TODAY_PRICE = 0.2;
 export const PRICE_MIN = 0.1;
 export const PRICE_MAX = 0.45;
 export const HORIZONS = [5, 10, 15] as const;
+/** A warning about the plan is shown next to the headline once it happens in at least this share of the futures. */
+const WARNING_SHARE = 0.2;
+/** Which warnings come first next to the headline: money trouble, then the rest. */
+const WARNING_ORDER = ['needs_financing', 'reserve_below_minimum', 'over_budget', 'ventilation_over_capacity', 'desk_shortfall'];
+const rank = (type: string) => (WARNING_ORDER.indexOf(type) + WARNING_ORDER.length + 1) % (WARNING_ORDER.length + 1);
 export type Timing = 'now' | 'end_of_life' | number;
 export const TIMINGS: { value: Timing; label: string; short: string }[] = [
   { value: 'now', label: 'Now', short: 'Now' },
@@ -368,6 +373,18 @@ export function useResultsModel() {
   const breakdown = futures?.summary[`p${selected}`]?.npv_breakdown_mean ?? finance?.npv_breakdown;
   const risk = futures?.summary[`p${selected}`]?.risk ?? null;
   const riskYear = risk?.emergency_by_year[Math.min(horizon, risk.emergency_by_year.length) - 1] ?? null;
+  // One real middle future, so the headline's cash adds up to the value in today's money (see Overview).
+  const selectedSummary = futures?.summary[`p${selected}`];
+  const discountRate = engine.assumptions.data?.find(a => a.key === 'discount_rate_real')?.value ?? null;
+  const chain = selectedSummary?.middle_future
+    ? { ...selectedSummary.middle_future, npvPositiveShare: selectedSummary.prob_cash_positive, discountRate }
+    : null;
+  // Warnings about the plan that show up in a real share of the futures: shown next to the headline, not only in the details.
+  // The year is from the fixed run (your assumptions, no surprises), if it has that warning.
+  const planWarnings = Object.entries(selectedSummary?.flag_probability ?? {})
+    .filter(([type, share]) => share >= WARNING_SHARE && !isContextFlag({ type } as Flag))
+    .sort((a, b) => rank(a[0]) - rank(b[0]) || b[1] - a[1])
+    .map(([type, share]) => ({ type, share, fixed: finance?.flags.find(flag => flag.type === type) ?? null }));
   const flags = (finance?.flags ?? []).filter(flag => !isContextFlag(flag) && (flag.year === undefined || flag.year <= horizon));
   const contextFlags = (finance?.flags ?? []).filter(flag => isContextFlag(flag) && (flag.year === undefined || flag.year <= horizon));
   const subject = multi ? plans[selected]?.name ?? 'the plan' : 'the upgrade';
@@ -415,7 +432,7 @@ export function useResultsModel() {
     // Each change is tracked, so the chart can show the line before it and the verdict the difference.
     timing, changeTiming, price, setPrice, commitPrice, resetPrice, whatIf, changeWhatIf, staffEffects, changeStaffEffects,
     onPlan, changeOnPlan, horizon, setHorizon, resetAssumptions, changed, anyChanged,
-    lastChange, ghost: shownGhost, delta, cashEnd, paidBackShare,
+    lastChange, ghost: shownGhost, delta, cashEnd, paidBackShare, chain, planWarnings,
     // Play and example futures
     play, playState, playYear, playToken, onYear, exampleIndex, setExampleIndex, showAllFutures, example, exampleNumber, typicalIndex,
     // Engine

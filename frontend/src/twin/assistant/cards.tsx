@@ -17,8 +17,9 @@ const metricText: Record<MetricName, { label: string; unit: 'CHF' | 'kWh' | 'yea
   running_cost_chf_year: { label: 'running cost per year', unit: 'CHF' },
   energy_bill_chf_year: { label: 'energy bill per year', unit: 'CHF' },
   electricity_kwh_year: { label: 'electricity per year', unit: 'kWh' },
-  npv_cash_chf: { label: 'value over 15 years', unit: 'CHF' },
-  npv_economic_chf: { label: 'value incl. health and productivity', unit: 'CHF' },
+  // NPV: all 15 years of money vs doing nothing, in today's francs (later money counts less).
+  npv_cash_chf: { label: 'value in today’s money (NPV, cash only)', unit: 'CHF' },
+  npv_economic_chf: { label: 'value in today’s money with staff effects (NPV, partly a guess)', unit: 'CHF' },
   payback_years: { label: 'payback time', unit: 'years' },
   lowest_reserve_chf: { label: 'lowest building reserve', unit: 'CHF' },
   office_co2_ppm: { label: 'office CO₂', unit: 'ppm' },

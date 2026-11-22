@@ -1,9 +1,9 @@
 import type { ReactNode } from 'react';
-import { TrendingDown, TrendingUp } from 'lucide-react';
+import { TrendingDown, TrendingUp, TriangleAlert } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import AnimatedNumber from './AnimatedNumber';
 import { chf, chfShort } from './format';
-import { whatIfLabels } from './labels';
+import { flagShort, flagText, whatIfLabels } from './labels';
 import { num, Skeleton } from './parts';
 import type { ResultsModel } from './useResultsModel';
 
@@ -56,6 +56,48 @@ function DeltaChip({ delta, label }: { delta: number; label: string }) {
       )}
       <span className="max-w-[28rem] truncate text-muted-foreground">· {label}</span>
     </span>
+  );
+}
+
+/** A warning about the plan that happens in a real share of the futures, e.g. "Needs a loan in 98% of futures". */
+function WarningChip({ w }: { w: ResultsModel['planWarnings'][number] }) {
+  const share = w.share >= 0.995 ? 'every future' : `${Math.round(w.share * 100)}% of futures`;
+  const when = w.fixed?.year !== undefined ? ` With your assumptions and no surprises: from year ${w.fixed.year}.` : '';
+  return (
+    <span title={`${w.fixed ? flagText(w.fixed) : ''}${when}`.trim() || undefined}
+      className="inline-flex h-7 shrink-0 items-center gap-1.5 rounded-md bg-warning/8 px-2 text-[13px]">
+      <TriangleAlert aria-hidden="true" className="size-3.5 text-warning" />
+      {flagShort[w.type] ?? w.type.replaceAll('_', ' ')} in {share}
+    </span>
+  );
+}
+
+/**
+ * The headline counts cash only, like the chart. This line says what it leaves out and adds it back for one real
+ * middle future, so the steps add up exactly: cash saved, the difference in equipment still worth something at the end,
+ * where that leaves the plan, and the same in today's money (NPV). Then the share of futures where that is above zero.
+ */
+function Chain({ c }: { c: NonNullable<ResultsModel['chain']> }) {
+  const strong = (value: string) => <span className={cn(num, 'font-medium text-foreground')}>{value}</span>;
+  const less = c.leftover_value < 0;
+  const rate = c.discountRate !== null ? `, ${Math.round(c.discountRate * 1000) / 10}% a year` : '';
+  const share = Math.round(c.npvPositiveShare * 100);
+  return (
+    <div className="mt-1 flex min-h-10 flex-col text-[13px] leading-5 text-muted-foreground">
+      <p className="truncate">Not counted above: equipment still worth something at the end, and today’s money. One middle future, year {c.year}:</p>
+      <p className="text-pretty">
+        {strong(chfShort(c.cash_saved))} cash saved{' '}
+        <span title={less ? 'Doing nothing buys its replacements later, so its equipment is newer and worth more at the end.'
+          : 'The plan’s equipment is newer, so it is worth more at the end.'}>
+          {less ? '−' : '+'} {strong(chfShort(Math.abs(c.leftover_value)))} {less ? 'less' : 'more'} equipment value left
+        </span>{' '}
+        = {strong(chfShort(Math.abs(c.ahead)))} {c.ahead >= 0 ? 'ahead' : 'behind'}{' '}
+        <span title={`NPV (net present value): all ${c.year} years of money vs doing nothing, in today’s francs. A franc later counts less than a franc today.`}>
+          → {strong(chfShort(c.npv_cash))} in today’s money (NPV{rate})
+        </span>.{' '}
+        <span className={cn(share < 50 && 'text-warning')}>{share}% of futures end ahead in today’s money.</span>
+      </p>
+    </div>
   );
 }
 
@@ -126,9 +168,10 @@ export default function Overview({ m }: { m: ResultsModel }) {
       : storyValue < 0 ? <>{yearLabel}{money(storyValue, 'plain')} still to earn back</>
         : <>{yearLabel}{subject} has saved {money(storyValue, 'plan')} so far</>;
   } else {
+    // Cash only, like the chart: it leaves out equipment left at the end and today's money (the line below adds them).
     verdict = cash >= 0
-      ? <>{subject} saves {money(cash, 'plan', `In the middle of ${futuresN} futures, doing nothing would have cost this much more by year ${horizon}.`)} over {horizon} years</>
-      : <>{subject} is {money(cash, 'warning', `In the middle of ${futuresN} futures, it has not paid for itself by year ${horizon}.`)} short after {horizon} years</>;
+      ? <>{subject} saves {money(cash, 'plan', `Cash saved by year ${horizon}, middle of ${futuresN} futures: how much more doing nothing would have spent. Leaves out equipment left at the end and today’s money.`)} in cash by year {horizon}</>
+      : <>{subject} is {money(cash, 'warning', `Cash by year ${horizon}, middle of ${futuresN} futures: it has not paid for itself yet.`)} short in cash by year {horizon}</>;
   }
 
   // Where the selected plan ranks among all plans, by cash in the middle future at the end.
@@ -215,13 +258,17 @@ export default function Overview({ m }: { m: ResultsModel }) {
         </h1>
       ) : <Skeleton className="h-9 w-2/3" />}
 
+      {!empty && (m.chain ? <div className={cn('transition-opacity duration-150', busy && 'opacity-60')}><Chain c={m.chain} /></div>
+        : !m.futures && <Skeleton className="mt-1 h-10 w-3/4" />)}
+
       <p className={cn('mt-1 h-5 truncate text-sm leading-5 text-muted-foreground transition-opacity duration-150', busy && 'opacity-60')}>
         {m.example ? 'Showing one example future. The numbers below stay the same: they are not from this future.'
-          : focus && !empty ? <>{m.staffEffects ? 'Counting staff effects' : `The middle of ${futuresN} possible futures`}. 8 in 10 end year {horizon} between {strong(chfShort(focus.low[horizon]))} and {strong(chfShort(focus.high[horizon]))}.</>
+          : focus && !empty ? <>{m.staffEffects ? 'Chart counts staff effects' : `Chart: cash saved, middle of ${futuresN} possible futures`}. 8 in 10 end year {horizon} between {strong(chfShort(focus.low[horizon]))} and {strong(chfShort(focus.high[horizon]))}.</>
             : null}
       </p>
 
       <div className="mt-2 flex h-7 min-w-0 items-center gap-3 overflow-hidden whitespace-nowrap">
+        {!empty && m.planWarnings.slice(0, 2).map(w => <WarningChip key={w.type} w={w} />)}
         <div aria-live="polite" aria-atomic="true" className="flex min-w-0 shrink">
           {m.lastChange && m.delta !== null && (
             <DeltaChip key={`${m.lastChange.label}|${Math.round(m.delta)}`} delta={m.delta} label={m.lastChange.label} />

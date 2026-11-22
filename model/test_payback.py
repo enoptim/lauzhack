@@ -95,6 +95,21 @@ def test_summary_fields_share_the_basis():
         assert full["p10"] <= full["p50"] and (full["p90"] is None or full["p50"] <= full["p90"])
 
 
+def test_middle_future_chain_adds_up():
+    """The Results headline's chain is one real future: cash saved + leftover equipment value = ahead; NPV is its own."""
+    s = RES["summary"]["p"]
+    m = s["middle_future"]
+    assert m["year"] == H
+    assert abs(m["cash_saved"] + m["leftover_value"] - m["ahead"]) < 1e-6
+    # it is the future at the middle of the chart's line at the end (lower median), so it sits inside the fan
+    ends = sorted(r["cash_running"][-1] for r in RUNS)
+    assert abs(m["cash_saved"] - ends[(N - 1) // 2]) < 1e-6
+    k = next(i for i, r in enumerate(RUNS) if abs(r["cash_running"][-1] - m["cash_saved"]) < 1e-6)
+    assert abs(m["leftover_value"] - RUNS[k]["residual"]) < 1e-6
+    replay = engine.simulate(D, PLAN, future=RES["futures"][k], detail_years=())
+    assert abs(m["npv_cash"] - replay["npv_cash"]) < 1e-6
+
+
 def test_economic_view_too():
     s = RES["summary"]["p"]["payback"]["economic_running"]
     assert len(s) == H and all(0 <= row["share"] <= 1 for row in s)

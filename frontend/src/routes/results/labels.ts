@@ -76,3 +76,12 @@ export function flagText(flag: Flag): string {
 
 /** Context flags explain the situation; they are not a warning about the plan. */
 export const isContextFlag = (flag: Flag) => flag.type === 'reserve_below_minimum_without_upgrades';
+
+/** A warning about the plan in a few words, for the chip next to the headline. Same meaning as flagText. */
+export const flagShort: Record<string, string> = {
+  needs_financing: 'Needs a loan',
+  reserve_below_minimum: 'Reserve fund below its safety minimum',
+  over_budget: 'Over the upgrade budget',
+  desk_shortfall: 'More staff than desks',
+  ventilation_over_capacity: 'Too many people for the air supply',
+};

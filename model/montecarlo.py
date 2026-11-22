@@ -255,7 +255,13 @@ def run(data, scenarios, n=300, seed=2026, events=(), overrides=None, pool=None,
         for r in runs:
             for k, v in r["npv_breakdown"].items():
                 breakdown[k] = breakdown.get(k, 0.0) + v / n
+        # One real future in the middle (by cash saved at the end, the chart's line), so its figures add up exactly:
+        # cash saved + difference in equipment value left at the end = ahead at the end; npv_cash = the same in today's money.
+        mid = runs[sorted(range(n), key=lambda k: runs[k]["cash_running"][-1])[(n - 1) // 2]]
         summary[name] = {
+            "middle_future": {"year": H, "cash_saved": mid["cash_running"][-1],
+                              "leftover_value": mid["cash"][-1] - mid["cash_running"][-1],
+                              "ahead": mid["cash"][-1], "npv_cash": mid["npv_cash"]},
             "npv_cash": {q: _pct(cash, v) for q, v in (("p10", .1), ("p50", .5), ("p90", .9))},
             "npv_economic": {q: _pct(econ, v) for q, v in (("p10", .1), ("p50", .5), ("p90", .9))},
             "prob_cash_positive": sum(x > 0 for x in cash) / n,

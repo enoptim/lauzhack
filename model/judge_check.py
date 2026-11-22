@@ -101,15 +101,45 @@ def main():
     check(abs(gap - (last_row["cumulative_cash_cf"] - last_row["residual_value"])) < TOL,
           "year-15 cash gap vs doing nothing equals the plan's cumulative cash flow (less the book value left in the new equipment)")
 
-    print(f"\n5. {N_FUTURES} possible futures (seed {SEED}): cumulative cash gain vs doing nothing, year {int(p['horizon_years'])}")
+    H = int(p["horizon_years"])
+    print(f"\n5. {N_FUTURES} possible futures (seed {SEED}): one plan, one chain of numbers, year {H}")
     res = montecarlo.run(d, {"Upgrade ventilation": PLAN}, n=N_FUTURES, seed=SEED, samples=1)
     summary = res["summary"]["Upgrade ventilation"]
+    run_ = summary["fan"]["cash_running"][-1]
     last = summary["fan"]["cash"][-1]
-    print(f"  Counting the difference in what the equipment is still worth at year 15:")
-    print(f"  Median {chf(last['p50'])}; 10th to 90th percentile {chf(last['p10'])} to {chf(last['p90'])}")
+    m = summary["middle_future"]
+    print(f"  The app's headline (chart line, middle of {N_FUTURES} futures): cash saved by year {H} {chf(run_['p50'])}")
+    print(f"  The same chain for one middle future (by cash saved), so the steps add up exactly:")
+    print(f"    Cash saved by year {H} (no leftover equipment value):  {chf(m['cash_saved'])}")
+    print(f"    + difference in equipment value left at year {H}:    {chf(m['leftover_value'])}")
+    print(f"    = ahead of doing nothing at year {H}:                 {chf(m['ahead'])}")
+    print(f"    In today's money (NPV, {p['discount_rate_real']:.0%}/yr):                      {chf(m['npv_cash'])}")
+    print(f"  Across all futures: NPV middle {chf(summary['npv_cash']['p50'])}; "
+          f"{summary['prob_cash_positive']:.0%} of futures have a positive NPV (cash only)")
+    print(f"  Counting the leftover value, year-{H} median {chf(last['p50'])}; "
+          f"10th to 90th percentile {chf(last['p10'])} to {chf(last['p90'])}")
     print(f"  The 10th-90th range holds the middle 8 of 10 futures drawn from our assumed distributions; "
           f"it is not a real-world probability.")
     check(res["n"] == N_FUTURES and last["p10"] <= last["p50"] <= last["p90"], "percentiles are ordered")
+    check(abs(m["cash_saved"] + m["leftover_value"] - m["ahead"]) < TOL,
+          "middle future: cash saved + leftover equipment value difference = ahead at the end")
+    lo, hi_ = sorted([summary["fan"]["cash_running"][-1]["p10"], summary["fan"]["cash_running"][-1]["p90"]])
+    check(lo <= m["cash_saved"] <= hi_, "the middle future's cash saved sits inside the chart's 8-in-10 band")
+
+    # Fixed run (no chance): what each side owns at the end, cash plus the book value of its equipment.
+    # Doing nothing is its own run (no plan), so its book value is not derived from the plan's figures.
+    end, base = s["years"][-1], today["years"][-1]
+    plan_nw, base_nw = end["net_worth"], base["net_worth"]
+    print(f"  Fixed run, year {H}: cash + equipment book value (net worth)")
+    print(f"    With the plan:  {chf(end['cash_closing'])} cash + {chf(end['book_value'])} equipment = {chf(plan_nw)}")
+    print(f"    Doing nothing:  {chf(base['cash_closing'])} cash + {chf(base['book_value'])} equipment = {chf(base_nw)}")
+    print(f"    Plan ahead by {chf(plan_nw - base_nw)}: cash saved {chf(end['cumulative_cash_cf'] - end['residual_value'])} "
+          f"+ leftover-value difference {chf(end['residual_value'])}. In today's money (NPV): {chf(s['npv_cash'])}")
+    check(abs(base["cash_closing"] - end["cash_closing_baseline"]) < TOL, "doing nothing ends with the same cash in both runs")
+    check(abs(end["residual_value"] - (end["book_value"] - base["book_value"])) < TOL,
+          "leftover-value difference (cash line - running cash line at the horizon) = plan's minus doing nothing's equipment book value")
+    check(abs((plan_nw - base_nw) - end["cumulative_cash_cf"]) < TOL,
+          "net-worth gap at the horizon = cumulative cash vs doing nothing, counting leftover equipment value")
 
     # Payback is worked out for each future on its own (the chart's basis: without the leftover equipment value),
     # never read off the percentile lines, which are computed separately for each year.
