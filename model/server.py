@@ -53,6 +53,10 @@ class Run(BaseModel):
     year: int = 1
 
 
+class TornadoRun(Run):
+    metric: str | None = None
+
+
 class Preview(BaseModel):
     scenario: list = []
     swap: dict
@@ -159,9 +163,10 @@ def stress_test(body: Run):
 
 
 @app.post("/api/tornado")
-def tornado(body: Run):
+def tornado(body: TornadoRun):
     sc, ev, ov = validate.check_run(DATA, body.scenario, body.events, body.overrides)
-    return viz.clean(engine.tornado(DATA, sc, ev, top=10, overrides=ov))
+    metric = validate.check_metric(body.metric)
+    return viz.clean(engine.tornado(DATA, sc, ev, metric=metric, top=10, overrides=ov))
 
 
 @app.post("/api/bands")

@@ -79,6 +79,13 @@ def test_unknown_assumption_and_bad_values():
     bad("/api/breakeven", {"param": "nonsense"}, "unknown assumption")
 
 
+def test_tornado_metric():
+    bad("/api/tornado", {"metric": "npv_banana"}, "unknown metric")
+    code, out = call("POST", "/api/tornado", {"scenario": LIGHT, "metric": "npv_cash"})
+    assert code == 200 and out["rows"], out
+    assert call("POST", "/api/tornado", {"scenario": LIGHT})[0] == 200
+
+
 def test_bad_swaps_and_scenarios():
     bad("/api/simulate", {"scenario": [{"group": "lighting", "option": "lighting_nope"}]}, "unknown option")
     bad("/api/simulate", {"scenario": [{"group": "coffee", "option": "lighting_mid"}]}, "belongs to group")

@@ -27,6 +27,11 @@ export interface RunRequest {
   year?: number;
 }
 
+export interface TornadoRequest extends RunRequest {
+  /** What to rank by: npv_economic (default, with staff effects) or npv_cash. */
+  metric?: 'npv_cash' | 'npv_economic';
+}
+
 export interface PreviewRequest {
   scenario?: Scenario;
   swap: Swap;
@@ -102,6 +107,8 @@ export interface Catalog {
   items: CatalogItem[];
   events: CatalogEvent[];
   horizon_years: number;
+  /** Today's equipment: replacement price less the share of life used. */
+  equipment_value_chf: number;
   limits: { capex_budget_chf: number; opening_reserve_chf: number; min_reserve_chf: number };
 }
 
@@ -140,6 +147,10 @@ export interface FinanceYear {
   cumulative_economic_cf: number;
   cash_closing: number;
   cash_closing_baseline: number;
+  /** Value of equipment bought in this plan (and its like-for-like replacements), after wear. Not the old equipment. */
+  book_value: number;
+  /** Cash reserve plus `book_value`. */
+  net_worth: number;
   capex: number;
   capex_baseline: number;
   /** Only in the last year: value left in the plan's equipment minus the do-nothing path's. */
@@ -342,6 +353,12 @@ export interface FuturesSummary {
   /** Money vs doing nothing today, before year 1: minus the purchase price. */
   start: number;
   npv_economic_mean: number;
+  /**
+   * One real future in the middle (by cash saved at the horizon), so its figures add up exactly:
+   * cash_saved (chart basis) + leftover_value (plan's minus doing nothing's equipment value at the end) = ahead.
+   * npv_cash is the same future in today's money. Cash only.
+   */
+  middle_future?: { year: number; cash_saved: number; leftover_value: number; ahead: number; npv_cash: number };
 }
 
 /** Payback across the futures when `year` years are shown. Years have decimals; null = that future has not paid back by `year`. */

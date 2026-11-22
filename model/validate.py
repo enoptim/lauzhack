@@ -92,6 +92,18 @@ def check_year(data, year, overrides=None):
 
 
 # ---------------------------------------------------------------- assumptions
+TORNADO_METRICS = ("npv_cash", "npv_economic")
+
+
+def check_metric(metric):
+    """The money measure the sensitivity ranking uses: cash only, or cash plus staff effects (the default)."""
+    if metric is None:
+        return "npv_economic"
+    if metric not in TORNADO_METRICS:
+        raise ValidationError(f"Unknown metric {metric!r}. Allowed: {', '.join(TORNADO_METRICS)}.")
+    return metric
+
+
 def check_param(data, name):
     if not isinstance(name, str) or name not in data["params"]:
         near = [k for k in data["params"] if isinstance(name, str) and name and (name in k or k in name)][:5]

@@ -134,7 +134,7 @@ def test_deciding_never_changes_the_past():
     after = S.decide(D, s, [{"group": "ventilation", "option": "ventilation_mid", "item_id": VENT0, "year": "now"}])
     assert after["t"] == before["t"] == 2
     assert before["history"][:1] == after["history"][:1]                  # earlier years: identical
-    money_now = {"capex", "cash_cf", "economic_cf", "cumulative_cash_cf", "cumulative_economic_cf", "cash_closing"}
+    money_now = {"capex", "cash_cf", "economic_cf", "cumulative_cash_cf", "cumulative_economic_cf", "cash_closing", "book_value", "net_worth"}
     b, a = before["history"][1], after["history"][1]                       # this year: only the purchase made now
     assert {k: v for k, v in b.items() if k not in money_now} == {k: v for k, v in a.items() if k not in money_now}
     assert a["capex"] > b["capex"]
@@ -380,3 +380,4 @@ if __name__ == "__main__":
             failed += 1
             print("FAIL", t.__name__, e)
     print(f"{len(tests) - failed}/{len(tests)} passed")
+    raise SystemExit(1 if failed else 0)

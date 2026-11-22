@@ -5,7 +5,7 @@
 import type {
   Assumption, BandsResult, BreakevenRequest, BreakevenResult, Catalog, ChatEvent, ChatRequest, ChatResult,
   Evaluation, FuturesRequest, FuturesResult, Granularity, Metric, OptimizationProblem, OptimizeResult,
-  ParetoRequest, ParetoResult, PlaySwap, PreviewRequest, PreviewResult, RunRequest, Scenario, ScriptedFuture,
+  ParetoRequest, ParetoResult, PlaySwap, PreviewRequest, PreviewResult, RunRequest, TornadoRequest, Scenario, ScriptedFuture,
   SearchOptions, SearchRequest, SearchResult, SessionOutlook, SessionPreview, SessionState, SimulateResult,
   StressTestResult, TornadoResult,
 } from './types';
@@ -60,7 +60,7 @@ export const api = {
   simulate: (body: RunRequest = {}) => request<SimulateResult>('/api/simulate', body),
   preview: (body: PreviewRequest) => request<PreviewResult>('/api/preview', body),
   stressTest: (body: RunRequest = {}) => request<StressTestResult>('/api/stress_test', body),
-  tornado: (body: RunRequest = {}) => request<TornadoResult>('/api/tornado', body),
+  tornado: (body: TornadoRequest = {}) => request<TornadoResult>('/api/tornado', body),
   bands: (body: RunRequest = {}) => request<BandsResult>('/api/bands', body),
   futures: (body: FuturesRequest) => request<FuturesResult>('/api/futures', body),
   assumptions: () => request<Assumption[]>('/api/assumptions'),
