@@ -1,6 +1,7 @@
 // The plan being edited, pinned onto the building: one pin per floor it changes, at the corner nearest the camera.
 // A plan the assistant found shows up here the same way as one you made by hand.
 import { Html } from '@react-three/drei';
+import { useThree } from '@react-three/fiber';
 import type { Swap } from '@/api/types';
 import { FLOOR_COUNT, FLOOR_HEIGHT, LENGTH, WIDTH } from '@/data/building';
 import { groupLabel } from '@/twin/plans';
@@ -28,6 +29,22 @@ export default function PlanPins({ scenario, color, onPick }: {
   }
   // Lowest floor first, so the pins land from the ground up.
   const order = [...levels].sort(([a], [b]) => (a ?? 99) - (b ?? 99));
+  // In a small view the floors sit too close for one pin each: one pin sums the plan up instead.
+  const narrow = useThree(state => state.size.width) < 640;
+  if (narrow && order.length > 2) {
+    const kinds = [...new Set(order.flatMap(([, groups]) => groups))];
+    return (
+      <Html position={[WIDTH / 2 + 0.6, FLOOR_COUNT * FLOOR_HEIGHT + 2.5, LENGTH / 2 + 0.6]} zIndexRange={[20, 0]} style={{ pointerEvents: 'none' }}>
+        <div className="twin-enter flex -translate-y-1/2 items-center">
+          <span className="size-2 shrink-0 rounded-full ring-2 ring-white" style={{ background: color }} />
+          <span className="h-px w-4 shrink-0" style={{ background: color }} />
+          <span className="rounded-full border bg-card/95 px-2.5 py-1 text-xs whitespace-nowrap shadow-sm">
+            <span className="font-semibold">{order.length} places</span> <span className="text-muted-foreground">{kinds.map(groupLabel).join(', ')}</span>
+          </span>
+        </div>
+      </Html>
+    );
+  }
   return <>
     {order.map(([level, groups], index) => {
       // One floor apart on screen, so neighbouring pins never overlap; the basement sits just below the ground floor.
