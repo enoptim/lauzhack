@@ -624,9 +624,10 @@ def main():
              description="Building reserve at the start of year 1; upgrades are paid from it", source=MADE),
         dict(key="min_reserve_chf", value=1000000, low=500000, high=1500000, unit="CHF",
              description="Floor the reserve must not fall below (emergency repairs)", source=MADE),
-        dict(key="other_operating_cf_chf_year", value=350000, low=300000, high=450000, unit="CHF/yr",
+        dict(key="other_operating_cf_chf_year", value=600000, low=500000, high=700000, unit="CHF/yr",
              description="Yearly budget EPFL allocates to the building, net of costs not modelled (cleaning, "
-                         "security); pays energy, maintenance and consumables, the rest goes into the reserve. "
+                         "security); pays energy, maintenance and consumables, the rest goes into the reserve, which also pays "
+                         "like-for-like replacements. Set so doing nothing keeps the reserve above its minimum. "
                          "Salaries are not paid from it; people effects are valued with salary_cost_chf_year",
              source=MADE),
         dict(key="salary_cost_chf_year", value=110000, low=80000, high=140000, unit="CHF/yr/person",

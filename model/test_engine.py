@@ -204,8 +204,13 @@ def test_reserve_flag_only_when_plan_is_worse_than_doing_nothing():
     big = engine.simulate(D, [{"group": "ventilation", "option": "ventilation_premium"},
                               {"group": "blinds", "option": "blinds_upgrade"}])
     first = next(f for f in big["flags"] if f["type"] == "reserve_below_minimum")
-    y = big["years"][first["year"] - 1]
-    assert y["cash_closing"] < D["params"]["min_reserve_chf"] and y["cash_closing"] < y["cash_closing_baseline"]
+    if first["year"] == 0:   # right after the day-one purchase
+        cash = D["params"]["opening_reserve_chf"] - big["paid_year0"]
+        cash_baseline = D["params"]["opening_reserve_chf"] - big["paid_year0_baseline"]
+    else:
+        y = big["years"][first["year"] - 1]
+        cash, cash_baseline = y["cash_closing"], y["cash_closing_baseline"]
+    assert cash < D["params"]["min_reserve_chf"] and cash < cash_baseline
 
 
 def test_sick_days_today_match_the_data():

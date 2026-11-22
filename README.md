@@ -42,7 +42,7 @@ Inputs: the plan is `[{"group": "ventilation", "option": "ventilation_mid"}]`, t
   Meeting-room CO2:        1346 ppm -> 1000 ppm
   Net present value (cash only, 15 years, 3%/yr real): -102,656 CHF
   Payback (cash only):     10.7 years
-  Flags:                   needs_financing, reserve_below_minimum, reserve_below_minimum_without_upgrades
+  Flags:                   reserve_below_minimum
   Floor 2 only (engine option 'floor': 2): purchase 156,000 CHF, year-1 saving 4,106 CHF
 
 3. Change one assumption: electricity price 0.20 -> 0.30 CHF/kWh (+50%)
@@ -59,16 +59,31 @@ Inputs: the plan is `[{"group": "ventilation", "option": "ventilation_mid"}]`, t
 
 4. Cash-ledger check
   [ok] plan: closing cash equals the formula in all 15 years
-  Year 1 with the plan: opening 1,354,540 + other operating cash 350,000 - running costs 286,407 - purchases 72,000 = 1,346,133; model closing cash 1,346,133
+  Year 1 with the plan: opening 1,354,540 + other operating cash 600,000 - running costs 286,407 - purchases 72,000 = 1,596,133; model closing cash 1,596,133
   [ok] do nothing: closing cash equals the formula in all 15 years
-  Year 1 doing nothing: opening 2,115,040 + 350,000 - 306,115 - 72,000 = 2,086,925; model closing cash 2,086,925
+  Year 1 doing nothing: opening 2,115,040 + 600,000 - 306,115 - 72,000 = 2,336,925; model closing cash 2,336,925
   [ok] year-15 cash gap vs doing nothing equals the plan's cumulative cash flow (less the book value left in the new equipment)
 
-5. 200 possible futures (seed 2026): cumulative cash gain vs doing nothing, year 15
-  Counting the difference in what the equipment is still worth at year 15:
-  Median 97,152 CHF; 10th to 90th percentile 226 CHF to 211,348 CHF
+5. 200 possible futures (seed 2026): one plan, one chain of numbers, year 15
+  The app's headline (chart line, middle of 200 futures): cash saved by year 15 243,773 CHF
+  The same chain for one middle future (by cash saved), so the steps add up exactly:
+    Cash saved by year 15 (no leftover equipment value):  243,731 CHF
+    + difference in equipment value left at year 15:    -152,896 CHF
+    = ahead of doing nothing at year 15:                 90,835 CHF
+    In today's money (NPV, 3%/yr):                      -46,752 CHF
+  Across all futures: NPV middle -34,701 CHF; 34% of futures have a positive NPV (cash only)
+  Counting the leftover value, year-15 median 97,152 CHF; 10th to 90th percentile 226 CHF to 211,348 CHF
   The 10th-90th range holds the middle 8 of 10 futures drawn from our assumed distributions; it is not a real-world probability.
   [ok] percentiles are ordered
+  [ok] middle future: cash saved + leftover equipment value difference = ahead at the end
+  [ok] the middle future's cash saved sits inside the chart's 8-in-10 band
+  Fixed run, year 15: cash + equipment book value (net worth)
+    With the plan:  2,145,721 CHF cash + 1,524,079 CHF equipment = 3,669,799 CHF
+    Doing nothing:  1,947,593 CHF cash + 1,691,119 CHF equipment = 3,638,712 CHF
+    Plan ahead by 31,088 CHF: cash saved 198,128 CHF + leftover-value difference -167,040 CHF. In today's money (NPV): -102,656 CHF
+  [ok] doing nothing ends with the same cash in both runs
+  [ok] leftover-value difference (cash line - running cash line at the horizon) = plan's minus doing nothing's equipment book value
+  [ok] net-worth gap at the horizon = cumulative cash vs doing nothing, counting leftover equipment value
   Payback, worked out future by future: 100% of futures pay back within 15 years; median 10.3 years, 10th to 90th percentile 7.3 years to 10.6 years
   [ok] per-future payback share and percentiles are consistent
 
