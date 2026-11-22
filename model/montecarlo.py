@@ -158,11 +158,13 @@ def _failures(data, future, horizon):
     return [{**e, "floors": sorted(f for f in e["floors"] if f is not None)} for _, e in sorted(out.items())]
 
 
-def run(data, scenarios, n=300, seed=2026, events=(), overrides=None, pool=None, samples=20):
+def run(data, scenarios, n=300, seed=2026, events=(), overrides=None, pool=None, samples=20, pinned=None):
     """scenarios: {name: scenario list}. Returns per-scenario summaries, pairwise comparisons,
     and the futures themselves (so any run can be replayed with engine.simulate(..., future=...)).
     events: event ids switched on in every future, on top of the random ones (with their fixed timing).
-    overrides: assumptions fixed in every future; they win over the drawn people-effect strengths."""
+    overrides: assumptions fixed in every future; they win over the drawn people-effect strengths.
+    pinned: one more future (e.g. the one a player just played) shown first among the example futures,
+    marked "pinned". It is not counted in the summaries, which stay the n drawn futures."""
     rng = random.Random(seed)
     futures = [draw_future(data, rng) for _ in range(n)]
     if events or overrides:
@@ -261,6 +263,16 @@ def run(data, scenarios, n=300, seed=2026, events=(), overrides=None, pool=None,
                     "paths": {name: {"start": results[name][k]["start"],
                               **{v: results[name][k][v] for v in ("cash", "economic", "cash_running", "economic_running")}}
                               for name in names}} for k in picks]
+    if pinned is not None:
+        fixed = [{"id": e, "start_year": data["events"][e]["start_year"], "end_year": data["events"][e]["end_year"]}
+                 for e in events if data["events"][e]["kind"] == "annual"]
+        f = {**pinned, "events": pinned["events"] + fixed, "params": {**pinned["params"], **(overrides or {})}}
+        mine = {name: _slim(engine.simulate(data, sc, future=f, detail_years=())) for name, sc in scenarios.items()}
+        sample_list = [{"id": "pinned", "pinned": True, "what_happened": describe(f), "failures": _failures(data, f, H),
+                        "events": sorted(f["events"], key=lambda e: e["start_year"]),
+                        "paths": {name: {"start": mine[name]["start"],
+                                  **{v: mine[name][v] for v in ("cash", "economic", "cash_running", "economic_running")}}
+                                  for name in names}}] + sample_list[:samples - 1]
     return {"n": n, "seed": seed, "summary": summary, "compare": compare, "stories": stories,
             "samples": sample_list, "futures": futures,
             "method": "Triangular draws for people-effect strengths; log random walk for price; Bernoulli events per year; "

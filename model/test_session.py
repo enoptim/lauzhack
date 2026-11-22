@@ -31,7 +31,7 @@ def _types(state):
 
 # --- the scripted future
 def test_scripted_future_has_the_shape_of_a_drawn_one():
-    f, drawn = _future(), montecarlo.draw_future(D, random.Random(1))
+    f, drawn = _future(), montecarlo.draw_play_future(D, random.Random(1))
     assert set(f) == set(drawn)
     assert len(f["price_path"]) == D["params"]["horizon_years"] and set(f["price_path"]) == {1.0}
     assert {e["id"]: e["start_year"] for e in f["events"]} == {"new_lab": 3, "heatwave_summer": 5, "energy_price_spike": 6}
@@ -49,7 +49,9 @@ def test_only_the_scripted_failure_happens_in_the_demo():
     others = [i for i in D["items"] if D["options"][i["option"]]["lifetime_years"] and i["id"] != VENT0]
     assert others and all(f["remaining_life"][i["id"]] == engine.INF for i in others)   # other_units: keep_running
     _, plans, _ = engine.install_plans(D, [], f)
-    assert {iid for iid, ins in plans.items() if ins} == {VENT0}
+    # Only the script's failure. Big systems may still be replaced on plan (replace_on_plan), never as a failure.
+    assert {iid for iid, ins in plans.items() if any(kind == "failure" for _, _, kind in ins)} == {VENT0}
+    assert all(D["item_by_id"][iid]["group"] in engine.PLANNED_GROUPS for iid, ins in plans.items() if ins and iid != VENT0)
 
 
 # --- the engine fix: an upgrade at the failure time is an emergency
@@ -264,7 +266,7 @@ def test_overspending_is_flagged_but_doing_nothing_is_not():
 
 # --- random lives for units installed later
 def _sampled(seed=42):
-    return montecarlo.draw_future(D, random.Random(seed))
+    return montecarlo.draw_play_future(D, random.Random(seed))
 
 
 def _later_installs(plans):
@@ -322,6 +324,36 @@ def test_the_outlook_keeps_new_units_that_already_failed():
         _, theirs, _ = engine.install_plans(D, s["decisions"], f)
         for iid in mine:
             assert [x for x in mine[iid] if x[0] <= t] == [x for x in theirs[iid] if x[0] <= t]
+
+
+# --- game length, and showing a played game in Results
+def test_a_shorter_game_stops_at_its_own_end():
+    s, st = S.start(D, _future(), NAME, years=10)
+    times = []
+    while not st["ended"]:
+        st = S.next_pause(D, s)
+        times.append(st["t"])
+    assert times == [1, 2, 3, 4, 5, 10] and len(st["history"]) == 10
+    try:
+        S.start(D, _future(), NAME, years=40)
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("a 40-year game was accepted")
+
+
+def test_the_played_future_is_the_first_example_in_results():
+    import optimize
+    plan = [{"group": "lighting", "option": "lighting_budget", "year": 0, "firm": True}]
+    r = montecarlo.run(D, {"p0": plan}, n=20, seed=1, samples=5, pinned=_future())
+    first = r["samples"][0]
+    assert first["pinned"] and len(r["samples"]) == 5
+    assert {e["id"] for e in first["events"]} == {"new_lab", "heatwave_summer", "energy_price_spike"}
+    mine = engine.simulate(D, plan, future=_future(), detail_years=())
+    assert abs(first["paths"]["p0"]["cash"][-1] - mine["years"][-1]["cumulative_cash_cf"]) < 1e-6
+    plain = montecarlo.run(D, {"p0": plan}, n=20, seed=1, samples=5)
+    assert r["summary"] == plain["summary"]                                   # the 20 futures' statistics are unchanged
+    assert optimize.upfront_cost(D, engine.simulate(D, plan)) > 0             # bought today in a game: paid today
 
 
 if __name__ == "__main__":

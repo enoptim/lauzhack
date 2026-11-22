@@ -56,6 +56,8 @@ class Futures(BaseModel):
     seed: int = 2026
     events: list = []
     overrides: dict = {}
+    # A played game (session id): its future is added as the first example future, marked "pinned".
+    pinned_session: str | None = None
 
 
 class Breakeven(BaseModel):
@@ -178,6 +180,8 @@ def futures(body: Futures):
     if len(body.scenarios) > 6:
         raise HTTPException(status_code=400, detail="At most 6 plans at once.")
     args = dict(n=min(body.n, 500), seed=body.seed, events=body.events, overrides=body.overrides)
+    if body.pinned_session:
+        args["pinned"] = _session(body.pinned_session)["future"]
     pool = _futures_pool()
     try:
         res = montecarlo.run(DATA, body.scenarios, pool=pool, **args)
@@ -285,6 +289,7 @@ SESSIONS = {}
 
 class SessionStart(BaseModel):
     future: str | dict = "ventilation_failure"
+    years: int | None = None          # how long the game runs (default: the engine's horizon)
 
 
 class SessionId(BaseModel):
@@ -333,12 +338,15 @@ def session_start(body: SessionStart):
             future, name = montecarlo.load_scripted(DATA, body.future), body.future
         elif "seed" in body.future:
             seed = int(body.future["seed"])
-            future, name = montecarlo.draw_future(DATA, random.Random(seed)), f"sampled future (seed {seed})"
+            future, name = montecarlo.draw_play_future(DATA, random.Random(seed)), f"sampled future (seed {seed})"
         else:
             raise ValueError('future must be a scripted future\'s name or {"seed": <number>}')
     except ValueError as e:
         raise HTTPException(400, str(e))
-    session, state = play.start(DATA, future, name)
+    try:
+        session, state = play.start(DATA, future, name, body.years)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
     session_id = uuid.uuid4().hex
     SESSIONS[session_id] = session
     return {"session_id": session_id, **state}

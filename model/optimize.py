@@ -75,7 +75,12 @@ def upfront_cost(data, res):
     sel = engine.baseline(data) | {iid: c[0] for iid, c in res["choices"].items()}
     total = 0.0
     for iid, (oid, timing) in res["choices"].items():
-        if timing != "now":
+        if isinstance(timing, engine.FirmYear):          # play mode: the step bought today, if any
+            today = [option for year, option in timing.steps if year == 0]
+            if not today:
+                continue
+            oid = today[-1]
+        elif timing != "now" and timing != 0:
             continue
         item, o = data["item_by_id"][iid], data["options"][oid]
         units = engine.units_of(data, item, oid, sel)

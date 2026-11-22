@@ -40,18 +40,26 @@ ROW_FIELDS = ("cash_closing", "cash_closing_baseline", "cumulative_cash_cf", "cu
               "price_chf_kwh")
 
 
-def _horizon(data):
-    return int(data["params"]["horizon_years"])
+def _horizon(data, session=None):
+    """How many years this game runs: its own length if it has one (5, 10 or 15), else the engine's horizon."""
+    return int((session or {}).get("years") or data["params"]["horizon_years"])
 
 
-def new(future, name=None):
-    """A session at t = 0 with no decisions. future: from montecarlo.draw_future or load_scripted."""
-    return {"future": future, "future_name": name, "decisions": [], "t": 0, "ended": False, "state": None}
+def _overrides(data, session):
+    """A shorter game runs the engine over its own horizon (equipment still standing at the end counts)."""
+    H = _horizon(data, session)
+    return {"horizon_years": H} if H != int(data["params"]["horizon_years"]) else None
+
+
+def new(future, name=None, years=None):
+    """A session at t = 0 with no decisions. future: from montecarlo.draw_play_future or load_scripted.
+    years: how long the game runs (default: the engine's horizon)."""
+    return {"future": future, "future_name": name, "decisions": [], "t": 0, "ended": False, "state": None, "years": years}
 
 
 def _sim(data, session, decisions=None, detail_years=()):
     return engine.simulate(data, session["decisions"] if decisions is None else decisions,
-                           future=session["future"], detail_years=detail_years)
+                           overrides=_overrides(data, session), future=session["future"], detail_years=detail_years)
 
 
 # ---------------------------------------------------------------- reasons to pause
@@ -78,7 +86,7 @@ def _count(n, unit):
 
 def _failures(data, session):
     """Original units breaking, grouped per (time, group): {T: [reason]}."""
-    _, plans, _ = engine.install_plans(data, session["decisions"], session["future"])
+    _, plans, _ = engine.install_plans(data, session["decisions"], session["future"], _horizon(data, session))
     grouped = {}
     for iid, installs in plans.items():
         for T, option, kind in installs:
@@ -123,7 +131,7 @@ def _events(data, session):
 
 def _warnings(data, session, res):
     """Warnings on the player's path that appear in year T and were not there in year T - 1: {T: [reason]}."""
-    H = _horizon(data)
+    H = _horizon(data, session)
     present = {}                                   # (flag, floor) -> set of years
     for f in res["flags"]:
         if f["type"] in ("ventilation_over_capacity", "desk_shortfall"):
@@ -183,7 +191,7 @@ def reasons_by_time(data, session, res=None):
 # ---------------------------------------------------------------- decisions and previews
 def _check_swap(data, session, swap):
     """A swap for this session with an explicit year >= t. "year": "now" (or no year) means t."""
-    t, H = session["t"], _horizon(data)
+    t, H = session["t"], _horizon(data, session)
     sw = {k: v for k, v in swap.items() if k != "timing"}
     year = sw.get("year", "now")
     year = t if year == "now" else year
@@ -203,7 +211,7 @@ def _check_swap(data, session, swap):
 
 def _preview(data, session, swaps, base=None):
     """What adding these swaps would change, in this future and with the decisions so far."""
-    H = _horizon(data)
+    H = _horizon(data, session)
     swaps = [_check_swap(data, session, s) for s in swaps]
     a = base or _sim(data, session)
     b = _sim(data, session, session["decisions"] + swaps)
@@ -264,7 +272,7 @@ def _row(row):
 
 def _situation(data, session, T, reasons, reactions, res):
     """Structured facts for an LLM to narrate. Numbers only from the engine runs above."""
-    H = _horizon(data)
+    H = _horizon(data, session)
     options = []
     for r in reactions:
         if r["type"] == "failure":
@@ -297,7 +305,7 @@ def _state(data, session, T):
     reactions = _reactions(data, session, reasons, res)
     snapshot = (viz.snapshot(data, res, T, "state") if T >= 1
                 else viz.snapshot(data, res, 1, "state_baseline"))        # today: the building as it is
-    state = {"t": T, "horizon": _horizon(data), "ended": False, "future": session["future_name"],
+    state = {"t": T, "horizon": _horizon(data, session), "ended": False, "future": session["future_name"],
              "reasons": reasons, "decisions": session["decisions"], "plan": _plan(session, T),
              "history": viz.finance(res)["years"][:T], "snapshot": snapshot, "reactions": reactions,
              "situation": _situation(data, session, T, reasons, reactions, res)}
@@ -307,7 +315,7 @@ def _state(data, session, T):
 
 def _end(data, session):
     """The run is over: the player's path against doing nothing in the same future."""
-    H = _horizon(data)
+    H = _horizon(data, session)
     session["t"], session["ended"] = H, True
     res = _sim(data, session, detail_years=(H,))
     last = res["years"][-1]
@@ -328,9 +336,13 @@ def _end(data, session):
 
 
 # ---------------------------------------------------------------- the API of a session
-def start(data, future, name=None):
-    """A new session at t = 0. Returns (session, opening state): the building today and anything at time 0."""
-    session = new(future, name)
+def start(data, future, name=None, years=None):
+    """A new session at t = 0. Returns (session, opening state): the building today and anything at time 0.
+    years: how long the game runs, 1 to the engine's horizon (default: the whole horizon)."""
+    full = int(data["params"]["horizon_years"])
+    if years is not None and not (isinstance(years, int) and 1 <= years <= full):
+        raise ValueError(f"A game runs 1 to {full} years.")
+    session = new(future, name, years)
     return session, _state(data, session, 0)
 
 
@@ -339,7 +351,7 @@ def next_pause(data, session):
     or the end-of-run summary if nothing happens before the horizon."""
     if session["ended"]:
         return session["state"]
-    times = [T for T in reasons_by_time(data, session) if session["t"] < T < _horizon(data)]
+    times = [T for T in reasons_by_time(data, session) if session["t"] < T < _horizon(data, session)]
     if not times:
         return _end(data, session)
     session["t"] = min(times)
@@ -399,8 +411,8 @@ def outlook(data, session, n=100, seed=2026):
     """An updated forecast from now: the decisions so far run over n futures that keep the revealed past.
     Returns a P10/P50/P90 fan of the cumulative gain vs doing nothing from year t + 1, and how often the
     player's path beats doing nothing."""
-    t, H = session["t"], _horizon(data)
-    runs = [engine.simulate(data, session["decisions"], future=f, detail_years=())
+    t, H = session["t"], _horizon(data, session)
+    runs = [engine.simulate(data, session["decisions"], overrides=_overrides(data, session), future=f, detail_years=())
             for f in outlook_futures(data, session, n, seed)]
     pct = montecarlo._pct
     fan = {view: [{"year": y, **{q: pct([r["years"][y - 1][f"cumulative_{view}_cf"] for r in runs], v)
