@@ -2,8 +2,8 @@
 // Every view reads the same plans, so a plan the assistant finds is a plan you can edit in 3D and compare in Results.
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { api } from '@/api/client';
-import type { Catalog, ChatScenario, OptimizationProblem, Scenario } from '@/api/types';
-import { errorText, loadTurns, newId, saveTurns, type Turn } from './assistant/conversation';
+import type { Catalog, ChatEvent, ChatResult, ChatScenario, OptimizationProblem, Scenario } from '@/api/types';
+import { applyEvent, errorText, loadTurns, newId, saveTurns, type Turn } from './assistant/conversation';
 import { freeColor, MAX_PLANS, nextPlanName, PLAN_COLORS, readPlans, sameScenario, storePlans, type Plan } from './plans';
 
 /** What is on screen, published by the view. The assistant reads it to resolve "this" and "here". */
@@ -190,23 +190,53 @@ export function TwinProvider({ children }: { children: ReactNode }) {
     // The plan on screen. With nothing changed yet, the plan the assistant showed last.
     const latest = [...current].reverse().find(turn => turn.scenario)?.scenario?.scenario ?? [];
     const onScreen = seen?.plan?.scenario ?? active.scenario;
+    const replyId = newId();
+    setTurns(previous => [...previous, { id: replyId, role: 'assistant', content: '', steps: [], streaming: true }]);
+    const update = (change: (turn: Turn) => Turn) =>
+      setTurns(previous => previous.map(turn => turn.id === replyId ? change(turn) : turn));
+    // Pieces arrive many times a second: fold them in once per frame.
+    let queued: ChatEvent[] = [];
+    let frame = 0;
+    const flush = () => {
+      frame = 0;
+      const events = queued;
+      queued = [];
+      if (events.length) update(turn => events.reduce((t, e) => applyEvent(t, e, Date.now()), turn));
+    };
     try {
-      const reply = await api.chat({
+      let result: ChatResult | null = null;
+      await api.chatStream({
         messages: history.filter(turn => !turn.failed).map(({ role, content: words }) => ({ role, content: words })),
         scenario: onScreen.length ? onScreen : latest,
         confirm: confirm?.problem,
         context: seen ? `${seen.describe}${seen.plan ? '' : ` The plan being edited is "${active.name}" with ${active.scenario.length} change(s).`}` : undefined,
+      }, event => {
+        if (event.type === 'done') result = event.result;
+        else if (event.type === 'error') throw new Error(event.message);
+        else if (event.type !== 'ping') {
+          queued.push(event);
+          if (!frame) frame = requestAnimationFrame(flush);
+        }
       });
-      setTurns(previous => [...previous, {
-        id: newId(), role: 'assistant', content: reply.reply,
+      cancelAnimationFrame(frame);
+      flush();
+      if (!result) throw new Error('The answer was cut off. Please ask again.');
+      const reply: ChatResult = result;
+      update(turn => ({
+        ...applyEvent(turn, { type: 'text', text: '' }, Date.now()),  // closes any open thinking
+        content: reply.reply, streaming: false,
         scenario: reply.scenario, proposal: reply.proposal, optimization: reply.optimization, chart: reply.chart,
-      }]);
+      }));
       if (!live.current.assistantOpen) setUnread(true);
     } catch (error) {
-      setTurns(previous => [
-        ...previous.map(turn => turn.id === confirm?.turnId ? { ...turn, ran: false } : turn),
-        { id: newId(), role: 'assistant', content: errorText(error), failed: true },
-      ]);
+      cancelAnimationFrame(frame);
+      flush();
+      setTurns(previous => previous
+        .map(turn => turn.id === confirm?.turnId ? { ...turn, ran: false } : turn)
+        .map(turn => turn.id === replyId ? {
+          ...turn, streaming: false, failed: true, content: errorText(error),
+          steps: turn.steps?.map(step => step.kind === 'job' && step.status === 'running' ? { ...step, status: 'failed' as const } : step),
+        } : turn));
     } finally {
       setPending(null);
     }

@@ -13,7 +13,7 @@ def _script(*replies):
     """Fake _post: returns the given model messages in order and records each request."""
     sent = []
 
-    def post(payload):
+    def post(payload, on_delta=None):
         sent.append(json.loads(json.dumps(payload)))
         return {"choices": [{"message": replies[len(sent) - 1]}]}
     return post, sent

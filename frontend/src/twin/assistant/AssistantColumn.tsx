@@ -9,11 +9,11 @@ import {
 } from '@/components/ui/message-scroller';
 import { cn } from '@/lib/utils';
 import ErrorBoundary from '../ErrorBoundary';
-import Mark from '../Mark';
 import { planColor, resultsHref, sameScenario } from '../plans';
 import { useTwin } from '../TwinProvider';
 import { planName, PlanCard, ProposalCard, type ProposalState } from './cards';
 import Markdown from './Markdown';
+import Steps, { Waiting } from './Steps';
 import TradeoffChart from './TradeoffChart';
 import type { Turn } from './conversation';
 
@@ -23,19 +23,6 @@ const starters = [
   'Which single upgrades pay back fastest?',
 ];
 
-/** Slow answers say what is happening. The optimizer runs first, then the explanation is written. */
-function useWaitingText(pending: 'thinking' | 'optimizing' | null) {
-  const [late, setLate] = useState(false);
-  useEffect(() => {
-    setLate(false);
-    if (!pending) return;
-    const timer = setTimeout(() => setLate(true), pending === 'optimizing' ? 4000 : 6000);
-    return () => clearTimeout(timer);
-  }, [pending]);
-  if (pending === 'optimizing') return late ? 'Explaining the best plan…' : 'Testing plans in the building model…';
-  return late ? 'Running the numbers in the building model…' : 'Reading your question…';
-}
-
 export default function AssistantColumn() {
   const twin = useTwin();
   const { turns, pending, send, assistantOpen, setAssistantOpen, focus, plans } = twin;
@@ -43,7 +30,6 @@ export default function AssistantColumn() {
   const input = useRef<HTMLTextAreaElement>(null);
   const navigate = useNavigate();
   const { pathname } = useLocation();
-  const waiting = useWaitingText(pending);
   const narrow = () => !window.matchMedia('(min-width: 80rem)').matches;
 
   // Only the keyboard shortcuts move focus into the composer: a click elsewhere keeps the user where they were.
@@ -172,10 +158,19 @@ export default function AssistantColumn() {
                           <p className="rounded-2xl rounded-br-md bg-secondary px-3.5 py-2 text-sm text-pretty">{turn.content}</p>
                         </div>
                       ) : (
-                        <div className="flex flex-col gap-3">
-                          <div className={cn('text-sm leading-relaxed text-pretty', turn.failed && 'rounded-lg bg-warning/8 px-3 py-2 text-foreground')}>
-                            <Markdown text={turn.content} />
-                          </div>
+                        <div className="flex flex-col gap-3" aria-busy={turn.streaming || undefined}>
+                          {turn.steps && <Steps steps={turn.steps} live={!!turn.streaming} />}
+                          {turn.streaming && !turn.content && (() => {
+                            // Nothing new is arriving yet: the model is reading, or reading a job's result.
+                            const last = turn.steps?.at(-1);
+                            if (last?.kind === 'thinking' || (last?.kind === 'job' && last.status === 'running')) return null;
+                            return <Waiting text={last ? 'Reading the result…' : pending === 'optimizing' ? 'Starting the optimizer…' : 'Reading your question…'} />;
+                          })()}
+                          {(turn.content || !turn.streaming) && (
+                            <div className={cn('text-sm leading-relaxed text-pretty', turn.failed && 'rounded-lg bg-warning/8 px-3 py-2 text-foreground')}>
+                              <Markdown text={turn.content} caret={turn.streaming} />
+                            </div>
+                          )}
                           {turn.proposal && (
                             <ProposalCard proposal={turn.proposal} state={proposalState(turn)} catalog={twin.catalog}
                               onRun={() => void send('Looks good. Run the optimization.', { turnId: turn.id, problem: turn.proposal!.problem })} />
@@ -202,14 +197,6 @@ export default function AssistantColumn() {
                     </MessageScrollerItem>
                   ))}
 
-                  {pending && (
-                    <MessageScrollerItem messageId="pending">
-                      <p role="status" className="flex items-center gap-2.5 text-sm text-muted-foreground">
-                        <Mark busy className="size-4 gap-[1.5px]" />
-                        {waiting}
-                      </p>
-                    </MessageScrollerItem>
-                  )}
                 </MessageScrollerContent>
               </MessageScrollerViewport>
               <MessageScrollerButton />

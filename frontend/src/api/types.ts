@@ -471,6 +471,20 @@ export interface ChatResult {
   chart?: ChatChart | null;
 }
 
+/** One line of /api/chat/stream: what the assistant is doing right now. */
+export type ChatEvent =
+  /** The next piece of the model's thinking. */
+  | { type: 'thinking'; text: string }
+  /** The next piece of the model's written reply. */
+  | { type: 'text'; text: string }
+  /** A job in the building model starts, e.g. rank_upgrades or optimize. */
+  | { type: 'tool_start'; id: string; name: string; args: Record<string, unknown> }
+  | { type: 'tool_end'; id: string; name: string; ok: boolean; seconds: number }
+  /** Sent every 10 s while nothing else happens, so a silent line means the server is gone. */
+  | { type: 'ping' }
+  | { type: 'done'; result: ChatResult }
+  | { type: 'error'; message: string };
+
 export interface ChatChartPoint {
   x: number;
   y: number;

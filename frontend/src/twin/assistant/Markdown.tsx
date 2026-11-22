@@ -44,19 +44,24 @@ function parse(text: string): Block[] {
   return blocks;
 }
 
-export default function Markdown({ text }: { text: string }) {
+/** caret: the reply is still being written; a blinking block ends the text so far. */
+export default function Markdown({ text, caret = false }: { text: string; caret?: boolean }) {
+  const blocks = parse(text);
+  const mark = <span aria-hidden="true" className="twin-caret" />;
+  if (caret && !blocks.length) return <p>{mark}</p>;
   return (
     <div className="flex flex-col gap-2">
-      {parse(text).map((block, i) => {
+      {blocks.map((block, i) => {
+        const end = caret && i === blocks.length - 1 ? mark : null;
         if (block.items) {
           const List = block.kind === 'ol' ? 'ol' : 'ul';
           return (
             <List key={i} className={List === 'ul' ? 'flex list-disc flex-col gap-1 pl-5' : 'flex list-decimal flex-col gap-1 pl-5'}>
-              {block.items.map((item, j) => <li key={j}>{inline(item)}</li>)}
+              {block.items.map((item, j) => <li key={j}>{inline(item)}{j === block.items.length - 1 && end}</li>)}
             </List>
           );
         }
-        return <p key={i} className={block.kind === 'h' ? 'font-semibold' : undefined}>{inline(block.text)}</p>;
+        return <p key={i} className={block.kind === 'h' ? 'font-semibold' : undefined}>{inline(block.text)}{end}</p>;
       })}
     </div>
   );

@@ -39,11 +39,19 @@ In the terminal chat, type `y` to run a proposal.
 2. `make dev` serves the assistant at `POST /api/chat`, next to the engine's other endpoints.
 3. To chat in the terminal instead, run `python3 -m chat.agent` from the repo root. It prints each tool call.
 
+The model thinks briefly before it answers. `CHAT_REASONING` in `.env` sets how hard: `low` (default), `medium`, `high`, or `off`.
+
 The default model is Claude Sonnet 5.5, at about 5 US cents and 15 seconds per question. The shared key has a USD 10 limit. While testing, put `CHAT_MODEL=anthropic/claude-haiku-5.5` in `.env`. It's about 20 times cheaper.
 
 ## For the app
 
 `POST /api/chat`, typed as `api.chat()` in `frontend/src/api/client.ts`. Send the whole conversation each time; the server keeps no state.
+
+The app uses the live version, `POST /api/chat/stream` (`api.chatStream()`). It takes the same body and sends one JSON object per line as things happen:
+- `thinking` and `text`: the next piece of the model's thinking or of its reply.
+- `tool_start` and `tool_end`: a job in the building model starts or ends (`name`, `args`, then `ok` and `seconds`). The app shows these apart from thinking, so people can tell the model is waiting for the engine.
+- `ping`: every 10 s while nothing else happens. If the line stays silent for 35 s, the app gives up and says the API is not responding.
+- `done` with `result`: the same answer as `/api/chat`. Or `error` with `message`.
 
 ```json
 {

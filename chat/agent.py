@@ -9,6 +9,7 @@ The app calls it through POST /api/chat in model/server.py.
 import json
 import os
 import sys
+import time
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -31,6 +32,8 @@ def _load_env():
 
 _load_env()
 MODEL = os.environ.get("CHAT_MODEL", "anthropic/claude-sonnet-5.5")
+# How hard the model thinks before it answers: low, medium or high. "off" turns thinking off.
+REASONING = None if os.environ.get("CHAT_REASONING", "low") == "off" else os.environ.get("CHAT_REASONING", "low")
 
 SYSTEM = """You are the assistant inside a digital twin of EPFL building BC in Lausanne, where LauzHack takes place.
 The people asking are the building's energy manager and the finance director who approves the money.
@@ -102,7 +105,7 @@ Otherwise (no plan card):
 - Answer in the user's language."""
 
 
-def _post(payload):
+def _request(payload):
     key = os.environ.get("OPENROUTER_API_KEY")
     if not key:
         raise RuntimeError("OPENROUTER_API_KEY is not set. Put it in chat/.env (see chat/.env.example).")
@@ -111,13 +114,76 @@ def _post(payload):
         headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json", "X-Title": "Building twin"},
     )
     try:
-        with urllib.request.urlopen(req, timeout=120) as r:
-            return json.load(r)
+        return urllib.request.urlopen(req, timeout=120)
     except urllib.error.HTTPError as e:
         raise RuntimeError(f"OpenRouter error {e.code}: {e.read().decode()[:500]}") from None
 
 
-def chat(messages, scenario=None, confirm=None, on_tool=None, context=None):
+def _merge_details(details, parts):
+    """Reasoning details arrive in pieces; pieces with the same index belong to one block."""
+    for part in parts or []:
+        same = next((d for d in details if d.get("index", 0) == part.get("index", 0)), None)
+        if same is None:
+            details.append(dict(part))
+            continue
+        for k, v in part.items():
+            if k in ("text", "summary", "data") and isinstance(v, str):
+                same[k] = same.get(k, "") + v
+            elif v is not None:
+                same[k] = v
+
+
+def _post(payload, on_delta=None):
+    """One model call, streamed. on_delta(kind, text) gets "thinking" and "text" pieces as they arrive.
+    Returns the whole message: content, tool_calls and, if the model thought, reasoning_details."""
+    payload = {**payload, "stream": True}
+    if REASONING:
+        payload["reasoning"] = {"effort": REASONING}
+    try:
+        stream = _request(payload)
+    except RuntimeError as e:
+        if not REASONING or " 400:" not in str(e):
+            raise
+        payload.pop("reasoning")  # some models don't think; ask again without it
+        stream = _request(payload)
+    content, calls, details = [], {}, []
+    with stream:
+        for raw in stream:
+            line = raw.decode("utf-8", "replace").strip()
+            if not line.startswith("data:"):
+                continue  # blank lines and ": OPENROUTER PROCESSING" keep-alives
+            data = line[5:].strip()
+            if data == "[DONE]":
+                break
+            chunk = json.loads(data)
+            if chunk.get("error"):
+                raise RuntimeError(f"OpenRouter error: {json.dumps(chunk['error'])[:500]}")
+            if not chunk.get("choices"):
+                continue
+            delta = chunk["choices"][0].get("delta") or {}
+            if delta.get("reasoning") and on_delta:
+                on_delta("thinking", delta["reasoning"])
+            _merge_details(details, delta.get("reasoning_details"))
+            if delta.get("content"):
+                content.append(delta["content"])
+                if on_delta:
+                    on_delta("text", delta["content"])
+            for tc in delta.get("tool_calls") or []:
+                call = calls.setdefault(tc.get("index", 0), {"id": "", "type": "function",
+                                                              "function": {"name": "", "arguments": ""}})
+                call["id"] = tc.get("id") or call["id"]
+                fn = tc.get("function") or {}
+                call["function"]["name"] += fn.get("name") or ""
+                call["function"]["arguments"] += fn.get("arguments") or ""
+    msg = {"content": "".join(content)}
+    if calls:
+        msg["tool_calls"] = [calls[i] for i in sorted(calls)]
+    if details:
+        msg["reasoning_details"] = details
+    return {"choices": [{"message": msg}]}
+
+
+def chat(messages, scenario=None, confirm=None, on_tool=None, context=None, on_event=None):
     """Answer the last user message.
 
     messages: [{"role": "user" | "assistant", "content": str}, ...]
@@ -125,6 +191,9 @@ def chat(messages, scenario=None, confirm=None, on_tool=None, context=None):
     confirm:  a problem the user confirmed (from an earlier `proposal`). The optimizer runs on exactly this problem
               before the model answers, so the model can't change it.
     on_tool:  optional callback(name, args) for logging
+    on_event: optional callback(event) for showing progress live. Events are dicts with a "type":
+              "thinking" and "text" (with "text": the next piece), "tool_start" (id, name, args) and
+              "tool_end" (id, name, ok, seconds).
     context:  optional words from the app about what the user is looking at, e.g. "Building view, floor 2, lighting"
 
     Returns {"reply", "scenario", "proposal", "optimization", "chart"}:
@@ -149,13 +218,30 @@ def chat(messages, scenario=None, confirm=None, on_tool=None, context=None):
         return {"reply": reply, "scenario": shown, "proposal": proposal, "optimization": optimization,
                 "chart": chart}
 
+    emit = on_event or (lambda event: None)
+
+    def on_delta(kind, text):
+        emit({"type": kind, "text": text})
+
+    def run_tool(call_id, name, args):
+        emit({"type": "tool_start", "id": call_id, "name": name, "args": args})
+        started = time.monotonic()
+        ok = False
+        try:
+            result = tools.run(name, args)
+            ok = True
+            return result
+        finally:
+            emit({"type": "tool_end", "id": call_id, "name": name, "ok": ok,
+                  "seconds": round(time.monotonic() - started, 1)})
+
     if confirm:
         # Run the confirmed problem ourselves and hand the model the result as if it had called optimize.
         keys = ("objective", "constraints", "locked", "allowed", "per_floor", "allow_warnings", "events")
         args = {k: confirm[k] for k in keys if k in confirm}
         if on_tool:
             on_tool("optimize (confirmed)", args)
-        result = tools.run("optimize", args)
+        result = run_tool("confirmed_optimize", "optimize", args)
         optimization = {"problem": result["problem"], "all_limits_met": result["all_limits_met"],
                         "limits_missed": result["limits_missed"]}
         shown = tools.app_scenario("Optimized plan", result["scenario"], args.get("events"))
@@ -166,9 +252,12 @@ def chat(messages, scenario=None, confirm=None, on_tool=None, context=None):
                   {"role": "tool", "tool_call_id": call["id"], "content": json.dumps(result)}]
 
     for _ in range(MAX_STEPS):
-        msg = _post({"model": MODEL, "messages": convo, "tools": schemas})["choices"][0]["message"]
+        msg = _post({"model": MODEL, "messages": convo, "tools": schemas}, on_delta)["choices"][0]["message"]
         calls = msg.get("tool_calls") or []
-        convo.append({"role": "assistant", "content": msg.get("content") or "", **({"tool_calls": calls} if calls else {})})
+        convo.append({"role": "assistant", "content": msg.get("content") or "",
+                      **({"tool_calls": calls} if calls else {}),
+                      # Claude must get its thinking back when a tool result follows it.
+                      **({"reasoning_details": msg["reasoning_details"]} if msg.get("reasoning_details") else {})})
         if not calls:
             return out(msg.get("content") or "")
         for call in calls:
@@ -179,7 +268,7 @@ def chat(messages, scenario=None, confirm=None, on_tool=None, context=None):
                 args = json.loads(call["function"].get("arguments") or "{}")
                 if on_tool:
                     on_tool(name, args)
-                result = tools.run(name, args)
+                result = run_tool(call["id"], name, args)
                 if name == "show_scenario":
                     shown = tools.app_scenario(**args)
                 if name == "propose_problem":
@@ -193,8 +282,17 @@ def chat(messages, scenario=None, confirm=None, on_tool=None, context=None):
     return out("Sorry, I couldn't finish that. Try a simpler question.")
 
 
-def _log(name, args):
-    print(f"  · {name} {json.dumps(args) if args else ''}", file=sys.stderr)
+def _show(event):
+    """Terminal view of the live events: thinking in grey, jobs on their own line, then the answer."""
+    kind = event["type"]
+    if kind == "thinking":
+        print(f"\033[2m{event['text']}\033[0m", end="", flush=True)
+    elif kind == "text":
+        print(event["text"], end="", flush=True)
+    elif kind == "tool_start":
+        print(f"\n  ▶ running {event['name']} {json.dumps(event['args']) if event['args'] else ''}", file=sys.stderr)
+    elif kind == "tool_end":
+        print(f"  {'✓' if event['ok'] else '✗'} {event['name']} ({event['seconds']} s)\n", file=sys.stderr)
 
 
 def main():
@@ -207,10 +305,10 @@ def main():
             break
         confirm = pending if q.lower() in ("y", "yes", "run") else None
         history.append({"role": "user", "content": "Looks good, run the optimization." if confirm else q})
-        out = chat(history, confirm=confirm, on_tool=_log)
+        out = chat(history, confirm=confirm, on_event=_show)
         pending = out["proposal"]["problem"] if out["proposal"] else None
         history.append({"role": "assistant", "content": out["reply"]})
-        print(f"\nTwin: {out['reply']}")
+        print()
         if out["scenario"]:
             s = out["scenario"]
             print(f"\n[App shows: {s['title']}, {len(s['item_ids'])} items highlighted]")
