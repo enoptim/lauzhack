@@ -1,4 +1,4 @@
-# DigiTwin
+# DigiBuild
 
 Explore a 3D twin of EPFL’s BC building. Try upgrades like better lighting or ventilation and see how they could change energy use, indoor air quality, and costs before spending any money. The building is real; the numbers are demo estimates.
 

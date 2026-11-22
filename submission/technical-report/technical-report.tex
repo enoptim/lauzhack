@@ -1,7 +1,7 @@
-\documentclass[11pt,a4paper]{article}
+\documentclass[10pt,a4paper]{article}
 \usepackage[T1]{fontenc}
 \usepackage{lmodern}
-\usepackage[margin=16mm]{geometry}
+\usepackage[margin=14mm]{geometry}
 \usepackage{graphicx}
 \usepackage{microtype}
 
@@ -9,12 +9,12 @@
 \setlength{\parindent}{0pt}
 \setlength{\parskip}{3pt}
 
-\newcommand{\reportsection}[1]{\par\addvspace{6pt}\noindent\textbf{\large #1}\par\nobreak}
+\newcommand{\reportsection}[1]{\par\addvspace{4pt}\noindent\textbf{\large #1}\par\nobreak}
 \newcommand{\coTwo}{CO\textsubscript{2}}
 
 \begin{document}
 
-{\LARGE\bfseries DigiTwin\par}
+{\LARGE\bfseries DigiBuild\par}
 {\large Technical Report\par}
 \medskip\hrule
 
@@ -24,31 +24,29 @@ We built a 3D twin of EPFL's BC building, where LauzHack took place. It helps en
 
 \reportsection{3D model}
 
-We built the 3D viewer with React, Three.js, React Three Fiber, and Drei. We assembled the building in code from reusable
- components for floors, walls, windows, stairs, furniture, and clickable equipment, and used Drei’s OrbitControls for camera
- movement. To get the modeling correct, we walked around the building, took photos of different rooms to get the interior of the model correct. We used the floor plan from EPFL's website to get the dimension right and used aerial photos to model the roof. 
- To keep rendering efficient, we redraw only when the view changes, reuse the sun’s shadows while the camera moves,
- and batch repeated pieces like window frames so the GPU can draw them together.
-
-\reportsection{AI assistant}
-
-The assistant sends the conversation and active plan to a language model via OpenRouter. The model requests tools with structured arguments; Python runs those tools and returns the calculated figures. For constrained optimization, the model proposes the objective and limits, and the server runs the confirmed problem unchanged.
-
-\reportsection{Explore mode}
-
-A stateful FastAPI session runs the same Python engine against one scripted or seeded future. Each step advances to the next trigger, such as an equipment failure or a new capacity warning. The session locks completed decisions and accepts edits only to the remaining plan. At the end, it compares the resulting cash flows with a like-for-like baseline in that same future.
+The 3D viewer uses React, Three.js, React Three Fiber, and Drei. We built it from reusable parts, from walls and stairs to clickable equipment. We used EPFL's floor plans for dimensions, our own photos for interiors, and aerial photos for the roof. Drei's OrbitControls lets users move the camera. To keep the viewer responsive, we redraw only when needed, reuse shadows as the camera moves, and draw repeated parts such as window frames together.
 
 \reportsection{Simulation engine}
 
 {\centering\includegraphics[width=0.85\linewidth]{.build/engine.pdf}\par}
 
-The Python engine, served through FastAPI, simulates the upgrade plan and a like-for-like replacement baseline over 15 years by default. It calculates electricity use from equipment power and runtime, adjusts heating and cooling for internal heat gains and ventilation heat recovery, and estimates peak room \coTwo{} from occupancy and fresh airflow. It compares yearly operating and investment costs, including remaining equipment value at the horizon. Discounted differences give net present value; cumulative differences give payback.
+The Python engine, served through FastAPI, is a graph of coupled effects rather than a list of independent items. Each piece of equipment changes electricity use, the heat it gives off, and the air and light people work in, and these channels feed into each other. Efficient lights give off less heat, so cooling falls in summer and heating rises in winter, which the heat pumps turn back into electricity. Blinds set both the sun let in and the daylight reaching the lighting sensors. Ventilation airflow per person sets room \coTwo{}, and laptops allow hot-desking, which avoids renting space when staff grow. Air, heat, and light drive staff effects from published studies, such as work output and sick days; these are shown as an estimate, apart from cash.
 
-The optimizer uses a fixed run. Results uses 200 seeded Monte Carlo draws: electricity prices follow a random walk, events such as heatwaves are sampled, and existing equipment failures follow an age-conditioned Weibull wear-out curve. Every plan and its baseline face the same draws. The chart shows the median and the 10th--90th percentile band of cumulative savings under those assumptions.
+The engine runs the plan and a like-for-like replacement baseline year by year, 15 years by default, and compares operating and investment costs, including remaining equipment value at the horizon. Discounted differences give net present value; cumulative differences give payback.
+
+The same engine runs in three modes. One fixed run serves the optimizer and the assistant. Results uses 200 seeded Monte Carlo draws: electricity prices follow a random walk, events such as heatwaves are sampled, and existing equipment fails on an age-conditioned Weibull wear-out curve. Every plan and its baseline face the same draws, and the chart shows the median and the 10th--90th percentile band of cumulative savings under those assumptions. Explore plays one future drawn the same way, step by step, as described below.
+
+\reportsection{Explore mode}
+
+A stateful FastAPI session runs the same Python engine against one scripted or seeded future. Each step advances to the next trigger, such as an equipment failure or a new capacity warning. The session locks completed decisions and accepts edits only to the remaining plan. At the end, it compares the resulting cash flows with a like-for-like baseline in that same future.
 
 \reportsection{Optimizer}
 \textbf{How we find upgrade plans that meet your limits}\par\nobreak
 
 A plan keeps or swaps the equipment in each zone, such as the lighting on floor 2: about $10^{18}$ plans. Each round, the engine measures every single swap on top of the current best plan. Treating these effects as additive, a dynamic program over the zones keeps the plans no other plan beats on cost and the user's limits (a Pareto frontier). The engine checks up to twelve of them. A swap's effect depends on what else is installed, so the search repeats from the best plan until it stops improving or reaches 1,500 simulations.
+
+\reportsection{AI assistant}
+
+The assistant sends the conversation and active plan to a language model via OpenRouter. The model requests tools with structured arguments; Python runs those tools and returns the calculated figures. For constrained optimization, the model proposes the objective and limits, and the server runs the confirmed problem unchanged.
 
 \end{document}
