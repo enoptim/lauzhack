@@ -415,6 +415,8 @@ export interface ChatRequest {
   confirm?: OptimizationProblem;
   /** What the user is looking at in the app, in words, so the assistant can resolve "this" and "here". */
   context?: string;
+  /** The plans in the app, so the assistant can remove them when asked. */
+  plans?: { id: number; name: string; changes: number; source: 'you' | 'assistant' }[];
 }
 
 /** What the assistant said about its scenario. Money in CHF, today vs the scenario in year 1. */
@@ -465,8 +467,12 @@ export interface ChatOptimization {
 export interface ChatResult {
   /** Markdown. */
   reply: string;
-  /** Set when the assistant picked a scenario to show. */
+  /** Set when the assistant picked a scenario to show: the last one, if it showed several. */
   scenario: ChatScenario | null;
+  /** Every plan the assistant showed in this reply, in order. The app draws a card for each. */
+  scenarios?: ChatScenario[];
+  /** Plans the assistant removed (ids from the request's plans). The app removes them and offers an undo. */
+  removed_plan_ids?: number[];
   /** The goal and limits the assistant proposes, for the user to confirm or correct. Nothing has run yet. */
   proposal: ChatProposal | null;
   /** After a confirmed run: the problem and whether the plan meets every limit. */
@@ -474,6 +480,20 @@ export interface ChatResult {
   /** Set when the assistant compared packages (upgrade_tradeoffs): cost against saving, to plot. */
   chart?: ChatChart | null;
 }
+
+/** One line of /api/chat/stream: what the assistant is doing right now. */
+export type ChatEvent =
+  /** The next piece of the model's thinking. */
+  | { type: 'thinking'; text: string }
+  /** The next piece of the model's written reply. */
+  | { type: 'text'; text: string }
+  /** A job in the building model starts, e.g. rank_upgrades or optimize. */
+  | { type: 'tool_start'; id: string; name: string; args: Record<string, unknown> }
+  | { type: 'tool_end'; id: string; name: string; ok: boolean; seconds: number }
+  /** Sent every 10 s while nothing else happens, so a silent line means the server is gone. */
+  | { type: 'ping' }
+  | { type: 'done'; result: ChatResult }
+  | { type: 'error'; message: string };
 
 export interface ChatChartPoint {
   x: number;

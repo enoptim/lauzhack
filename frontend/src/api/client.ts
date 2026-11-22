@@ -3,10 +3,10 @@
 // In development Vite proxies /api to http://localhost:8000 (see vite.config.ts).
 // Set VITE_API_URL to call a different host.
 import type {
-  Assumption, BandsResult, BreakevenRequest, BreakevenResult, Catalog, ChatRequest, ChatResult, Evaluation,
-  FuturesRequest, FuturesResult, Granularity, Metric, OptimizationProblem, OptimizeResult, ParetoRequest,
-  ParetoResult, PlaySwap, PreviewRequest, PreviewResult, RunRequest, Scenario, ScriptedFuture, SearchOptions,
-  SearchRequest, SearchResult, SessionOutlook, SessionPreview, SessionState, SimulateResult,
+  Assumption, BandsResult, BreakevenRequest, BreakevenResult, Catalog, ChatEvent, ChatRequest, ChatResult,
+  Evaluation, FuturesRequest, FuturesResult, Granularity, Metric, OptimizationProblem, OptimizeResult,
+  ParetoRequest, ParetoResult, PlaySwap, PreviewRequest, PreviewResult, RunRequest, Scenario, ScriptedFuture,
+  SearchOptions, SearchRequest, SearchResult, SessionOutlook, SessionPreview, SessionState, SimulateResult,
   StressTestResult, TornadoResult,
 } from './types';
 
@@ -20,6 +20,39 @@ async function request<T>(path: string, body?: unknown): Promise<T> {
   });
   if (!res.ok) throw new Error(`${path}: ${res.status} ${await res.text()}`);
   return res.json() as Promise<T>;
+}
+
+/** How long the stream may stay silent. The server pings every 10 s, so silence this long means it is gone. */
+const STREAM_SILENCE_MS = 35_000;
+
+/** Reads /api/chat/stream line by line and hands each event to onEvent. Resolves when the stream ends. */
+async function stream(path: string, body: unknown, onEvent: (event: ChatEvent) => void) {
+  const abort = new AbortController();
+  let timer = setTimeout(() => abort.abort(), STREAM_SILENCE_MS);
+  const alive = () => { clearTimeout(timer); timer = setTimeout(() => abort.abort(), STREAM_SILENCE_MS); };
+  try {
+    const res = await fetch(`${BASE}${path}`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal: abort.signal,
+    });
+    if (!res.ok || !res.body) throw new Error(`${path}: ${res.status} ${await res.text()}`);
+    const reader = res.body.pipeThrough(new TextDecoderStream()).getReader();
+    let buffer = '';
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      alive();
+      buffer += value;
+      const lines = buffer.split('\n');
+      buffer = lines.pop() ?? '';
+      for (const line of lines) if (line.trim()) onEvent(JSON.parse(line) as ChatEvent);
+    }
+    if (buffer.trim()) onEvent(JSON.parse(buffer) as ChatEvent);
+  } catch (error) {
+    if (abort.signal.aborted) throw new Error('The assistant stopped responding. Is the API running? Restart it with make dev.');
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 export const api = {
@@ -45,6 +78,8 @@ export const api = {
     request<SearchOptions>(`/api/search/options?granularity=${granularity}`),
   /** The assistant. Takes 10-30 s: it runs the engine several times before answering. */
   chat: (body: ChatRequest) => request<ChatResult>('/api/chat', body),
+  /** The assistant, live: its thinking, each job it runs and its reply as they happen, then the same result as chat. */
+  chatStream: (body: ChatRequest, onEvent: (event: ChatEvent) => void) => stream('/api/chat/stream', body, onEvent),
 
   // Play through one future (model/session.py). Sessions live in the API's memory.
   sessionFutures: () => request<ScriptedFuture[]>('/api/session/futures'),

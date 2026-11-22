@@ -13,7 +13,7 @@ def _script(*replies):
     """Fake _post: returns the given model messages in order and records each request."""
     sent = []
 
-    def post(payload):
+    def post(payload, on_delta=None):
         sent.append(json.loads(json.dumps(payload)))
         return {"choices": [{"message": replies[len(sent) - 1]}]}
     return post, sent
@@ -76,6 +76,25 @@ def test_the_model_cannot_run_the_optimizer_itself():
     out = _with(post, solve, lambda: agent.chat([{"role": "user", "content": "just run it"}]))
     assert runs == [] and out["optimization"] is None
     assert "propose_problem" in sent[1]["messages"][-1]["content"]     # the model was told why
+
+
+def test_the_model_can_remove_only_plans_the_app_has():
+    plans = [{"id": 1, "name": "Plan 1", "changes": 0}, {"id": 2, "name": "LED plan", "changes": 1}]
+    post, sent = _script(_call("remove_plans", {"plan_ids": [2, 99]}), {"content": "I removed LED plan."})
+    solve, runs = _counting_solve()
+    out = _with(post, solve, lambda: agent.chat([{"role": "user", "content": "remove the LED plan"}], plans=plans))
+    assert out["removed_plan_ids"] == [2]                              # 99 is not a plan in the app
+    assert "remove_plans" in [t["function"]["name"] for t in sent[0]["tools"]]
+    assert "2: LED plan" in sent[0]["messages"][0]["content"]          # the model sees the plan list
+    result = json.loads(sent[1]["messages"][-1]["content"])
+    assert result["removed"] == ["LED plan"] and result["unknown_ids"] == [99]
+
+
+def test_without_plans_the_model_cannot_remove_any():
+    post, sent = _script({"content": "Hello."})
+    out = _with(post, _counting_solve()[0], lambda: agent.chat([{"role": "user", "content": "hi"}]))
+    assert out["removed_plan_ids"] == []
+    assert "remove_plans" not in [t["function"]["name"] for t in sent[0]["tools"]]
 
 
 if __name__ == "__main__":

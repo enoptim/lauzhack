@@ -89,7 +89,7 @@ function Plans({ onGoTo }: { onGoTo: (level: number | null, group: string | null
                   </span>
                   {active && <span className="text-xs font-medium text-muted-foreground">Editing</span>}
                 </button>
-                {plans.length > 1 && (
+                {(plans.length > 1 || n > 0 || plan.source === 'assistant') && (
                   <button type="button" onClick={() => removePlan(plan.id)} aria-label={`Remove ${plan.name}`} title="Remove plan"
                     className="mr-1 grid size-7 shrink-0 place-items-center rounded-md text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 hover:bg-secondary hover:text-foreground focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-ring">
                     <X className="size-3.5" />

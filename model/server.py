@@ -9,6 +9,7 @@ Events are a list of event ids, e.g. ["new_lab", "heatwave_summer"].
 """
 import json
 import os
+import queue
 import random
 import sys
 import threading
@@ -17,7 +18,7 @@ from pathlib import Path
 from typing import Literal
 
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
@@ -116,6 +117,7 @@ class Chat(BaseModel):
     scenario: list = []
     confirm: dict | None = None
     context: str | None = None  # what the user is looking at in the app, in words
+    plans: list = []  # the user's plans in the app: [{"id", "name", "changes", "source"}], so the assistant can remove them
 
 
 @app.get("/api/catalog")
@@ -197,9 +199,42 @@ def chat(body: Chat):
     if not body.messages or body.messages[-1].get("role") != "user":
         raise HTTPException(400, "The last message must be from the user.")
     try:
-        return viz.clean(agent.chat(body.messages, body.scenario, body.confirm, context=body.context))
+        return viz.clean(agent.chat(body.messages, body.scenario, body.confirm, context=body.context, plans=body.plans))
     except RuntimeError as e:  # missing key or OpenRouter error
         raise HTTPException(502, str(e))
+
+
+@app.post("/api/chat/stream")
+def chat_stream(body: Chat):
+    """The assistant, live. One JSON object per line: "thinking" and "text" pieces, "tool_start" and "tool_end" for
+    each job, then "done" with the same answer as /api/chat, or "error"."""
+    if not body.messages or body.messages[-1].get("role") != "user":
+        raise HTTPException(400, "The last message must be from the user.")
+    events = queue.Queue()
+
+    def work():
+        try:
+            out = agent.chat(body.messages, body.scenario, body.confirm, context=body.context, on_event=events.put,
+                             plans=body.plans)
+            events.put({"type": "done", "result": out})
+        except Exception as e:  # missing key, OpenRouter error, engine error
+            events.put({"type": "error", "message": str(e)[:500]})
+        events.put(None)
+
+    def lines():
+        threading.Thread(target=work, daemon=True).start()
+        while True:
+            try:
+                event = events.get(timeout=10)
+            except queue.Empty:
+                yield '{"type": "ping"}\n'  # keeps the line open while a slow job runs
+                continue
+            if event is None:
+                return
+            yield json.dumps(viz.clean(event)) + "\n"
+
+    return StreamingResponse(lines(), media_type="application/x-ndjson",
+                             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
 
 @app.post("/api/breakeven")

@@ -2,8 +2,8 @@
 // Every view reads the same plans, so a plan the assistant finds is a plan you can edit in 3D and compare in Results.
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { api } from '@/api/client';
-import type { Catalog, ChatScenario, OptimizationProblem, Scenario } from '@/api/types';
-import { errorText, loadTurns, newId, saveTurns, type Turn } from './assistant/conversation';
+import type { Catalog, ChatEvent, ChatResult, ChatScenario, OptimizationProblem, Scenario } from '@/api/types';
+import { applyEvent, errorText, loadTurns, newId, saveTurns, type Turn } from './assistant/conversation';
 import { freeColor, MAX_PLANS, nextPlanName, PLAN_COLORS, readPlans, sameScenario, storePlans, type Plan } from './plans';
 
 /** What is on screen, published by the view. The assistant reads it to resolve "this" and "here". */
@@ -36,7 +36,12 @@ type Twin = {
   storageError: boolean;
   setActivePlan: (id: number) => void;
   createPlan: () => number;
+  /** Removes a plan. Removing the last one leaves an empty Plan 1: the app always shows a plan. */
   removePlan: (id: number) => void;
+  /** Removes several plans at once (the assistant does this) and returns them, for an undo. */
+  removePlans: (ids: number[]) => Plan[];
+  /** Puts back the plans the assistant removed in one reply, as far as there is room. */
+  undoRemoval: (turnId: string) => void;
   renamePlan: (id: number, name: string) => void;
   setScenario: (id: number, scenario: Scenario) => void;
   /** Keeps an assistant plan as one of the plans (once) and makes it the plan being edited. */
@@ -116,13 +121,49 @@ export function TwinProvider({ children }: { children: ReactNode }) {
     return id;
   }, [savePlans]);
 
-  const removePlan = useCallback((id: number) => {
-    const remaining = live.current.plans.filter(plan => plan.id !== id);
-    if (!remaining.length) return;
-    if (live.current.activePlan.id === id) setActiveId(remaining[0].id);
-    savePlans(previous => previous.filter(plan => plan.id !== id));
-    setTurns(previous => previous.map(turn => turn.planId === id ? { ...turn, planId: undefined } : turn));
+  const removePlans = useCallback((ids: number[]) => {
+    const current = live.current.plans;
+    const removed = current.filter(plan => ids.includes(plan.id));
+    if (!removed.length) return [];
+    // An empty Plan 1 is already as removed as a plan gets.
+    if (current.length === 1 && removed[0].scenario.length === 0 && removed[0].source === 'you') return [];
+    let next = current.filter(plan => !ids.includes(plan.id));
+    if (!next.length) {
+      const id = current.reduce((last, plan) => Math.max(last, plan.id), 0) + 1;
+      next = [{ id, name: 'Plan 1', scenario: [], source: 'you', color: PLAN_COLORS[0] }];
+    }
+    live.current.plans = next;
+    if (ids.includes(live.current.activePlan.id)) setActiveId(next[0].id);
+    savePlans(() => next);
+    setTurns(previous => previous.map(turn => turn.planId !== undefined && ids.includes(turn.planId) ? { ...turn, planId: undefined } : turn));
+    return removed;
   }, [savePlans]);
+
+  const removePlan = useCallback((id: number) => { removePlans([id]); }, [removePlans]);
+
+  const restorePlans = useCallback((removed: Plan[]) => {
+    let next = live.current.plans;
+    // The empty plan left after removing everything gives way to the plans coming back.
+    if (next.length === 1 && next[0].scenario.length === 0 && next[0].source === 'you' && removed.length) next = [];
+    for (const plan of removed) {
+      if (next.length >= MAX_PLANS || next.some(p => sameScenario(p.scenario, plan.scenario) && p.scenario.length)) continue;
+      const taken = next.some(p => p.id === plan.id);
+      const id = taken ? next.reduce((last, p) => Math.max(last, p.id), 0) + 1 : plan.id;
+      const color = next.some(p => p.color === plan.color) ? freeColor(next) : plan.color;
+      next = [...next, { ...plan, id, color }];
+    }
+    if (!next.length) return;
+    live.current.plans = next;
+    if (!next.some(p => p.id === live.current.activePlan.id)) setActiveId(next[0].id);
+    savePlans(() => next);
+  }, [savePlans]);
+
+  const undoRemoval = useCallback((turnId: string) => {
+    const turn = live.current.turns.find(t => t.id === turnId);
+    if (!turn?.removedPlans?.length || turn.restored) return;
+    restorePlans(turn.removedPlans);
+    setTurns(previous => previous.map(t => t.id === turnId ? { ...t, restored: true } : t));
+  }, [restorePlans]);
 
   const renamePlan = useCallback((id: number, name: string) => {
     const clean = name.trim().slice(0, 48);
@@ -190,34 +231,70 @@ export function TwinProvider({ children }: { children: ReactNode }) {
     // The plan on screen. With nothing changed yet, the plan the assistant showed last.
     const latest = [...current].reverse().find(turn => turn.scenario)?.scenario?.scenario ?? [];
     const onScreen = seen?.plan?.scenario ?? active.scenario;
+    const replyId = newId();
+    setTurns(previous => [...previous, { id: replyId, role: 'assistant', content: '', steps: [], streaming: true }]);
+    const update = (change: (turn: Turn) => Turn) =>
+      setTurns(previous => previous.map(turn => turn.id === replyId ? change(turn) : turn));
+    // Pieces arrive many times a second: fold them in once per frame.
+    let queued: ChatEvent[] = [];
+    let frame = 0;
+    const flush = () => {
+      frame = 0;
+      const events = queued;
+      queued = [];
+      if (events.length) update(turn => events.reduce((t, e) => applyEvent(t, e, Date.now()), turn));
+    };
     try {
-      const reply = await api.chat({
-        messages: history.filter(turn => !turn.failed).map(({ role, content: words }) => ({ role, content: words })),
+      let result: ChatResult | null = null;
+      await api.chatStream({
+        // An undo happens in the app, not in the chat: tell the model, or it thinks those plans are still gone.
+        messages: history.filter(turn => !turn.failed).map(({ role, content: words, restored }) =>
+          ({ role, content: restored ? `${words}\n\n(The user then pressed undo: those plans are back in the app.)` : words })),
         scenario: onScreen.length ? onScreen : latest,
         confirm: confirm?.problem,
+        plans: live.current.plans.map(plan => ({ id: plan.id, name: plan.name, changes: plan.scenario.length, source: plan.source })),
         context: seen ? `${seen.describe}${seen.plan ? '' : ` The plan being edited is "${active.name}" with ${active.scenario.length} change(s).`}` : undefined,
+      }, event => {
+        if (event.type === 'done') result = event.result;
+        else if (event.type === 'error') throw new Error(event.message);
+        else if (event.type !== 'ping') {
+          queued.push(event);
+          if (!frame) frame = requestAnimationFrame(flush);
+        }
       });
-      setTurns(previous => [...previous, {
-        id: newId(), role: 'assistant', content: reply.reply,
-        scenario: reply.scenario, proposal: reply.proposal, optimization: reply.optimization, chart: reply.chart,
-      }]);
+      cancelAnimationFrame(frame);
+      flush();
+      if (!result) throw new Error('The answer was cut off. Please ask again.');
+      const reply: ChatResult = result;
+      const removedPlans = reply.removed_plan_ids?.length ? removePlans(reply.removed_plan_ids) : [];
+      update(turn => ({
+        ...(removedPlans.length ? { removedPlans } : {}),
+        ...applyEvent(turn, { type: 'text', text: '' }, Date.now()),  // closes any open thinking
+        content: reply.reply, streaming: false,
+        scenario: reply.scenario, scenarios: reply.scenarios && reply.scenarios.length > 1 ? reply.scenarios : undefined,
+        proposal: reply.proposal, optimization: reply.optimization, chart: reply.chart,
+      }));
       if (!live.current.assistantOpen) setUnread(true);
     } catch (error) {
-      setTurns(previous => [
-        ...previous.map(turn => turn.id === confirm?.turnId ? { ...turn, ran: false } : turn),
-        { id: newId(), role: 'assistant', content: errorText(error), failed: true },
-      ]);
+      cancelAnimationFrame(frame);
+      flush();
+      setTurns(previous => previous
+        .map(turn => turn.id === confirm?.turnId ? { ...turn, ran: false } : turn)
+        .map(turn => turn.id === replyId ? {
+          ...turn, streaming: false, failed: true, content: errorText(error),
+          steps: turn.steps?.map(step => step.kind === 'job' && step.status === 'running' ? { ...step, status: 'failed' as const } : step),
+        } : turn));
     } finally {
       setPending(null);
     }
-  }, [setAssistantOpen]);
+  }, [setAssistantOpen, removePlans]);
 
   const newChat = useCallback(() => setTurns([]), []);
 
   const value = useMemo<Twin>(() => ({
-    catalog, plans, activePlan, storageError, setActivePlan: setActiveId, createPlan, removePlan, renamePlan, setScenario, keepPlan,
+    catalog, plans, activePlan, storageError, setActivePlan: setActiveId, createPlan, removePlan, removePlans, undoRemoval, renamePlan, setScenario, keepPlan,
     focus, setFocus, assistantOpen, setAssistantOpen, unread, turns, pending, send, newChat,
-  }), [catalog, plans, activePlan, storageError, createPlan, removePlan, renamePlan, setScenario, keepPlan,
+  }), [catalog, plans, activePlan, storageError, createPlan, removePlan, removePlans, undoRemoval, renamePlan, setScenario, keepPlan,
     focus, assistantOpen, setAssistantOpen, unread, turns, pending, send, newChat]);
 
   return <TwinContext.Provider value={value}>{children}</TwinContext.Provider>;

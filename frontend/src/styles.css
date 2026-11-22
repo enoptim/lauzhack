@@ -430,6 +430,25 @@
   to { stroke-dashoffset: -60; }
 }
 
+/* The assistant at work: "Thinking…" fades gently in and out. A blinking caret ends a reply still being written. */
+@media (prefers-reduced-motion: no-preference) {
+  .twin-shimmer { animation: twin-shimmer 1.8s ease-in-out infinite; }
+}
+.twin-caret {
+  display: inline-block; width: 0.45em; height: 1em; margin-left: 2px; vertical-align: -0.15em;
+  border-radius: 1px; background: var(--primary);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .twin-caret { animation: twin-caret 1s steps(1) infinite; }
+}
+@keyframes twin-shimmer {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
+}
+@keyframes twin-caret {
+  50% { opacity: 0; }
+}
+
 /* Pins land floor by floor when a plan arrives on the building. */
 .twin-enter-stagger { animation-delay: calc(var(--i, 0) * 70ms); }
 
