@@ -1,0 +1,22 @@
+/* Results page tokens. Hairlines and quiet surfaces; the chart is the only loud spot. */
+.results-root {
+  --r-panel: oklch(0.97 0.006 78);      /* plan rail and inspector: one step darker than the canvas */
+  --r-line: oklch(0.86 0.006 78);      /* outer hairlines between columns */
+  --r-divider: oklch(0.9 0.006 78);    /* hairlines inside a column */
+  --r-track: oklch(0.915 0.006 78);     /* segmented control track, bar tracks */
+  --muted-foreground: oklch(0.48 0 0);  /* a step darker than the app's: AA on the side panels and on a projector */
+  --r-ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --r-ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+}
+
+/* A thin bar that slides while the 200 futures are being worked out. */
+@keyframes results-progress {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(250%); }
+}
+.results-progress {
+  animation: results-progress 1.1s var(--r-ease-in-out) infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .results-progress { animation: none; opacity: 0.6; transform: none; width: 100% !important; }
+}

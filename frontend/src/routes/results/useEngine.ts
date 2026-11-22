@@ -4,7 +4,8 @@ import type {
   Assumption, Catalog, FuturesResult, Scenario, SimulateResult,
 } from '@/api/types';
 
-export type Load<T> = { data: T | null; error: string | null; loading: boolean };
+/** `dataKey`: the request the shown data answers, so callers can tell when it belongs to an older request. */
+export type Load<T> = { data: T | null; error: string | null; loading: boolean; dataKey?: string | null };
 
 /** Runs an engine call whenever its key changes; keeps the last good result while the next one loads. */
 function useCall<T>(key: string | null, call: () => Promise<T>, delayMs = 0): Load<T> {
@@ -18,7 +19,7 @@ function useCall<T>(key: string | null, call: () => Promise<T>, delayMs = 0): Lo
     setState(previous => ({ ...previous, loading: true }));
     const timer = setTimeout(() => {
       callRef.current()
-        .then(data => { if (live) setState({ data, error: null, loading: false }); })
+        .then(data => { if (live) setState({ data, error: null, loading: false, dataKey: key }); })
         .catch((error: unknown) => {
           if (live) setState(previous => ({ ...previous, error: String(error), loading: false }));
         });

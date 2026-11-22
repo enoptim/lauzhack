@@ -1,11 +1,11 @@
 // Thousands with a comma, like every other amount in the app (de-CH would print 198’670).
 const CHF = new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 });
 
-/** CHF 760,500 → "CHF 761k"; keeps the sign with a real minus. */
+/** CHF 760,500 → "CHF 761k", CHF 2,500,000 → "CHF 2.5M" (as in the top bar); keeps the sign with a real minus. */
 export function chfShort(value: number): string {
   const sign = value < 0 ? '−' : '';
   const abs = Math.abs(value);
-  if (abs >= 1e6) return `${sign}CHF ${(abs / 1e6).toFixed(abs >= 1e7 ? 0 : 2)}M`;
+  if (abs >= 1e6) return `${sign}CHF ${Number((abs / 1e6).toFixed(abs >= 1e7 ? 0 : 2))}M`;
   if (abs >= 1e3) return `${sign}CHF ${Math.round(abs / 1e3)}k`;
   return `${sign}CHF ${Math.round(abs)}`;
 }
@@ -31,7 +31,7 @@ export function pricePerKwh(value: number): string {
 /** A share of futures in plain words: "no future", "3 in 10 futures", "every future". */
 export function chances(share: number, n: number): string {
   const k = Math.round(share * n);
-  if (k === 0) return 'no future';
+  if (k === 0) return `none of ${n} futures`;
   if (k === n) return 'every future';
   const tenths = Math.round(share * 10);
   if (tenths === 0) return 'fewer than 1 in 10 futures';
