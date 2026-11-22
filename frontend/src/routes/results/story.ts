@@ -12,9 +12,9 @@ const breaks = (name: string) => (name.endsWith('s') ? 'break' : 'breaks');
 export const MAX_ROWS = 6;
 
 const WORLD: Record<string, { text: string; short: string }> = {
-  energy_price_spike: { text: 'Electricity prices jump for a year', short: 'Price spike' },
+  energy_price_spike: { text: 'Energy crisis: electricity prices jump for a year', short: 'Energy crisis' },
   heatwave_summer: { text: 'A heatwave summer: much more cooling', short: 'Heatwave' },
-  new_lab: { text: 'A new lab moves in with 60 people', short: 'New lab' },
+  new_lab: { text: 'A new lab moves in: 60 more staff', short: '60 more staff' },
 };
 
 type Options = {

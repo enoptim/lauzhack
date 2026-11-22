@@ -52,8 +52,8 @@ export const breakdownLabels: Record<string, { label: string; guess: boolean }> 
 
 export function flagText(flag: Flag): string {
   switch (flag.type) {
-    case 'reserve_below_minimum': return 'The savings account drops below its minimum.';
-    case 'reserve_below_minimum_without_upgrades': return 'Even without this upgrade, normal replacements take the savings account below its minimum.';
+    case 'reserve_below_minimum': return 'The building’s reserve fund drops below its safety minimum.';
+    case 'reserve_below_minimum_without_upgrades': return 'Even without this upgrade, normal replacements take the reserve fund below its safety minimum.';
     case 'over_budget': return 'The up-front cost is above the budget for upgrades.';
     case 'desk_shortfall': return 'There are more staff than desks.';
     case 'ventilation_over_capacity': return 'A floor has more people than its air supply can handle.';

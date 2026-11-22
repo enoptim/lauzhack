@@ -13,7 +13,7 @@ pnpm dev
 Open the URL printed by Vite. The top bar switches between the two views of the twin: **Building** and **Results**.
 
 - `/`: the 3D building. It needs WebGL. Left-drag to orbit, scroll to zoom, right-drag to pan. The panel on the right lists your plans, a floor picker and the equipment on that floor. Pick an option and it goes into the plan you're editing. The plan's changes are pinned onto the building.
-- `/results`: the plans compared over 200 possible futures. The building opens it with the plans in the page address (`?config=`).
+- `/results`: the plans compared over 200 possible futures. The building opens it with the plans in the page address (`?config=`). Three columns: the plans (left), the verdict, key numbers and chart (middle), and the assumptions you can change (right). When the assistant is open and the view is narrower, the plans and the assumptions share one column on the right. Every change reruns the futures; the chart keeps a dashed "before" line and the verdict says how much the change moved the result. Keys: Space plays one future, 1–6 choose a plan. All state lives in `src/routes/results/useResultsModel.ts`; the parts only read it.
 - `/assistant`: old links open the assistant beside the building.
 
 Three things are part of every view (they live in `src/twin/`):
