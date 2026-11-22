@@ -18,7 +18,7 @@ function OpenAssistant() {
 /** Results reads its plans once from the address; a new address (e.g. a plan sent by the assistant) starts it afresh. */
 function ResultsRoute() {
   const { search } = useLocation();
-  return <ResultsPage key={search} />;
+  return <ErrorBoundary what="results view" resetKey={search}><ResultsPage key={search} /></ErrorBoundary>;
 }
 
 export default function App() {
@@ -29,7 +29,7 @@ export default function App() {
           <Suspense fallback={<p role="status" className="p-6 text-sm text-muted-foreground">Loading the building…</p>}>
             <Routes>
               <Route path="/" element={<ErrorBoundary what="3D building"><BuildingPage /></ErrorBoundary>} />
-              <Route path="/results" element={<ErrorBoundary what="results view"><ResultsRoute /></ErrorBoundary>} />
+              <Route path="/results" element={<ResultsRoute />} />
               <Route path="/assistant" element={<OpenAssistant />} />
               <Route path="*" element={<NotFoundPage />} />
             </Routes>

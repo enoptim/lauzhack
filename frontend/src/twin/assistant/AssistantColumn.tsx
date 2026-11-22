@@ -8,6 +8,7 @@ import {
   MessageScroller, MessageScrollerButton, MessageScrollerContent, MessageScrollerItem, MessageScrollerProvider, MessageScrollerViewport,
 } from '@/components/ui/message-scroller';
 import { cn } from '@/lib/utils';
+import ErrorBoundary from '../ErrorBoundary';
 import Mark from '../Mark';
 import { planColor, resultsHref, sameScenario } from '../plans';
 import { useTwin } from '../TwinProvider';
@@ -59,7 +60,7 @@ export default function AssistantColumn() {
     const onKey = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
       const typing = target?.closest('input, textarea, select, [contenteditable="true"]');
-      if (event.key === 'Escape' && assistantOpen && target?.closest('#assistant')) {
+      if (event.key === 'Escape' && !event.isComposing && assistantOpen && target?.closest('#assistant')) {
         event.preventDefault();
         close();
       } else if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
@@ -93,14 +94,17 @@ export default function AssistantColumn() {
     return twin.keepPlan(turn.id, scenario, planName(scenario, turn.optimization));
   }
 
+  const [full, setFull] = useState<string | null>(null);
+
   function showOnBuilding(turn: Turn) {
-    keep(turn);
+    if (keep(turn).id === null) { setFull(turn.id); return; }
     if (pathname !== '/') navigate('/');
     if (narrow()) setAssistantOpen(false);
   }
 
   function compare(turn: Turn) {
     const { id, plans: next } = keep(turn);
+    if (id === null) { setFull(turn.id); return; }
     navigate(resultsHref(next, id, turn.scenario?.events ?? []), { state: { intro: true } });
     if (narrow()) setAssistantOpen(false);
   }
@@ -157,6 +161,7 @@ export default function AssistantColumn() {
 
                   {turns.map(turn => (
                     <MessageScrollerItem key={turn.id} messageId={turn.id} scrollAnchor={turn.role === 'user'}>
+                      <ErrorBoundary what="message" fallback={() => <p className="text-xs text-muted-foreground">This message could not be shown.</p>}>
                       {turn.role === 'user' ? (
                         <div className="flex flex-col items-end gap-1 pl-8">
                           {turn.where && (
@@ -176,6 +181,11 @@ export default function AssistantColumn() {
                               onRun={() => void send('Looks good. Run the optimization.', { turnId: turn.id, problem: turn.proposal!.problem })} />
                           )}
                           {turn.chart && <TradeoffChart chart={turn.chart} />}
+                          {full === turn.id && (
+                            <p role="status" className="rounded-lg bg-secondary px-3 py-2 text-xs text-pretty">
+                              There are already six plans you made or changed. Remove one in the plan list, then try again.
+                            </p>
+                          )}
                           {turn.scenario && (() => {
                             const plan = plans.find(p => p.id === turn.planId);
                             return (
@@ -188,6 +198,7 @@ export default function AssistantColumn() {
                           })()}
                         </div>
                       )}
+                      </ErrorBoundary>
                     </MessageScrollerItem>
                   ))}
 

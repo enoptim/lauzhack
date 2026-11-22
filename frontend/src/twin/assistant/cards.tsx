@@ -183,6 +183,10 @@ export function PlanCard({ scenario, catalog, optimization, kept, shown, onShow,
   const bill = s.energy_bill_chf_month;
   const changes = scenario.scenario.length;
   const rows = groupedChanges(scenario.scenario, catalog);
+  // Worn-out units must be replaced anyway, so only the part above a like-for-like replacement is extra.
+  const extra = s.extra_cost_vs_like_for_like_chf;
+  const dueAnyway = extra <= 0 ? 'No more than replacing the worn-out units like for like'
+    : extra < s.upfront_cost_chf * 0.9 ? `${chfShort(extra)} more than replacing worn-out units like for like` : undefined;
   return (
     <section aria-label={`Plan: ${kept?.name ?? scenario.title}`} className={cardClass}>
       <header className="flex items-start gap-2.5 px-4 pt-3.5 pb-3">
@@ -228,7 +232,7 @@ export function PlanCard({ scenario, catalog, optimization, kept, shown, onShow,
 
       <div className="border-t px-4 pt-3 pb-3">
         <Rows rows={[
-          ['Upfront', <span className="font-medium tabular-nums">{chfShort(s.upfront_cost_chf)}</span>],
+          ['Upfront', <span className="font-medium tabular-nums">{chfShort(s.upfront_cost_chf)}</span>, dueAnyway],
           // A year, like the pulse and Results (the assistant reports it per month).
           ['Energy bill', <span className="tabular-nums"><span className="font-medium">{chfShort(bill.scenario * 12)}</span> a year</span>, `Today ${chfShort(bill.today * 12)}`],
           ['Saves', <span className="tabular-nums"><span className="font-medium">{chfShort(s.running_cost_saving_chf_year)}</span> a year</span>, 'On energy, upkeep and supplies'],

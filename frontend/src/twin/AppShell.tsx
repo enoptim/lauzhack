@@ -3,6 +3,7 @@
 import { Box, ChartSpline, MessageSquare } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router';
+import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import AssistantColumn from './assistant/AssistantColumn';
 import ErrorBoundary from './ErrorBoundary';
@@ -27,7 +28,7 @@ function ViewTab({ active, onClick, icon: Icon, children }: {
 export default function AppShell({ children }: { children: ReactNode }) {
   const { pathname } = useLocation();
   const navigate = useNavigate();
-  const { plans, activePlan, assistantOpen, setAssistantOpen, pending, unread } = useTwin();
+  const { plans, activePlan, assistantOpen, setAssistantOpen, pending, unread, newChat } = useTwin();
   const onResults = pathname.startsWith('/results');
 
   return (
@@ -65,7 +66,15 @@ export default function AppShell({ children }: { children: ReactNode }) {
       </header>
 
       <div className="flex min-h-0 flex-1">
-        <ErrorBoundary what="assistant"><AssistantColumn /></ErrorBoundary>
+        <ErrorBoundary what="assistant" fallback={reset => assistantOpen && (
+          <div role="alert" className="flex w-80 shrink-0 flex-col items-start gap-3 border-r p-4 text-sm">
+            <p className="font-medium">The assistant stopped working.</p>
+            <p className="text-muted-foreground">The building and Results still work.</p>
+            <Button variant="outline" size="sm" onClick={() => { newChat(); reset(); }}>Start a new conversation</Button>
+          </div>
+        )}>
+          <AssistantColumn />
+        </ErrorBoundary>
         <div className="relative min-h-0 min-w-0 flex-1 overflow-auto">{children}</div>
       </div>
     </div>

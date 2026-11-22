@@ -40,7 +40,8 @@ type Twin = {
   renamePlan: (id: number, name: string) => void;
   setScenario: (id: number, scenario: Scenario) => void;
   /** Keeps an assistant plan as one of the plans (once) and makes it the plan being edited. */
-  keepPlan: (turnId: string, plan: ChatScenario, name: string) => { id: number; plans: Plan[] };
+  /** id is null when all six places hold plans you made or edited: nothing is replaced without asking. */
+  keepPlan: (turnId: string, plan: ChatScenario, name: string) => { id: number | null; plans: Plan[] };
 
   focus: Focus | null;
   setFocus: (focus: Focus | null) => void;
@@ -129,7 +130,7 @@ export function TwinProvider({ children }: { children: ReactNode }) {
   }, [savePlans]);
 
   const setScenario = useCallback((id: number, scenario: Scenario) => {
-    savePlans(previous => previous.map(plan => plan.id === id ? { ...plan, scenario } : plan));
+    savePlans(previous => previous.map(plan => plan.id === id ? { ...plan, scenario, edited: plan.source === 'assistant' || plan.edited } : plan));
   }, [savePlans]);
 
   const keepPlan = useCallback((turnId: string, chat: ChatScenario, name: string) => {
@@ -142,11 +143,12 @@ export function TwinProvider({ children }: { children: ReactNode }) {
       }
       let room = previous;
       if (room.length >= MAX_PLANS) {
-        // Full: make room by dropping an empty plan, else the oldest plan from the assistant, else the oldest plan.
+        // Full: make room only with a plan nobody worked on: an empty one, else the oldest untouched one from the
+        // assistant. Never one you made or edited; then nothing changes and the caller says so.
         const active = live.current.activePlan.id;
         const drop = room.find(p => p.scenario.length === 0 && p.id !== active)
-          ?? room.find(p => p.source === 'assistant' && p.id !== active)
-          ?? room.find(p => p.id !== active)!;
+          ?? room.find(p => p.source === 'assistant' && !p.edited && p.id !== active);
+        if (!drop) return previous;
         room = room.filter(p => p.id !== drop.id);
       }
       return [...room, { id, name, scenario: chat.scenario, source: 'assistant', color: freeColor(room) }];
@@ -154,6 +156,7 @@ export function TwinProvider({ children }: { children: ReactNode }) {
     const existing = live.current.plans.find(plan => sameScenario(plan.scenario, chat.scenario));
     const id = existing?.id ?? live.current.plans.reduce((last, plan) => Math.max(last, plan.id), 0) + 1;
     const next = place(live.current.plans, id);
+    if (!existing && next === live.current.plans) return { id: null, plans: next };
     if (next !== live.current.plans) {
       live.current.plans = next;
       savePlans(previous => place(previous, id));

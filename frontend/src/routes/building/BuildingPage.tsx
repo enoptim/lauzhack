@@ -3,7 +3,7 @@ import { ArrowLeft } from 'lucide-react';
 import { useState } from 'react';
 import BuildingScene from '@/components/BuildingScene';
 import { usePublishFocus, useTwin, type Focus } from '@/twin/TwinProvider';
-import { equipmentForFloor, equipmentLabels, isBuildingWide, lightingItems, plannedFor, withChoice, type EquipmentGroup } from './equipment';
+import { equipmentForFloor, equipmentLabels, isBuildingWide, lightingItems, optionOf, plannedFor, withChoice, type EquipmentGroup } from './equipment';
 import BuildingInspector, { keepCurrent } from './BuildingInspector';
 import ExteriorBlinds from './ExteriorBlinds';
 import PlanPins, { levelName } from './PlanPins';
@@ -49,7 +49,7 @@ export default function BuildingPage() {
   const planned = (group: EquipmentGroup, level = floor) => plannedFor(scenario, level, group);
   const solar = planned('solar_pv', null);
   const banner = plannedFor(scenario, 0, 'lauzhack_banner');
-  const showBanner = banner !== 'mixed' && banner?.option === 'lauzhack_banner_add';
+  const showBanner = optionOf(banner) === 'lauzhack_banner_add';
 
   usePublishFocus(focusFor(floor, selectedGroup));
 
@@ -67,7 +67,7 @@ export default function BuildingPage() {
     if (selectedGroup === group) return selectedOutline;
     const choice = planned(group);
     const installed = equipmentForFloor(floor, group).installed?.option_id;
-    return choice && (choice === 'mixed' || choice.option !== installed) ? color : selectableOutline;
+    return choice && (choice === 'mixed' || optionOf(choice) !== installed) ? color : selectableOutline;
   }
 
   function selectionFor(group: EquipmentGroup) {
@@ -82,7 +82,7 @@ export default function BuildingPage() {
           water_heater: selectionFor('water_heater'), servers: selectionFor('servers'),
         } : undefined}>
           {floor === null && <>
-            <RoofEquipment ventilation={selectionFor('ventilation')} solar={solar && solar !== 'mixed' && solar.option !== 'solar_pv_none' ? selectionFor('solar_pv') : undefined} />
+            <RoofEquipment ventilation={selectionFor('ventilation')} solar={optionOf(solar) && optionOf(solar) !== 'solar_pv_none' ? selectionFor('solar_pv') : undefined} />
             <ExteriorBlinds {...selectionFor('blinds')} />
             <PlanPins scenario={activePlan.scenario} color={color} onPick={goTo} />
           </>}

@@ -5,13 +5,11 @@ import { useThree } from '@react-three/fiber';
 import type { Swap } from '@/api/types';
 import { FLOOR_COUNT, FLOOR_HEIGHT, LENGTH, WIDTH } from '@/data/building';
 import { groupLabel } from '@/twin/plans';
-import { isBuildingWide, type EquipmentGroup } from './equipment';
 
 /** null = the whole building (roof, facade, or every floor). */
 export function pinLevel(swap: Swap): number | null {
-  if (swap.group === 'water_heater') return -1;
-  if (isBuildingWide(swap.group as EquipmentGroup) || swap.floor === undefined) return null;
-  return swap.floor;
+  if (swap.floor !== undefined) return swap.floor;
+  return swap.group === 'water_heater' ? -1 : null;
 }
 
 export const levelName = (level: number | null) =>
@@ -30,7 +28,7 @@ export default function PlanPins({ scenario, color, onPick }: {
   // Lowest floor first, so the pins land from the ground up.
   const order = [...levels].sort(([a], [b]) => (a ?? 99) - (b ?? 99));
   // In a small view the floors sit too close for one pin each: one pin sums the plan up instead.
-  const narrow = useThree(state => state.size.width) < 640;
+  const narrow = useThree(state => state.size.width) < 480;
   if (narrow && order.length > 2) {
     const kinds = [...new Set(order.flatMap(([, groups]) => groups))];
     return (

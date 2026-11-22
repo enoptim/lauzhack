@@ -84,7 +84,7 @@ function Plans({ onGoTo }: { onGoTo: (level: number | null, group: string | null
                     <span className="truncate text-sm font-medium">{plan.name}</span>
                     <span className="truncate text-xs text-muted-foreground">
                       {n === 0 ? 'No changes yet' : `${n} ${n === 1 ? 'change' : 'changes'}`}
-                      {plan.source === 'assistant' && ' · from the assistant'}
+                      {plan.source === 'assistant' && (plan.edited ? ' · from the assistant, edited' : ' · from the assistant')}
                     </span>
                   </span>
                   {active && <span className="text-xs font-medium text-muted-foreground">Editing</span>}
@@ -102,7 +102,7 @@ function Plans({ onGoTo }: { onGoTo: (level: number | null, group: string | null
                     <li key={`${row.group}-${row.option}`} className="group/change flex items-center rounded-md hover:bg-secondary/80">
                       <button type="button" onClick={() => onGoTo(pinLevel(row.first), row.group)}
                         className="flex min-w-0 flex-1 flex-col rounded-md px-2 py-1 text-left focus-visible:outline-2 focus-visible:outline-ring">
-                        <span className="truncate text-[13px]"><span className="font-medium">{row.label}</span> <span className="text-muted-foreground">→ {row.name}</span></span>
+                        <span className="text-[13px] text-pretty"><span className="font-medium">{row.label}</span> <span className="text-muted-foreground">→ {row.name}</span></span>
                         <span className="truncate text-xs text-muted-foreground">{row.where}</span>
                       </button>
                       <button type="button" aria-label={`Undo: ${row.label} to ${row.name}, ${row.where}`} title="Undo this change"
@@ -172,10 +172,13 @@ export default function BuildingInspector({ floor, selectedGroup, planned, onFlo
               const Icon = icons[group];
               const change = planned(group);
               const { installed, choices } = equipmentForFloor(floor, group);
-              // The radio to tick: none while the floors differ, today's when the plan keeps today's option.
-              const current = change === 'mixed' ? null : change && change.option !== installed?.option_id ? change.option : keepCurrent;
+              const nameOf = (id: string) => choices.find(option => option.option_id === id)?.name ?? id;
+              // The radio to tick: none while floors differ or only some are set, today's when the plan keeps today's option.
+              const current = change === 'mixed' || (change && 'some' in change) ? null
+                : change && change.option !== installed?.option_id ? change.option : keepCurrent;
               const plannedName = change === 'mixed' ? 'Different on each floor'
-                : current && current !== keepCurrent ? choices.find(option => option.option_id === current)?.name ?? current : null;
+                : change && 'some' in change ? `${nameOf(change.some.option)}, some floors`
+                : current && current !== keepCurrent ? nameOf(current) : null;
               const scope = isBuildingWide(group) ? 'the whole building' : levelName(floor).toLowerCase();
               return (
                 <AccordionItem key={group} value={group} className="rounded-lg border bg-card last:border-b">

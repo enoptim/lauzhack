@@ -11,6 +11,8 @@ export interface Plan {
   source: PlanSource;
   /** Fixed when the plan is made, so it never changes when other plans come and go. */
   color: string;
+  /** Set once you change a plan the assistant found: it is then yours to keep. */
+  edited?: boolean;
 }
 
 /** One colour per plan, in every view. The first is the brand orange. */
@@ -122,15 +124,13 @@ export function levelsText(levels: (number | null)[]) {
   return text.charAt(0).toUpperCase() + text.slice(1);
 }
 
-/** Building-wide groups have one unit for the whole building, wherever it sits. */
-const buildingWide = new Set(['water_heater', 'ventilation', 'solar_pv', 'blinds']);
-
 /** A plan's changes grouped by what they install: one row per kind of equipment and new option. */
 export function groupedChanges(scenario: Scenario, catalog: Catalog | null) {
   const rows = new Map<string, { group: string; option: string; name: string; levels: (number | null)[]; first: Swap }>();
   for (const swap of scenario) {
     const key = `${swap.group}|${swap.option}`;
-    const level = buildingWide.has(swap.group) || swap.floor === undefined ? null : swap.floor;
+    // A swap with a floor belongs to that floor, even for a building-wide group (the basement's own ventilation unit).
+    const level = swap.floor === undefined ? null : swap.floor;
     const row = rows.get(key);
     if (row) row.levels.push(level);
     else rows.set(key, {
