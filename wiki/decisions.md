@@ -8,7 +8,7 @@ Date: 2026-11-21. Nexthink is a small add-on.
 
 ## D2: The main character is Tom Watts
 
-Partly replaced by D7: Tom looks after the hackathon building, not several office buildings.
+Partly replaced by D7: Tom looks after the hackathon building, not several office buildings. Partly replaced by D10: the spoken pitch doesn't name Tom.
 
 Date: 2026-11-21. Tom Watts is a made-up energy manager. He looks after several office buildings, and the finance director approves the money.
 
@@ -44,6 +44,14 @@ Date: 2026-11-21.
 - "Show one possible future" replays one real future, with its own story.
 - In the futures, old equipment fails on a wear-out curve, counted from its age today. It no longer dies exactly at the end of its normal life.
 - The single fixed run (no chance) stays in the engine for the optimizer, the assistant and hand checks.
+
+## D10: The spoken pitch doesn't name Tom
+
+Date: 2026-11-22. There are no slides, so the judges can't see Tom, and a name costs time. The pitch talks about "this building" and "us". Tom stays in `persona.md` and on the printed bill.
+
+## D11: The pitch doesn't name Enoptim
+
+Date: 2026-11-22. We introduce ourselves as four people who built the twin this weekend: Casper (3D model), Oscar (simulation maths), Theodor (data and the search for the best plan) and Linus (much of the app, and the talk).
 
 ## Open questions (remove when answered)
 

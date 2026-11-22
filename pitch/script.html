@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pitch script</title>
+<style>
+  :root {
+    --bg: #ffffff;
+    --ink: #111418;
+    --muted: #5b6470;
+    --line: #e3e6ea;
+    --accent: #1f6feb;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #0f1115; --ink: #f1f3f5; --muted: #a3acb8; --line: #262b33; --accent: #6ea8ff; }
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg); color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    line-height: 1.4; padding: 48px 24px 120px;
+  }
+  main { max-width: 760px; margin: 0 auto; }
+  header { margin-bottom: 48px; }
+  header h1 { font-size: 20px; font-weight: 600; }
+  header p { color: var(--muted); font-size: 16px; margin-top: 6px; }
+  section { border-top: 1px solid var(--line); padding: 32px 0 40px; }
+  .meta { display: flex; gap: 16px; align-items: baseline; margin-bottom: 24px; }
+  .meta .time { font-variant-numeric: tabular-nums; color: var(--accent); font-weight: 600; font-size: 16px; }
+  .meta h2 { font-size: 16px; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; }
+  .do {
+    color: var(--muted); font-size: 18px; font-style: italic;
+    margin: 18px 0 10px;
+  }
+  .do::before { content: "→ "; font-style: normal; }
+  .say { font-size: 32px; font-weight: 500; line-height: 1.3; margin: 0 0 14px; }
+  .say.big { font-weight: 700; }
+  .say b { font-weight: 700; color: var(--accent); }
+  .todo { color: var(--muted); font-size: 18px; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Pitch script</h1>
+    <p>One line is one breath. Pause between lines. "…" means a short pause. Blue words get the stress. Grey lines are what you do, not what you say.</p>
+  </header>
+
+  <section>
+    <div class="meta"><span class="time">0:00–0:20</span><h2>1. The hook</h2></div>
+
+    <p class="do">Walk on. Hold up the bill. Wait two seconds.</p>
+    <p class="say">This is an energy bill.</p>
+    <p class="do">Point up and around the room.</p>
+    <p class="say">It's last year's bill… for <b>this</b> building.</p>
+    <p class="say">The one we're all sitting in right now.</p>
+    <p class="say big">Two hundred and twenty thousand francs.</p>
+    <p class="do">Pause.</p>
+    <p class="say">And it tells us one thing:</p>
+    <p class="say">what we <b>paid</b>.</p>
+    <p class="say big">It doesn't tell us how to pay <b>less</b>.</p>
+    <p class="do">Put the bill down. Turn to the screen.</p>
+    <p class="say">So we built a copy of this building.</p>
+    <p class="say">One where we can try things out…</p>
+    <p class="say"><b>before</b> we pay for them.</p>
+  </section>
+
+  <section>
+    <div class="meta"><span class="time">0:20–0:35</span><h2>2. Who we are</h2></div>
+
+    <p class="say">We call it a <b>digital twin</b>.</p>
+    <p class="say">A living copy of a real building.</p>
+    <p class="do">Look at the UBS judges.</p>
+    <p class="say">You asked us for a twin of a <b>person</b>.</p>
+    <p class="say">We picked something with <b>much</b> bigger bills.</p>
+    <p class="do">Short pause for the laugh.</p>
+    <p class="say">But the people who run a building have the same problem as you and me…</p>
+    <p class="say">big bills… big decisions…</p>
+    <p class="say">and no way to test them first.</p>
+    <p class="say">The four of us built it… this weekend.</p>
+    <p class="do">Point at each person as you say the name.</p>
+    <p class="say">Casper built the 3D model.</p>
+    <p class="say">Oscar did the simulation maths.</p>
+    <p class="say">Theodor did the data… and the search for the best plan.</p>
+    <p class="say">And I'm Linus. I built a lot of the app…</p>
+    <p class="say">and I do the talking.</p>
+  </section>
+
+  <section>
+    <div class="meta"><span class="time">0:35–1:20</span><h2>3. Click and change</h2></div>
+    <p class="todo">To write.</p>
+  </section>
+
+  <section>
+    <div class="meta"><span class="time">1:20–2:30</span><h2>4. Results and the maths</h2></div>
+    <p class="todo">To write.</p>
+  </section>
+
+  <section>
+    <div class="meta"><span class="time">2:30–5:00</span><h2>5. Explore mode and the end</h2></div>
+    <p class="todo">To write.</p>
+  </section>
+</main>
+</body>
+</html>
