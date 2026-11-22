@@ -2,6 +2,7 @@ import { TriangleAlert } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { chances, chfShort } from './format';
 import { flagText } from './labels';
+import { Fold } from './Fold';
 import MoneyBreakdown from './MoneyBreakdown';
 import { SectionLabel, num, Skeleton } from './parts';
 import type { ResultsModel } from './useResultsModel';
@@ -45,15 +46,17 @@ export default function DetailPanels({ m }: { m: ResultsModel }) {
       <section aria-labelledby="money-from" className="flex min-w-0 flex-col gap-4 px-5 py-6 @min-[40rem]/results:px-8">
         <div className="flex flex-col gap-1">
           <SectionLabel id="money-from">Where the money comes from</SectionLabel>
-          <p className="max-w-[62ch] text-xs text-pretty text-muted-foreground">
-            Average of {m.futuresN} futures, in today’s money. A franc in year 10 is worth less than one today, and equipment left
-            at the end counts as value, so these add up to a different total than the chart.
-          </p>
-          {Math.abs(m.residual) >= 50_000 && m.residual < 0 && (
-            <p className="max-w-[62ch] text-xs text-pretty text-muted-foreground">
-              Doing nothing would also leave <span className={cn(num, 'whitespace-nowrap')}>{chfShort(-m.residual)}</span> more equipment value at the end.
+          <Fold label="Why this total differs from the chart">
+            <p>
+              Average of {m.futuresN} futures, in today’s money. A franc in year 10 is worth less than one today, and equipment left
+              at the end counts as value, so these add up to a different total than the chart.
             </p>
-          )}
+            {Math.abs(m.residual) >= 50_000 && m.residual < 0 && (
+              <p>
+                Doing nothing would also leave <span className={cn(num, 'whitespace-nowrap')}>{chfShort(-m.residual)}</span> more equipment value at the end.
+              </p>
+            )}
+          </Fold>
         </div>
         {m.breakdown
           ? <MoneyBreakdown breakdown={m.breakdown} staffEffects={m.staffEffects} color={color} busy={m.busy} />

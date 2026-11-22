@@ -2,6 +2,7 @@ import { Dices, Pause, Play, TriangleAlert } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
+import { Fold } from './Fold';
 import { num, Segmented, Skeleton } from './parts';
 import PlansChart, { type ChartMarker } from './PlansChart';
 import type { WhatIf } from './useEngine';
@@ -95,7 +96,7 @@ export default function ChartPanel({ m }: { m: ResultsModel }) {
             Back to all futures
           </Button>
         </div>
-        <p className="min-h-[3.75rem] text-[13px] leading-5 text-pretty @min-[36rem]/chart:pt-1" aria-live="polite">
+        <div className="text-[13px] leading-5 text-pretty @min-[36rem]/chart:pt-1" aria-live="polite">
           {m.example?.pinned ? (
             <>
               <span className="font-medium text-foreground">The future you explored. </span>
@@ -110,13 +111,13 @@ export default function ChartPanel({ m }: { m: ResultsModel }) {
               <span className="text-muted-foreground">{storyText(m.example, m.failures)}</span>
             </>
           ) : (
-            <span className="text-muted-foreground">
-              We ran {m.futuresN} possible futures. In each, prices move, heatwaves come and old equipment fails earlier or later.
-              The line is the middle result in each year. The band shows where 8 in 10 futures are that year.
-              Neither is one single future: show one to see what happens in it.
-            </span>
+            <Fold label={`What the line and band mean (${m.futuresN} futures)`}>
+              <p>In each future, prices move, heatwaves come and old equipment fails earlier or later.</p>
+              <p>The line is the middle result in each year. The band shows where 8 in 10 futures are that year.</p>
+              <p>Neither is one single future: show one to see what happens in it.</p>
+            </Fold>
           )}
-        </p>
+        </div>
       </div>
     </section>
   );

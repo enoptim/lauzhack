@@ -1,9 +1,10 @@
-import type { ReactNode } from 'react';
-import { TrendingDown, TrendingUp, TriangleAlert } from 'lucide-react';
+import { useState, type ReactNode } from 'react';
+import { ChevronRight, TrendingDown, TrendingUp, TriangleAlert } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import AnimatedNumber from './AnimatedNumber';
 import { chf, chfShort } from './format';
 import { flagShort, flagText, whatIfLabels } from './labels';
+import { Fold } from './Fold';
 import { num, Skeleton } from './parts';
 import type { ResultsModel } from './useResultsModel';
 
@@ -83,8 +84,8 @@ function Chain({ c }: { c: NonNullable<ResultsModel['chain']> }) {
   const rate = c.discountRate !== null ? `, ${Math.round(c.discountRate * 1000) / 10}% a year` : '';
   const share = Math.round(c.npvPositiveShare * 100);
   return (
-    <div className="mt-1 flex min-h-10 flex-col text-[13px] leading-5 text-muted-foreground">
-      <p className="truncate">Not counted above: equipment still worth something at the end, and today’s money. One middle future, year {c.year}:</p>
+    <div className="flex flex-col">
+      <p>Not counted above: equipment still worth something at the end, and today’s money. One middle future, year {c.year}:</p>
       <p className="text-pretty">
         {strong(chfShort(c.cash_saved))} cash saved{' '}
         <span title={less ? 'Doing nothing buys its replacements later, so its equipment is newer and worth more at the end.'
@@ -136,6 +137,7 @@ function Kpi({ label, value, sub, title, subTitle, busy, className }: {
 }
 
 export default function Overview({ m }: { m: ResultsModel }) {
+  const [warningsOpen, setWarningsOpen] = useState(false);
   const { focus, horizon, endValue, busy, today, after, futuresN } = m;
   const color = m.colorOf(m.selected);
   const subject = m.multi ? m.plans[m.selected]?.name ?? 'The plan' : 'The upgrade';
@@ -258,17 +260,32 @@ export default function Overview({ m }: { m: ResultsModel }) {
         </h1>
       ) : <Skeleton className="h-9 w-2/3" />}
 
-      {!empty && (m.chain ? <div className={cn('transition-opacity duration-150', busy && 'opacity-60')}><Chain c={m.chain} /></div>
-        : !m.futures && <Skeleton className="mt-1 h-10 w-3/4" />)}
-
-      <p className={cn('mt-1 h-5 truncate text-sm leading-5 text-muted-foreground transition-opacity duration-150', busy && 'opacity-60')}>
-        {m.example ? 'Showing one example future. The numbers below stay the same: they are not from this future.'
-          : focus && !empty ? <>{m.staffEffects ? 'Chart counts staff effects' : `Chart: cash saved, middle of ${futuresN} possible futures`}. 8 in 10 end year {horizon} between {strong(chfShort(focus.low[horizon]))} and {strong(chfShort(focus.high[horizon]))}.</>
-            : null}
-      </p>
+      {/* The long explanation stays folded: the headline and the numbers below carry the page. */}
+      {m.example ? (
+        <p className={cn('mt-1 h-5 truncate text-sm leading-5 text-muted-foreground transition-opacity duration-150', busy && 'opacity-60')}>
+          Showing one example future. The numbers below stay the same: they are not from this future.
+        </p>
+      ) : !empty && (m.chain || focus) ? (
+        <Fold label="How we got this number" className={cn('mt-1 transition-opacity duration-150', busy && 'opacity-60')}>
+          {m.chain && <Chain c={m.chain} />}
+          {focus && (
+            <p>
+              {m.staffEffects ? 'Chart counts staff effects' : `Chart: cash saved, middle of ${futuresN} possible futures`}. 8 in 10 end year {horizon} between {strong(chfShort(focus.low[horizon]))} and {strong(chfShort(focus.high[horizon]))}.
+            </p>
+          )}
+        </Fold>
+      ) : !empty && !m.futures && <Skeleton className="mt-1 h-5 w-40" />}
 
       <div className="mt-2 flex h-7 min-w-0 items-center gap-3 overflow-hidden whitespace-nowrap">
-        {!empty && m.planWarnings.slice(0, 2).map(w => <WarningChip key={w.type} w={w} />)}
+        {!empty && m.planWarnings.length > 0 && (
+          // The warnings stay one click away: a small count here, the full list below the row.
+          <button type="button" aria-expanded={warningsOpen} aria-controls="plan-warnings" onClick={() => setWarningsOpen(o => !o)}
+            className="inline-flex h-7 shrink-0 cursor-pointer items-center gap-1.5 rounded-md bg-warning/8 px-2 text-[13px] hover:bg-warning/12 focus-visible:outline-2 focus-visible:outline-ring">
+            <TriangleAlert aria-hidden="true" className="size-3.5 text-warning" />
+            {m.planWarnings.length} {m.planWarnings.length === 1 ? 'warning' : 'warnings'}
+            <ChevronRight aria-hidden="true" className={cn('size-3.5 text-muted-foreground transition-transform duration-150 motion-reduce:transition-none', warningsOpen && 'rotate-90')} />
+          </button>
+        )}
         <div aria-live="polite" aria-atomic="true" className="flex min-w-0 shrink">
           {m.lastChange && m.delta !== null && (
             <DeltaChip key={`${m.lastChange.label}|${Math.round(m.delta)}`} delta={m.delta} label={m.lastChange.label} />
@@ -282,6 +299,12 @@ export default function Overview({ m }: { m: ResultsModel }) {
         )}
         {ranking && <span className="ml-auto shrink-0 text-xs text-muted-foreground">{ranking}</span>}
       </div>
+
+      {!empty && warningsOpen && m.planWarnings.length > 0 && (
+        <div id="plan-warnings" className="mt-2 flex flex-wrap gap-2">
+          {m.planWarnings.map(w => <WarningChip key={w.type} w={w} />)}
+        </div>
+      )}
 
       <dl aria-label="Key numbers" className="relative mt-3 grid grid-cols-2 border-y border-[var(--r-divider)] @[30rem]:grid-cols-3 @[36rem]:grid-cols-5">
         {kpis.map((kpi, k) => <Kpi key={k} {...kpi} busy={busy} className={cellClass(k)} />)}
