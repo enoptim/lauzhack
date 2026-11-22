@@ -1,6 +1,6 @@
 // One workspace: the building and the results are two views of the same twin,
 // the pulse shows what the plan on screen does, and the assistant docks beside both.
-import { Box, ChartSpline, MessageSquare, Play } from 'lucide-react';
+import { Box, ChartSpline, Compass, MessageSquare } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router';
 import { Button } from '@/components/ui/button';
@@ -44,7 +44,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
 
         <nav aria-label="Views" className="flex items-center gap-1">
           <ViewTab active={pathname === '/'} icon={Box} onClick={() => navigate('/')}>Building</ViewTab>
-          <ViewTab active={pathname === '/play'} icon={Play} onClick={() => navigate('/play')}>Play</ViewTab>
+          <ViewTab active={pathname === '/explore'} icon={Compass} onClick={() => navigate('/explore')}>Explore</ViewTab>
           <ViewTab active={onResults} icon={ChartSpline} onClick={() => { if (!onResults) navigate(resultsHref(plans, activePlan.id)); }}>
             Results
           </ViewTab>

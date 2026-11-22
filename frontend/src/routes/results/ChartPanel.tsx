@@ -97,7 +97,7 @@ export default function ChartPanel({ m }: { m: ResultsModel }) {
         <p className="min-h-[3.75rem] text-[13px] leading-5 text-pretty @min-[36rem]/chart:pt-1" aria-live="polite">
           {m.example?.pinned ? (
             <>
-              <span className="font-medium text-foreground">The future you played. </span>
+              <span className="font-medium text-foreground">The future you explored. </span>
               <span className="text-muted-foreground">{storyText(m.example, m.failures)}</span>
             </>
           ) : m.example && m.exampleNumber !== null ? (

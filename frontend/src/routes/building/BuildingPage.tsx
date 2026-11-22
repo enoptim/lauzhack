@@ -18,11 +18,11 @@ const brokenOutline = '#d4361f'; // Play: equipment that just broke.
 /** In Play, the assistant hears what happened at this stop. */
 function playFocus(play: Play): Focus {
   const state = play.state;
-  if (!state) return { label: 'Play', describe: 'The user is about to play through the next years of the building, one stop at a time.', suggestions: [] };
+  if (!state) return { label: 'Explore', describe: 'The user is about to explore the next years of the building, one stop at a time.', suggestions: [] };
   const happened = state.reasons.map(reason => reason.title).join('; ');
   return {
-    label: state.ended ? 'Play · the end' : `Play · year ${state.t}`,
-    describe: `The user is playing through one future of the building (game of ${state.horizon} years), now at the end of year ${state.t}.`
+    label: state.ended ? 'Explore · the end' : `Explore · year ${state.t}`,
+    describe: `The user is exploring one future of the building, ${state.horizon} years long, now at the end of year ${state.t}.`
       + (happened ? ` What just happened: ${happened}.` : '') + ` Changes so far: ${state.decisions.length}.`,
     suggestions: happened ? ['What should I do about this?'] : [],
   };

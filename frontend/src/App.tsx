@@ -29,7 +29,8 @@ export default function App() {
           <Suspense fallback={<p role="status" className="p-6 text-sm text-muted-foreground">Loading the building…</p>}>
             <Routes>
               <Route path="/" element={<ErrorBoundary what="3D building"><BuildingPage /></ErrorBoundary>} />
-              <Route path="/play" element={<ErrorBoundary what="3D building"><BuildingPage mode="play" /></ErrorBoundary>} />
+              <Route path="/explore" element={<ErrorBoundary what="3D building"><BuildingPage mode="play" /></ErrorBoundary>} />
+              <Route path="/play" element={<Navigate to="/explore" replace />} />
               <Route path="/results" element={<ResultsRoute />} />
               <Route path="/assistant" element={<OpenAssistant />} />
               <Route path="*" element={<NotFoundPage />} />

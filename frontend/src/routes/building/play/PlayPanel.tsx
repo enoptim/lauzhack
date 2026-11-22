@@ -149,22 +149,22 @@ export default function PlayPanel({ play, floor, onFloorChange, selectedGroup, o
   /** Results, with the game as a plan and the future it played shown first. */
   function seeHowYouDid() {
     if (!state) return;
-    const config = { plans: [{ name: 'Your game', scenario: state.decisions, color: PLAN_COLORS[0] }], selected: 0,
+    const config = { plans: [{ name: 'Your path', scenario: state.decisions, color: PLAN_COLORS[0] }], selected: 0,
                      events: [], game: state.session_id, horizon: state.horizon };
     navigate(`/results?config=${encodeURIComponent(JSON.stringify(config))}`, { state: { intro: true } });
   }
 
-  const title = !state ? 'Play the next years' : state.ended ? 'The end' : state.t === 0 ? 'Today' : `End of year ${state.t}`;
+  const title = !state ? 'Explore the next years' : state.ended ? 'The end' : state.t === 0 ? 'Today' : `End of year ${state.t}`;
 
   return (
-    <aside aria-label="Play" className="flex min-h-0 min-w-0 flex-col border-t bg-background md:border-t-0 md:border-l">
+    <aside aria-label="Explore" className="flex min-h-0 min-w-0 flex-col border-t bg-background md:border-t-0 md:border-l">
       <div className="flex h-12 shrink-0 items-center justify-between gap-2 border-b px-4">
         <h2 className="text-sm font-semibold">
           {title}{state && !state.ended && <span className="font-normal text-muted-foreground"> of {state.horizon}</span>}
         </h2>
         {state && (
           <button type="button" onClick={play.restart} className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
-            <RotateCcw aria-hidden="true" className="size-3.5" /> New game
+            <RotateCcw aria-hidden="true" className="size-3.5" /> Start over
           </button>
         )}
       </div>
@@ -224,7 +224,7 @@ export default function PlayPanel({ play, floor, onFloorChange, selectedGroup, o
       <footer className="flex shrink-0 flex-col gap-2 border-t bg-background px-4 py-3.5">
         {!state ? (
           <Button size="lg" className="w-full justify-between" disabled={busy !== null} onClick={start}>
-            Start playing
+            Start exploring
             {busy === 'start' ? <Spinner data-icon="inline-end" /> : <ArrowRight data-icon="inline-end" />}
           </Button>
         ) : state.ended ? (
