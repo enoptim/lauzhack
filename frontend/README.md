@@ -22,7 +22,7 @@ Three things are part of every view (they live in `src/twin/`):
 - **The assistant**: press **Ask the building** (or `/`, or Cmd/Ctrl-K). It docks on the left of either view and keeps the conversation. It knows what is on screen (floor, equipment, the plan on Results). A plan it finds becomes one of your plans: **Show in 3D** puts it on the building, **Compare in Results** opens it next to your own.
 - **Plans**: one list, shared by the building, the assistant and Results. Each plan keeps one colour in every view. They are saved in this browser.
 
-The assistant calls `POST /api/chat` (see [chat/README.md](../chat/README.md)), so it needs the API running (`make dev`) and an OpenRouter key in `chat/.env`.
+The assistant calls `POST /api/chat` (see [chat/README.md](../chat/README.md)), so it needs the API running (`make dev`) and a Nebius Token Factory key (`ASSISTANT_MODEL_API_KEY` in the root `.env`).
 
 `pnpm build` typechecks and builds the app. `pnpm preview` serves the production build locally. In production, configure the host to serve `index.html` for direct page URLs such as `/results`.
 

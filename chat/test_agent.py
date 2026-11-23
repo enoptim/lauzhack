@@ -1,8 +1,10 @@
 """Offline tests for the propose -> confirm -> optimize flow and for the check that every figure in a reply comes
-from the engine. The language model is replaced by a script, so nothing is sent to OpenRouter.
+from the engine. The language model is replaced by a script, so nothing is sent to Nebius Token Factory.
 Run from the repo root: python3 -m chat.test_agent. chat/test_live.py asks the real model."""
+import io
 import json
 import sys
+from unittest.mock import patch
 
 from chat import agent, grounding, tools
 
@@ -227,6 +229,41 @@ def test_tradeoffs_alone_still_shows_its_balanced_card_and_chart():
     out = _plan_cards(_call("upgrade_tradeoffs", {}))
     assert [p["title"] for p in out["scenarios"]] == ["Balanced choice from the trade-off curve"]
     assert out["chart"] is not None
+
+
+def test_nebius_stream_sends_tool_results_back():
+    def stream(*deltas):
+        return io.BytesIO(b"".join(
+            f"data: {json.dumps({'choices': [{'delta': delta}]})}\n\n".encode() for delta in deltas
+        ) + b"data: [DONE]\n\n")
+
+    responses = [
+        stream({"reasoning_content": "Check "}, {"reasoning_content": "the building."},
+               {"tool_calls": [{"index": 0, "id": "call_1", "function": {"name": "get_building_overview",
+                                                                        "arguments": "{"}}]},
+               {"tool_calls": [{"index": 0, "function": {"arguments": "}"}}]}),
+        stream({"content": "Here's the overview."}),
+    ]
+    events = []
+    with patch.dict(agent.os.environ, {"ASSISTANT_MODEL_API_KEY": "fake-nebius-key"}), \
+         patch.object(agent, "REASONING", "low"), \
+         patch.object(agent.urllib.request, "urlopen", side_effect=responses) as urlopen:
+        out = agent.chat([{"role": "user", "content": "How is the building doing?"}], on_event=events.append)
+
+    assert urlopen.call_count == 2
+    first, second = [c.args[0] for c in urlopen.call_args_list]
+    assert first.full_url == f"{agent.BASE_URL.rstrip('/')}/chat/completions"
+    assert first.get_header("Authorization") == "Bearer fake-nebius-key"
+    payload = json.loads(first.data)
+    assert payload["model"] == agent.MODEL and payload["stream"] is True and payload["tools"]
+    assert payload["reasoning_effort"] == "low" and "reasoning" not in payload
+    assistant, result = json.loads(second.data)["messages"][-2:]
+    assert assistant["reasoning_content"] == "Check the building."
+    assert assistant["tool_calls"][0]["function"]["arguments"] == "{}"
+    assert result["role"] == "tool" and result["tool_call_id"] == "call_1"
+    assert "error" not in json.loads(result["content"])
+    assert events[0] == {"type": "thinking", "text": "Check "}
+    assert out["reply"] == "Here's the overview."
 
 
 if __name__ == "__main__":

@@ -6,7 +6,7 @@ Ask the building a question in plain words, like "Cut our monthly energy bill by
 
 The language model can't run code. It can only ask for a tool.
 
-1. Every request to OpenRouter includes a list of tools: a name, a description and the inputs each one takes (`SCHEMAS` in `tools.py`).
+1. Every request to Nebius Token Factory includes a list of tools: a name, a description and the inputs each one takes (`SCHEMAS` in `tools.py`).
 2. The model replies with either a final answer or a request to run a tool with certain inputs.
 3. `agent.py` runs that tool, which runs Oscar's engine (`model/engine.py`), and sends the result back to the model.
 4. This repeats until the model answers in plain text. A goal takes about 2 model calls: one to call optimize, one to answer. optimize and upgrade_tradeoffs show their plan in the app themselves.
@@ -46,13 +46,13 @@ In the terminal chat, type `y` to run a proposal.
 
 ## Run
 
-1. Copy `.env.example` to `.env` and paste the OpenRouter key. Git ignores `.env`; never commit the key anywhere else.
+1. Copy the root `.env.example` to `.env` and set `ASSISTANT_MODEL_API_KEY` to your Nebius Token Factory key. Git ignores `.env`; never commit the key anywhere else.
 2. `make dev` serves the assistant at `POST /api/chat`, next to the engine's other endpoints.
 3. To chat in the terminal instead, run `python3 -m chat.agent` from the repo root. It prints each tool call.
 
-The model thinks briefly before it answers. `CHAT_REASONING` in `.env` sets how hard: `low` (default), `medium`, `high`, or `off`.
+The default model is `Qwen/Qwen3-235B-A22B-Instruct-2507`. To use another Nebius model, set `ASSISTANT_MODEL` to its model ID. Choose one that supports tool calls. `ASSISTANT_MODEL_BASE_URL` sets the API base URL (ending in `/v1`).
 
-The default model is Claude Sonnet 5.5, at about 5 US cents and 15 seconds per question. The shared key has a USD 10 limit. While testing, put `CHAT_MODEL=anthropic/claude-haiku-5.5` in `.env`. It's about 20 times cheaper.
+If your model supports reasoning effort, set `CHAT_REASONING` to `low`, `medium`, or `high`. The default, `off`, leaves that setting to the model.
 
 ## For the app
 

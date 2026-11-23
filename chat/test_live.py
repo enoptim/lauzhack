@@ -1,5 +1,5 @@
 """Live test: asks the real model a few questions through the real agent and checks that every figure in each reply
-is in the engine's output. It costs a few cents, so it only runs when OPENROUTER_API_KEY is set (chat/.env).
+is in the engine's output. It costs a few cents, so it only runs when ASSISTANT_MODEL_API_KEY is set (root .env).
 Run from the repo root: python3 -m chat.test_live"""
 import os
 import sys
@@ -15,8 +15,8 @@ QUESTIONS = [
 
 
 def main():
-    if not os.environ.get("OPENROUTER_API_KEY"):
-        print("SKIP: no OPENROUTER_API_KEY in chat/.env or the environment")
+    if not os.environ.get("ASSISTANT_MODEL_API_KEY"):
+        print("SKIP: no ASSISTANT_MODEL_API_KEY in the root .env or the environment")
         return 0
     failed = 0
     for q in QUESTIONS:

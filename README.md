@@ -12,4 +12,4 @@ You’ll need Python 3, Node.js, pnpm 10, and Make. From the project folder:
 2. Run `make dev` to start the app.
 3. Open [localhost:5173](http://localhost:5173) in your browser.
 
-The optional [AI assistant](chat/README.md) needs an OpenRouter key.
+The optional [AI assistant](chat/README.md) needs a Nebius Token Factory key.

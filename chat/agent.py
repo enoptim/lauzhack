@@ -1,4 +1,4 @@
-"""Chat with the building twin through OpenRouter. Run from the repo root:
+"""Chat with the building twin through Nebius Token Factory. Run from the repo root:
 
     python3 -m chat.agent                         # chat in the terminal
     python3 -m chat.agent "Cut our bill by 5%"    # ask one question
@@ -16,13 +16,12 @@ from pathlib import Path
 
 from . import grounding, tools
 
-HERE = Path(__file__).resolve().parent
-API_URL = "https://openrouter.ai/api/v1/chat/completions"
+ROOT = Path(__file__).resolve().parents[1]
 MAX_STEPS = 10
 
 
 def _load_env():
-    env = HERE / ".env"
+    env = ROOT / ".env"
     if env.exists():
         for line in env.read_text().splitlines():
             if "=" in line and not line.lstrip().startswith("#"):
@@ -31,9 +30,11 @@ def _load_env():
 
 
 _load_env()
-MODEL = os.environ.get("CHAT_MODEL", "anthropic/claude-sonnet-5.5")
-# How hard the model thinks before it answers: low, medium or high. "off" turns thinking off.
-REASONING = None if os.environ.get("CHAT_REASONING", "low") == "off" else os.environ.get("CHAT_REASONING", "low")
+BASE_URL = os.environ.get("ASSISTANT_MODEL_BASE_URL", "https://api.tokenfactory.nebius.com/v1")
+API_URL = f"{BASE_URL.rstrip('/')}/chat/completions"
+MODEL = os.environ.get("ASSISTANT_MODEL", "Qwen/Qwen3-235B-A22B-Instruct-2507")
+REASONING = os.environ.get("CHAT_REASONING", "off")
+REASONING_FIELDS = ("reasoning_content", "reasoning")
 
 SYSTEM = """You are the assistant inside a digital twin of EPFL building BC in Lausanne, where LauzHack takes place.
 The people asking are the building's energy manager and the finance director who approves the money.
@@ -113,64 +114,46 @@ Otherwise (no plan card):
 
 
 def _request(payload):
-    key = os.environ.get("OPENROUTER_API_KEY")
+    key = os.environ.get("ASSISTANT_MODEL_API_KEY")
     if not key:
-        raise RuntimeError("OPENROUTER_API_KEY is not set. Put it in chat/.env (see chat/.env.example).")
+        raise RuntimeError("ASSISTANT_MODEL_API_KEY is not set. Put it in the root .env (see .env.example).")
     req = urllib.request.Request(
         API_URL, data=json.dumps(payload).encode(), method="POST",
-        headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json", "X-Title": "Building twin"},
+        headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
     )
     try:
         return urllib.request.urlopen(req, timeout=120)
     except urllib.error.HTTPError as e:
-        raise RuntimeError(f"OpenRouter error {e.code}: {e.read().decode()[:500]}") from None
-
-
-def _merge_details(details, parts):
-    """Reasoning details arrive in pieces; pieces with the same index belong to one block."""
-    for part in parts or []:
-        same = next((d for d in details if d.get("index", 0) == part.get("index", 0)), None)
-        if same is None:
-            details.append(dict(part))
-            continue
-        for k, v in part.items():
-            if k in ("text", "summary", "data") and isinstance(v, str):
-                same[k] = same.get(k, "") + v
-            elif v is not None:
-                same[k] = v
+        raise RuntimeError(f"Nebius Token Factory error {e.code}: {e.read().decode()[:500]}") from None
 
 
 def _post(payload, on_delta=None):
     """One model call, streamed. on_delta(kind, text) gets "thinking" and "text" pieces as they arrive.
-    Returns the whole message: content, tool_calls and, if the model thought, reasoning_details."""
+    Returns the whole message: content, tool calls and any reasoning text."""
     payload = {**payload, "stream": True}
-    if REASONING:
-        payload["reasoning"] = {"effort": REASONING}
-    try:
-        stream = _request(payload)
-    except RuntimeError as e:
-        if not REASONING or " 400:" not in str(e):
-            raise
-        payload.pop("reasoning")  # some models don't think; ask again without it
-        stream = _request(payload)
-    content, calls, details = [], {}, []
-    with stream:
+    if REASONING and REASONING != "off":
+        payload["reasoning_effort"] = REASONING
+    content, calls, reasoning = [], {}, {}
+    with _request(payload) as stream:
         for raw in stream:
             line = raw.decode("utf-8", "replace").strip()
             if not line.startswith("data:"):
-                continue  # blank lines and ": OPENROUTER PROCESSING" keep-alives
+                continue  # blank lines and keep-alives
             data = line[5:].strip()
             if data == "[DONE]":
                 break
             chunk = json.loads(data)
             if chunk.get("error"):
-                raise RuntimeError(f"OpenRouter error: {json.dumps(chunk['error'])[:500]}")
+                raise RuntimeError(f"Nebius Token Factory error: {json.dumps(chunk['error'])[:500]}")
             if not chunk.get("choices"):
                 continue
             delta = chunk["choices"][0].get("delta") or {}
-            if delta.get("reasoning") and on_delta:
-                on_delta("thinking", delta["reasoning"])
-            _merge_details(details, delta.get("reasoning_details"))
+            for field in REASONING_FIELDS:
+                if delta.get(field):
+                    reasoning.setdefault(field, []).append(delta[field])
+            thought = delta.get("reasoning_content") or delta.get("reasoning")
+            if thought and on_delta:
+                on_delta("thinking", thought)
             if delta.get("content"):
                 content.append(delta["content"])
                 if on_delta:
@@ -182,11 +165,9 @@ def _post(payload, on_delta=None):
                 fn = tc.get("function") or {}
                 call["function"]["name"] += fn.get("name") or ""
                 call["function"]["arguments"] += fn.get("arguments") or ""
-    msg = {"content": "".join(content)}
+    msg = {"content": "".join(content), **{k: "".join(parts) for k, parts in reasoning.items()}}
     if calls:
         msg["tool_calls"] = [calls[i] for i in sorted(calls)]
-    if details:
-        msg["reasoning_details"] = details
     return {"choices": [{"message": msg}]}
 
 
@@ -322,8 +303,7 @@ def chat(messages, scenario=None, confirm=None, on_tool=None, context=None, on_e
         calls = msg.get("tool_calls") or []
         convo.append({"role": "assistant", "content": msg.get("content") or "",
                       **({"tool_calls": calls} if calls else {}),
-                      # Claude must get its thinking back when a tool result follows it.
-                      **({"reasoning_details": msg["reasoning_details"]} if msg.get("reasoning_details") else {})})
+                      **{k: msg[k] for k in REASONING_FIELDS if msg.get(k)}})
         if not calls:
             reply = msg.get("content") or ""
             verification = grounding.check(reply, grounding.sources(*given), question)

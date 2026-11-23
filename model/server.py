@@ -225,11 +225,11 @@ def _check_chat(body):
 
 @app.post("/api/chat")
 def chat(body: Chat):
-    """The assistant (chat/agent.py). Needs OPENROUTER_API_KEY in chat/.env."""
+    """The assistant (chat/agent.py). Needs ASSISTANT_MODEL_API_KEY in the root .env."""
     _check_chat(body)
     try:
         return viz.clean(agent.chat(body.messages, body.scenario, body.confirm, context=body.context, plans=body.plans))
-    except RuntimeError as e:  # missing key or OpenRouter error
+    except RuntimeError as e:  # missing key or Nebius Token Factory error
         raise HTTPException(502, str(e))
 
 
@@ -245,7 +245,7 @@ def chat_stream(body: Chat):
             out = agent.chat(body.messages, body.scenario, body.confirm, context=body.context, on_event=events.put,
                              plans=body.plans)
             events.put({"type": "done", "result": out})
-        except Exception as e:  # missing key, OpenRouter error, engine error
+        except Exception as e:  # missing key, Nebius Token Factory error, engine error
             events.put({"type": "error", "message": str(e)[:500]})
         events.put(None)
 
